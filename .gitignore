@@ -14,3 +14,4 @@ frontend/tsconfig.tsbuildinfo
 dist/
 build/
 .DS_Store
+.obsidian/
