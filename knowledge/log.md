@@ -11,3 +11,4 @@ Format: `YYYY-MM-DD  [type]  summary  (#stage.session)` — type: spec | plan | 
 2026-05-29  [report]  complete memory system bootstrap (#1.1.0)
 2026-05-29  [report]  scaffold KM1 repo skeleton; Docker verification blocked by missing CLI (#1.1)
 2026-05-29 16:40  [report]  session 1.1 docker verification completed; all nine checks passed  (#1.1)
+2026-05-29  [report]  complete session 2.1 DB spine schema, migration, and isolated tests  (#2.1)

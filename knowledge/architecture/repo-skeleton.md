@@ -2,7 +2,7 @@
 type: architecture
 stage: 01
 created: 2026-05-29
-updated: 2026-05-29 16:40
+updated: 2026-05-29
 related-session: knowledge/specs/stage-01/1.1-repo-skeleton.md
 ---
 
@@ -22,4 +22,4 @@ The repository is organized as a local development skeleton with Docker Compose 
 - `docker-compose.yml` wires PostgreSQL with pgvector, Redis, backend, worker, and frontend for local development.
 
 ## Current intentional gaps
-No database tables, models, auth, storage, AI integration, job handlers, UI components, or product workflows exist in this skeleton.
+No auth, storage, AI integration, job handlers, UI components, or product workflows exist in this skeleton. Database tables and models now start with the Session 2.1 DB spine; see [[architecture/db-spine]].

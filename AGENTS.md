@@ -39,3 +39,30 @@ fix the doc. Never bend code to match a stale doc.
 ### Later changes to completed work
 Append a dated line to the report's `## Change history` and bump its `updated:` field.
 Amend the spec if the *intent* changed. Supersede (don't delete) if the work is replaced.
+
+### Modifying code from prior completed sessions
+
+When your current session edits files that were built and completed in an earlier session:
+
+1. **Leave the prior session's report unchanged.** It remains `status: complete` as a historical record.
+2. **In your current session's report**, add a `## Modified prior sessions` section listing:
+   - Which session(s) you modified
+   - Which files you changed
+   
+   - Why you changed them
+
+   Example:
+```markdown
+   ## Modified prior sessions
+   - Session 1.1 — `backend/app/main.py`: added auth middleware
+   - Session 1.1 — `.env.example`: added SUPABASE_URL variable
+```
+
+3. **Append to the prior session's report** a line in its `## Change history` section:
+```markdown
+   - YYYY-MM-DD HH:MM — [Session X.Y] what changed and why
+```
+
+This keeps the audit trail clean: each session's report shows what it originally built,
+and the change history shows what happened to those files later. No file duplication,
+no competing versions of truth.
