@@ -13,12 +13,12 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "steps/stage-02/2.1-db-spine.md",
+                "file": "steps/stage-02/2.2-supabase-auth-current-user-context.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "2.1-db-spine"
+              "title": "2.2-supabase-auth-current-user-context"
             }
           }
         ]
@@ -94,7 +94,7 @@
             "state": {
               "type": "backlink",
               "state": {
-                "file": "steps/stage-02/2.1-db-spine.md",
+                "file": "steps/stage-02/2.2-supabase-auth-current-user-context.md",
                 "collapseAll": false,
                 "extraContext": false,
                 "sortOrder": "alphabetical",
@@ -104,7 +104,7 @@
                 "unlinkedCollapsed": true
               },
               "icon": "links-coming-in",
-              "title": "Backlinks for 2.1-db-spine"
+              "title": "Backlinks for 2.2-supabase-auth-current-user-context"
             }
           },
           {
@@ -113,12 +113,12 @@
             "state": {
               "type": "outgoing-link",
               "state": {
-                "file": "steps/stage-02/2.1-db-spine.md",
+                "file": "steps/stage-02/2.2-supabase-auth-current-user-context.md",
                 "linksCollapsed": false,
                 "unlinkedCollapsed": true
               },
               "icon": "links-going-out",
-              "title": "Outgoing links from 2.1-db-spine"
+              "title": "Outgoing links from 2.2-supabase-auth-current-user-context"
             }
           },
           {
@@ -156,13 +156,13 @@
             "state": {
               "type": "outline",
               "state": {
-                "file": "steps/stage-02/2.1-db-spine.md",
+                "file": "steps/stage-02/2.2-supabase-auth-current-user-context.md",
                 "followCursor": false,
                 "showSearch": false,
                 "searchQuery": ""
               },
               "icon": "lucide-list",
-              "title": "Outline of 2.1-db-spine"
+              "title": "Outline of 2.2-supabase-auth-current-user-context"
             }
           }
         ]
@@ -185,9 +185,13 @@
   },
   "active": "7a755bf9b78bcc19",
   "lastOpenFiles": [
-    "plans/stage-02/2.1-db-spine.md",
+    "specs/stage-02/2.2-supabase-auth-current-user-context.md",
+    "steps/stage-02/2.2-supabase-auth-current-user-context.md",
+    "architecture/auth-current-user-context.md",
     "specs/stage-02/2.1-db-spine.md",
+    "plans/stage-02/2.2-supabase-auth-current-user-context.md",
     "steps/stage-02/2.1-db-spine.md",
+    "plans/stage-02/2.1-db-spine.md",
     "plans/stage-01/1.1-repo-skeleton.md",
     "steps/stage-01/1.1-repo-skeleton.md",
     "specs/stage-01/1.1-repo-skeleton.md",

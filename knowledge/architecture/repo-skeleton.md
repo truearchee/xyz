@@ -22,4 +22,4 @@ The repository is organized as a local development skeleton with Docker Compose 
 - `docker-compose.yml` wires PostgreSQL with pgvector, Redis, backend, worker, and frontend for local development.
 
 ## Current intentional gaps
-No auth, storage, AI integration, job handlers, UI components, or product workflows exist in this skeleton. Database tables and models now start with the Session 2.1 DB spine; see [[architecture/db-spine]].
+No storage, AI integration, job handlers, UI components, or product workflows exist in this skeleton. Database tables and models start with the Session 2.1 DB spine; see [[architecture/db-spine]]. Auth infrastructure starts with Session 2.2; see [[architecture/auth-current-user-context]].
