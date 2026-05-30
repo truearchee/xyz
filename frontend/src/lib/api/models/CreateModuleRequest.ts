@@ -10,4 +10,3 @@ export type CreateModuleRequest = {
     startsOn?: (string | null);
     endsOn?: (string | null);
 };
-

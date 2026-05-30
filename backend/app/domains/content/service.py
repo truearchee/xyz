@@ -1,0 +1,277 @@
+from __future__ import annotations
+
+from datetime import UTC, datetime
+import logging
+from uuid import UUID
+
+from fastapi import HTTPException, UploadFile, status
+from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.ext.asyncio import AsyncSession
+from uuid6 import uuid7
+
+from app.domains.content.validators import (
+    InvalidPdfError,
+    UploadTooLargeError,
+    spool_and_validate_pdf,
+)
+from app.platform.auth.context import CurrentUserContext
+from app.platform.config import settings
+from app.platform.db.models import SectionAsset
+from app.platform.query.content_read import (
+    SectionAssetReadRow,
+    get_section_access_row,
+    lecturer_has_active_module_membership,
+    list_section_asset_rows,
+)
+from app.platform.storage.base import (
+    StorageProvider,
+    StorageProviderError,
+    StorageUnavailableError,
+)
+from app.platform.storage.keys import generate_section_asset_storage_key
+
+
+logger = logging.getLogger(__name__)
+
+
+def _http_error(status_code: int, detail: str) -> HTTPException:
+    return HTTPException(status_code=status_code, detail=detail)
+
+
+async def authorize_lecturer_section(
+    db: AsyncSession,
+    *,
+    current_user: CurrentUserContext,
+    module_id: UUID,
+    section_id: UUID,
+) -> None:
+    if current_user.role != "lecturer":
+        raise _http_error(status.HTTP_403_FORBIDDEN, "Only lecturers can manage assets")
+
+    has_membership = await lecturer_has_active_module_membership(
+        db,
+        user_id=current_user.user_id,
+        module_id=module_id,
+    )
+    if not has_membership:
+        raise _http_error(status.HTTP_403_FORBIDDEN, "Lecturer is not assigned to module")
+
+    section = await get_section_access_row(db, module_id=module_id, section_id=section_id)
+    if section is None:
+        raise _http_error(status.HTTP_404_NOT_FOUND, "Section not found")
+
+
+def _storage_http_error(exc: StorageProviderError) -> HTTPException:
+    if isinstance(exc, StorageUnavailableError):
+        return _http_error(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "Storage provider unavailable",
+        )
+    return _http_error(status.HTTP_502_BAD_GATEWAY, "Storage provider failed")
+
+
+async def _validated_upload(upload: UploadFile):
+    try:
+        return await spool_and_validate_pdf(
+            upload,
+            max_bytes=settings.MAX_SECTION_ASSET_UPLOAD_BYTES,
+        )
+    except UploadTooLargeError as exc:
+        raise _http_error(413, str(exc)) from exc
+    except InvalidPdfError as exc:
+        raise _http_error(422, str(exc)) from exc
+
+
+async def _best_effort_delete(
+    storage_provider: StorageProvider,
+    *,
+    key: str,
+    message: str,
+) -> None:
+    try:
+        await storage_provider.delete_object(key=key)
+    except Exception:
+        logger.warning(message, extra={"storage_key": key})
+
+
+async def list_section_assets(
+    db: AsyncSession,
+    *,
+    current_user: CurrentUserContext,
+    module_id: UUID,
+    section_id: UUID,
+) -> list[SectionAssetReadRow]:
+    await authorize_lecturer_section(
+        db,
+        current_user=current_user,
+        module_id=module_id,
+        section_id=section_id,
+    )
+    return await list_section_asset_rows(db, section_id=section_id)
+
+
+async def upload_section_asset(
+    db: AsyncSession,
+    *,
+    current_user: CurrentUserContext,
+    storage_provider: StorageProvider,
+    module_id: UUID,
+    section_id: UUID,
+    upload: UploadFile,
+    authorize: bool = True,
+) -> SectionAsset:
+    if authorize:
+        await authorize_lecturer_section(
+            db,
+            current_user=current_user,
+            module_id=module_id,
+            section_id=section_id,
+        )
+    validated = await _validated_upload(upload)
+    asset_id = uuid7()
+    storage_key = generate_section_asset_storage_key(
+        module_id=module_id,
+        section_id=section_id,
+        asset_id=asset_id,
+    )
+
+    try:
+        await storage_provider.put_object(
+            key=storage_key,
+            content=validated.content,
+            content_type=validated.mime_type,
+            content_length=validated.file_size,
+            metadata={"asset_id": str(asset_id), "section_id": str(section_id)},
+            overwrite=False,
+        )
+    except StorageProviderError as exc:
+        validated.content.close()
+        raise _storage_http_error(exc) from exc
+
+    asset = SectionAsset(
+        id=asset_id,
+        module_section_id=section_id,
+        storage_key=storage_key,
+        file_name=validated.file_name,
+        mime_type=validated.mime_type,
+        file_size=validated.file_size,
+        checksum_sha256=validated.checksum_sha256,
+        processing_status="completed",
+        uploaded_by_user_id=current_user.user_id,
+    )
+    db.add(asset)
+
+    try:
+        await db.commit()
+    except SQLAlchemyError as exc:
+        await db.rollback()
+        await _best_effort_delete(
+            storage_provider,
+            key=storage_key,
+            message="Failed to clean up section asset object after DB failure",
+        )
+        raise _http_error(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            "Could not persist asset metadata",
+        ) from exc
+    finally:
+        validated.content.close()
+
+    await db.refresh(asset)
+    return asset
+
+
+async def replace_section_asset(
+    db: AsyncSession,
+    *,
+    current_user: CurrentUserContext,
+    storage_provider: StorageProvider,
+    module_id: UUID,
+    section_id: UUID,
+    asset_id: UUID,
+    upload: UploadFile,
+    authorize: bool = True,
+) -> SectionAsset:
+    if authorize:
+        await authorize_lecturer_section(
+            db,
+            current_user=current_user,
+            module_id=module_id,
+            section_id=section_id,
+        )
+    validated = await _validated_upload(upload)
+    new_storage_key = generate_section_asset_storage_key(
+        module_id=module_id,
+        section_id=section_id,
+        asset_id=asset_id,
+    )
+
+    try:
+        await storage_provider.put_object(
+            key=new_storage_key,
+            content=validated.content,
+            content_type=validated.mime_type,
+            content_length=validated.file_size,
+            metadata={"asset_id": str(asset_id), "section_id": str(section_id)},
+            overwrite=False,
+        )
+    except StorageProviderError as exc:
+        validated.content.close()
+        raise _storage_http_error(exc) from exc
+
+    try:
+        result = await db.execute(
+            select(SectionAsset)
+            .where(
+                SectionAsset.id == asset_id,
+                SectionAsset.module_section_id == section_id,
+            )
+            .with_for_update()
+        )
+        asset = result.scalar_one_or_none()
+        if asset is None:
+            await db.rollback()
+            await _best_effort_delete(
+                storage_provider,
+                key=new_storage_key,
+                message="Failed to clean up replacement object after missing asset",
+            )
+            raise _http_error(status.HTTP_404_NOT_FOUND, "Asset not found")
+
+        old_storage_key = asset.storage_key
+        asset.storage_key = new_storage_key
+        asset.file_name = validated.file_name
+        asset.mime_type = validated.mime_type
+        asset.file_size = validated.file_size
+        asset.checksum_sha256 = validated.checksum_sha256
+        asset.processing_status = "completed"
+        asset.uploaded_by_user_id = current_user.user_id
+        asset.updated_at = datetime.now(UTC)
+        await db.commit()
+    except HTTPException:
+        raise
+    except SQLAlchemyError as exc:
+        await db.rollback()
+        await _best_effort_delete(
+            storage_provider,
+            key=new_storage_key,
+            message="Failed to clean up replacement object after DB failure",
+        )
+        raise _http_error(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            "Could not replace asset metadata",
+        ) from exc
+    finally:
+        validated.content.close()
+
+    await db.refresh(asset)
+    try:
+        await storage_provider.delete_object(key=old_storage_key)
+    except Exception:
+        logger.warning(
+            "Failed to delete replaced section asset object",
+            extra={"storage_key": old_storage_key, "asset_id": str(asset_id)},
+        )
+
+    return asset

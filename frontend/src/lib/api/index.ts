@@ -16,10 +16,13 @@ export type { ModuleDetail } from './models/ModuleDetail';
 export type { ModuleResponse } from './models/ModuleResponse';
 export type { ModuleSummary } from './models/ModuleSummary';
 export type { ResetPasswordRequest } from './models/ResetPasswordRequest';
+export type { SectionAssetListResponse } from './models/SectionAssetListResponse';
+export type { SectionAssetResponse } from './models/SectionAssetResponse';
 export type { StatusResponse } from './models/StatusResponse';
 export type { UserResponse } from './models/UserResponse';
 export type { ValidationError } from './models/ValidationError';
 
 export { AdminService } from './services/AdminService';
+export { ContentService } from './services/ContentService';
 export { DefaultService } from './services/DefaultService';
 export { ModulesService } from './services/ModulesService';

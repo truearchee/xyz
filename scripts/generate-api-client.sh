@@ -8,3 +8,5 @@ npx --no-install openapi \
   --input http://localhost:8000/openapi.json \
   --output src/lib/api \
   --client fetch
+
+find src/lib/api -name '*.ts' -type f -exec perl -0pi -e 's/\n+\z/\n/' {} +

@@ -2,7 +2,7 @@
 type: architecture
 stage: 01
 created: 2026-05-29
-updated: 2026-05-30
+updated: 2026-05-30 19:24
 related-session: knowledge/specs/stage-01/1.1-repo-skeleton.md
 ---
 
@@ -15,6 +15,9 @@ related-session: knowledge/specs/stage-01/1.1-repo-skeleton.md
 - Spec: [[specs/stage-02/2.3-admin-flows]]
 - Plan: [[plans/stage-02/2.3-admin-flows]]
 - Report: [[steps/stage-02/2.3-admin-flows]]
+- Spec: [[specs/stage-03/3.1-file-upload]]
+- Report: [[steps/stage-03/3.1-file-upload]]
+- Architecture: [[architecture/storage]]
 
 ## Current structure
 The repository is organized as a local development skeleton with Docker Compose at the root, a FastAPI backend under `backend/`, a Next.js frontend under `frontend/`, PostgreSQL initialization SQL under `docker/postgres/init/`, runtime prompts under `prompts/`, and utility scripts under `scripts/`.
@@ -27,4 +30,4 @@ The repository is organized as a local development skeleton with Docker Compose 
 - `backend/app/platform/supabase_client.py` is the only construction point for the async Supabase Admin client.
 
 ## Current intentional gaps
-No storage, AI integration, job handlers, UI components, lecturer endpoints, or student endpoints exist in this skeleton. Database tables and models start with the Session 2.1 DB spine; see [[architecture/db-spine]]. Auth infrastructure starts with Session 2.2 and role guards start with Session 2.3; see [[architecture/auth-current-user-context]].
+The original skeleton intentionally had no storage, AI integration, job handlers, UI components, lecturer endpoints, or student endpoints. Database tables and models start with the Session 2.1 DB spine; see [[architecture/db-spine]]. Auth infrastructure starts with Session 2.2 and role guards start with Session 2.3; see [[architecture/auth-current-user-context]]. Storage-backed section asset upload starts with Session 3.1; see [[architecture/storage]].

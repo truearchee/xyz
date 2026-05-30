@@ -10,4 +10,3 @@ export type MembershipResponse = {
     status: string;
     createdAt: string;
 };
-

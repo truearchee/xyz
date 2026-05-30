@@ -13,4 +13,3 @@ export type ModuleResponse = {
     isActive: boolean;
     createdAt: string;
 };
-

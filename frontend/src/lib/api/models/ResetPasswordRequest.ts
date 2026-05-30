@@ -5,4 +5,3 @@
 export type ResetPasswordRequest = {
     newPassword: string;
 };
-

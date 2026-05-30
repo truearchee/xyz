@@ -11,4 +11,3 @@ export type UserResponse = {
     timezone: string;
     createdAt: string;
 };
-

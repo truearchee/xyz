@@ -41,6 +41,8 @@ EXPECTED_INDEXES = {
     "ix_module_sections_module_session_date",
     "ix_module_sections_due_at",
     "ix_module_sections_module_publish_status",
+    "ix_section_assets_section",
+    "ix_section_assets_uploader",
 }
 
 

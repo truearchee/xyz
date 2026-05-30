@@ -15,6 +15,27 @@ class Settings:
         return self._required("SUPABASE_SECRET_KEY")
 
     @property
+    def SUPABASE_STORAGE_BUCKET(self) -> str:
+        return self._required("SUPABASE_STORAGE_BUCKET")
+
+    @property
+    def SUPABASE_STORAGE_URL(self) -> str | None:
+        return os.environ.get("SUPABASE_STORAGE_URL")
+
+    @property
+    def MAX_SECTION_ASSET_UPLOAD_BYTES(self) -> int:
+        raw_value = os.environ.get("MAX_SECTION_ASSET_UPLOAD_BYTES", "26214400")
+        try:
+            value = int(raw_value)
+        except ValueError as exc:
+            raise SettingsError(
+                "MAX_SECTION_ASSET_UPLOAD_BYTES must be an integer"
+            ) from exc
+        if value <= 0:
+            raise SettingsError("MAX_SECTION_ASSET_UPLOAD_BYTES must be greater than zero")
+        return value
+
+    @property
     def SUPABASE_JWKS_URL(self) -> str:
         return self._required("SUPABASE_JWKS_URL")
 

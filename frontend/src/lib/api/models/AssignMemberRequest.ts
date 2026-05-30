@@ -12,4 +12,3 @@ export namespace AssignMemberRequest {
         LECTURER = 'lecturer',
     }
 }
-
