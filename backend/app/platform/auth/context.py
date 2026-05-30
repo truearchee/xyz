@@ -1,17 +1,14 @@
 from dataclasses import dataclass
-from typing import Literal
 from uuid import UUID
 
 
-MembershipRole = Literal["student", "lecturer"]
-
-
 @dataclass(frozen=True)
-class ModuleMembership:
+class ModuleAccessContext:
     module_id: UUID
-    role: MembershipRole
-    is_owner: bool
+    is_active: bool
+    global_role: str
     can_publish: bool
+    membership_id: UUID
 
 
 @dataclass(frozen=True)
@@ -23,4 +20,3 @@ class CurrentUserContext:
     role: str
     is_active: bool
     timezone: str
-    module_memberships: tuple[ModuleMembership, ...]

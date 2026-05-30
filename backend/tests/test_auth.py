@@ -3,12 +3,13 @@ from datetime import timedelta
 
 from fastapi import HTTPException
 import pytest
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.platform.auth.context import CurrentUserContext, ModuleMembership
+from app.platform.auth.context import CurrentUserContext
 from app.platform.auth.dependencies import get_current_user
 from app.platform.auth.jwt import decode_and_verify_jwt
-from app.platform.db.models import AppUser, CourseMembership, CourseModule
+from app.platform.db.models import AppUser
 
 
 async def _create_user(
@@ -31,45 +32,6 @@ async def _create_user(
     session.add(user)
     await session.flush()
     return user
-
-
-async def _create_module(
-    session: AsyncSession,
-    *,
-    owner_id,
-    title: str,
-) -> CourseModule:
-    module = CourseModule(
-        title=title,
-        description=None,
-        owner_id=owner_id,
-        timezone="UTC",
-        starts_on=None,
-        ends_on=None,
-        is_active=True,
-    )
-    session.add(module)
-    await session.flush()
-    return module
-
-
-async def _create_membership(
-    session: AsyncSession,
-    *,
-    user_id,
-    module_id,
-    role: str,
-    status: str = "active",
-) -> CourseMembership:
-    membership = CourseMembership(
-        user_id=user_id,
-        module_id=module_id,
-        role=role,
-        status=status,
-    )
-    session.add(membership)
-    await session.flush()
-    return membership
 
 
 def _assert_credential_error(exc: HTTPException) -> None:
@@ -243,43 +205,17 @@ async def test_jwt_role_is_ignored_and_app_role_wins(
 
 
 @pytest.mark.anyio
-async def test_current_user_context_includes_active_memberships_only(
+async def test_current_user_context_is_identity_only_and_frozen(
     db_session: AsyncSession,
     jwt_factory,
     mock_jwks_client,
 ) -> None:
     user = await _create_user(
         db_session,
-        auth_provider_id="membership-provider-id",
-        email="membership@example.com",
-    )
-    owner = await _create_user(
-        db_session,
-        auth_provider_id="membership-owner-provider-id",
-        email="membership-owner@example.com",
+        auth_provider_id="identity-provider-id",
+        email="identity@example.com",
         role="lecturer",
-    )
-    active_a = await _create_module(db_session, owner_id=owner.id, title="Active A")
-    active_b = await _create_module(db_session, owner_id=owner.id, title="Active B")
-    archived = await _create_module(db_session, owner_id=owner.id, title="Archived")
-    await _create_membership(
-        db_session,
-        user_id=user.id,
-        module_id=active_a.id,
-        role="student",
-    )
-    await _create_membership(
-        db_session,
-        user_id=user.id,
-        module_id=active_b.id,
-        role="student",
-    )
-    await _create_membership(
-        db_session,
-        user_id=user.id,
-        module_id=archived.id,
-        role="student",
-        status="archived",
+        full_name="Identity User",
     )
     token = jwt_factory(sub=user.auth_provider_id)
 
@@ -288,84 +224,14 @@ async def test_current_user_context_includes_active_memberships_only(
         authorization=f"Bearer {token}",
     )
 
-    assert {membership.module_id for membership in context.module_memberships} == {
-        active_a.id,
-        active_b.id,
-    }
-
-
-@pytest.mark.anyio
-async def test_membership_owner_publish_flags_and_context_are_frozen(
-    db_session: AsyncSession,
-    jwt_factory,
-    mock_jwks_client,
-) -> None:
-    lecturer = await _create_user(
-        db_session,
-        auth_provider_id="lecturer-provider-id",
-        email="lecturer@example.com",
-        role="lecturer",
-    )
-    other_owner = await _create_user(
-        db_session,
-        auth_provider_id="other-owner-provider-id",
-        email="other-owner@example.com",
-        role="lecturer",
-    )
-    student = await _create_user(
-        db_session,
-        auth_provider_id="student-provider-id",
-        email="student@example.com",
-        role="student",
-    )
-    owned_module = await _create_module(db_session, owner_id=lecturer.id, title="Owned")
-    other_module = await _create_module(
-        db_session,
-        owner_id=other_owner.id,
-        title="Not Owned",
-    )
-    student_module = await _create_module(
-        db_session,
-        owner_id=other_owner.id,
-        title="Student",
-    )
-    await _create_membership(
-        db_session,
-        user_id=lecturer.id,
-        module_id=owned_module.id,
-        role="lecturer",
-    )
-    await _create_membership(
-        db_session,
-        user_id=lecturer.id,
-        module_id=other_module.id,
-        role="lecturer",
-    )
-    await _create_membership(
-        db_session,
-        user_id=lecturer.id,
-        module_id=student_module.id,
-        role="student",
-    )
-    token = jwt_factory(sub=lecturer.auth_provider_id)
-
-    context = await get_current_user(
-        db_session=db_session,
-        authorization=f"Bearer {token}",
-    )
-    memberships = {
-        membership.module_id: membership for membership in context.module_memberships
-    }
-
-    assert memberships[owned_module.id].is_owner is True
-    assert memberships[owned_module.id].can_publish is True
-    assert memberships[other_module.id].is_owner is False
-    assert memberships[other_module.id].can_publish is True
-    assert memberships[student_module.id].is_owner is False
-    assert memberships[student_module.id].can_publish is False
+    assert context.user_id == user.id
+    assert context.auth_provider_id == user.auth_provider_id
+    assert context.email == "identity@example.com"
+    assert context.full_name == "Identity User"
+    assert context.role == "lecturer"
+    assert context.is_active is True
+    assert context.timezone == "UTC"
+    assert not hasattr(context, "module_memberships")
     assert is_dataclass(CurrentUserContext)
-    assert is_dataclass(ModuleMembership)
     with pytest.raises(FrozenInstanceError):
         context.role = "admin"
-    with pytest.raises(FrozenInstanceError):
-        memberships[owned_module.id].can_publish = False

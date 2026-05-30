@@ -14,3 +14,4 @@ Format: `YYYY-MM-DD  [type]  summary  (#stage.session)` — type: spec | plan | 
 2026-05-29  [report]  complete session 2.1 DB spine schema, migration, and isolated tests  (#2.1)
 2026-05-29  [report]  complete session 2.2 JWKS auth and current-user context  (#2.2)
 2026-05-30 00:32  [report]  complete session 2.3 admin flows; backend 42 passed and frontend type-check passed  (#2.3)
+2026-05-30 12:24  [report]  complete session 2.4 module base views; backend 52 passed and frontend type-check passed  (#2.4)
