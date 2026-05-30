@@ -7,4 +7,16 @@ export { CancelablePromise, CancelError } from './core/CancelablePromise';
 export { OpenAPI } from './core/OpenAPI';
 export type { OpenAPIConfig } from './core/OpenAPI';
 
+export { AssignMemberRequest } from './models/AssignMemberRequest';
+export type { CreateModuleRequest } from './models/CreateModuleRequest';
+export { CreateUserRequest } from './models/CreateUserRequest';
+export type { HTTPValidationError } from './models/HTTPValidationError';
+export type { MembershipResponse } from './models/MembershipResponse';
+export type { ModuleResponse } from './models/ModuleResponse';
+export type { ResetPasswordRequest } from './models/ResetPasswordRequest';
+export type { StatusResponse } from './models/StatusResponse';
+export type { UserResponse } from './models/UserResponse';
+export type { ValidationError } from './models/ValidationError';
+
+export { AdminService } from './services/AdminService';
 export { DefaultService } from './services/DefaultService';

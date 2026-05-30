@@ -10,10 +10,12 @@ dependencies = [
     "alembic>=1.13,<2.0",
     "asyncpg>=0.29,<1.0",
     "fastapi>=0.115,<1.0",
+    "pydantic[email]>=2.0,<3.0",
     "PyJWT[crypto]>=2.10,<3.0",
     "redis>=5.0,<6.0",
     "rq>=2.0,<3.0",
     "sqlalchemy>=2.0,<3.0",
+    "supabase>=2.0,<3.0",
     "uuid6>=2024.7.10,<2025.0.0",
     "uvicorn[standard]>=0.30,<1.0",
 ]

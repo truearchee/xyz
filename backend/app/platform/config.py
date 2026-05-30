@@ -11,6 +11,10 @@ class Settings:
         return self._required("SUPABASE_URL")
 
     @property
+    def SUPABASE_SECRET_KEY(self) -> str:
+        return self._required("SUPABASE_SECRET_KEY")
+
+    @property
     def SUPABASE_JWKS_URL(self) -> str:
         return self._required("SUPABASE_JWKS_URL")
 

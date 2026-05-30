@@ -17,4 +17,24 @@ export class DefaultService {
             url: '/health',
         });
     }
+    /**
+     * Authed Health
+     * @param authorization
+     * @returns string Successful Response
+     * @throws ApiError
+     */
+    public static authedHealthHealthAuthedGet(
+        authorization?: (string | null),
+    ): CancelablePromise<Record<string, string>> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/health/authed',
+            headers: {
+                'Authorization': authorization,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
 }
