@@ -32,6 +32,36 @@ class SectionAssetListResponse(CamelModel):
     assets: list[SectionAssetResponse]
 
 
+class SectionListItem(CamelModel):
+    id: UUID
+    title: str
+    type: str
+    order_index: int
+    has_assets: bool
+    has_notes: bool
+
+
+class StudentAssetMeta(CamelModel):
+    id: UUID
+    file_name: str
+    mime_type: str
+    file_size: int
+
+
+class StudentSectionDetail(CamelModel):
+    id: UUID
+    title: str
+    type: str
+    order_index: int
+    lecturer_notes: str | None
+    assets: list[StudentAssetMeta]
+
+
+class AssetDownloadUrl(CamelModel):
+    url: str
+    expires_at: datetime
+
+
 class UpdateSectionNotesRequest(CamelModel):
     lecturer_notes: str | None
 

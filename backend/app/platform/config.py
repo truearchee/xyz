@@ -36,6 +36,17 @@ class Settings:
         return value
 
     @property
+    def SIGNED_READ_URL_TTL_SECONDS(self) -> int:
+        raw_value = os.environ.get("SIGNED_READ_URL_TTL_SECONDS", "300")
+        try:
+            value = int(raw_value)
+        except ValueError as exc:
+            raise SettingsError("SIGNED_READ_URL_TTL_SECONDS must be an integer") from exc
+        if value <= 0:
+            raise SettingsError("SIGNED_READ_URL_TTL_SECONDS must be greater than zero")
+        return value
+
+    @property
     def SUPABASE_JWKS_URL(self) -> str:
         return self._required("SUPABASE_JWKS_URL")
 

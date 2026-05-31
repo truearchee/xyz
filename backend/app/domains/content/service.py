@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 import logging
 from uuid import UUID
 
@@ -17,14 +17,22 @@ from app.domains.content.validators import (
     normalize_section_notes,
     spool_and_validate_pdf,
 )
-from app.platform.auth.context import CurrentUserContext
+from app.domains.content.schemas import AssetDownloadUrl
+from app.platform.auth.context import CurrentUserContext, ModuleAccessContext
 from app.platform.config import settings
 from app.platform.db.models import CourseMembership, CourseModule, ModuleSection, SectionAsset
 from app.platform.query.content_read import (
-    SectionDetailReadRow,
     SectionAssetReadRow,
+    SectionDetailReadRow,
+    SectionListItemReadRow,
+    StudentSectionDetailReadRow,
+    get_asset_download_ref,
+    get_lecturer_section_detail_row,
+    get_published_section_for_student,
     get_section_access_row,
     lecturer_has_active_module_membership,
+    list_lecturer_section_rows,
+    list_published_sections_for_student,
     list_section_asset_rows,
 )
 from app.platform.storage.base import (
@@ -58,8 +66,10 @@ def _section_detail_from_model(section: ModuleSection) -> SectionDetailReadRow:
         course_module_id=section.course_module_id,
         title=section.title,
         type=section.type,
+        order_index=section.order_index,
         publish_status=section.publish_status,
         lecturer_notes=section.lecturer_notes,
+        status=section.status,
         updated_at=section.updated_at,
     )
 
@@ -135,7 +145,7 @@ async def authorize_lecturer_section(
     section_id: UUID,
 ) -> None:
     if current_user.role != "lecturer":
-        raise _http_error(status.HTTP_403_FORBIDDEN, "Only lecturers can manage assets")
+        raise _coded_error(status.HTTP_403_FORBIDDEN, CONTENT_FORBIDDEN)
 
     has_membership = await lecturer_has_active_module_membership(
         db,
@@ -148,6 +158,97 @@ async def authorize_lecturer_section(
     section = await get_section_access_row(db, module_id=module_id, section_id=section_id)
     if section is None:
         raise _http_error(status.HTTP_404_NOT_FOUND, "Section not found")
+
+
+async def list_module_sections(
+    db: AsyncSession,
+    *,
+    module_access: ModuleAccessContext,
+) -> list[SectionListItemReadRow]:
+    if module_access.global_role == "student":
+        return await list_published_sections_for_student(
+            db,
+            module_id=module_access.module_id,
+        )
+    if module_access.global_role == "lecturer":
+        return await list_lecturer_section_rows(db, module_id=module_access.module_id)
+    raise _coded_error(status.HTTP_403_FORBIDDEN, CONTENT_FORBIDDEN)
+
+
+async def get_module_section_detail(
+    db: AsyncSession,
+    *,
+    module_access: ModuleAccessContext,
+    section_id: UUID,
+) -> SectionDetailReadRow | StudentSectionDetailReadRow:
+    if module_access.global_role == "student":
+        section = await get_published_section_for_student(
+            db,
+            module_id=module_access.module_id,
+            section_id=section_id,
+        )
+        if section is None:
+            raise _coded_error(status.HTTP_404_NOT_FOUND, SECTION_NOT_FOUND)
+        return section
+
+    if module_access.global_role == "lecturer":
+        section = await get_lecturer_section_detail_row(
+            db,
+            module_id=module_access.module_id,
+            section_id=section_id,
+        )
+        if section is None:
+            raise _coded_error(status.HTTP_404_NOT_FOUND, SECTION_NOT_FOUND)
+        if section.status == "archived":
+            raise _coded_error(status.HTTP_409_CONFLICT, SECTION_ARCHIVED)
+        return section
+
+    raise _coded_error(status.HTTP_403_FORBIDDEN, CONTENT_FORBIDDEN)
+
+
+async def create_asset_download_url(
+    db: AsyncSession,
+    *,
+    module_access: ModuleAccessContext,
+    storage_provider: StorageProvider,
+    section_id: UUID,
+    asset_id: UUID,
+) -> AssetDownloadUrl:
+    download_ref = await get_asset_download_ref(
+        db,
+        module_id=module_access.module_id,
+        section_id=section_id,
+        asset_id=asset_id,
+    )
+    if download_ref is None:
+        raise _coded_error(status.HTTP_404_NOT_FOUND, SECTION_NOT_FOUND)
+
+    if module_access.global_role == "student":
+        if (
+            download_ref.section_publish_status != "published"
+            or download_ref.section_status != "active"
+            or download_ref.asset_processing_status != "completed"
+        ):
+            raise _coded_error(status.HTTP_404_NOT_FOUND, SECTION_NOT_FOUND)
+    elif module_access.global_role == "lecturer":
+        if download_ref.section_status == "archived":
+            raise _coded_error(status.HTTP_409_CONFLICT, SECTION_ARCHIVED)
+    else:
+        raise _coded_error(status.HTTP_403_FORBIDDEN, CONTENT_FORBIDDEN)
+
+    ttl_seconds = settings.SIGNED_READ_URL_TTL_SECONDS
+    try:
+        url = await storage_provider.create_signed_read_url(
+            key=download_ref.storage_key,
+            expires_in_seconds=ttl_seconds,
+        )
+    except StorageProviderError as exc:
+        raise _storage_http_error(exc) from exc
+
+    return AssetDownloadUrl(
+        url=url,
+        expires_at=datetime.now(UTC) + timedelta(seconds=ttl_seconds),
+    )
 
 
 def _storage_http_error(exc: StorageProviderError) -> HTTPException:

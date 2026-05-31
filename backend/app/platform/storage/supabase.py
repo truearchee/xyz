@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 from typing import Any, BinaryIO
 
 from app.platform.config import settings
@@ -65,7 +66,17 @@ class SupabaseStorageProvider:
     ) -> str:
         try:
             bucket = await self._bucket()
-            response = await bucket.create_signed_url(key, expires_in_seconds)
+            create_signed_url = bucket.create_signed_url
+            if inspect.iscoroutinefunction(create_signed_url):
+                response = await create_signed_url(key, expires_in_seconds)
+            else:
+                response = await asyncio.to_thread(
+                    create_signed_url,
+                    key,
+                    expires_in_seconds,
+                )
+            if inspect.isawaitable(response):
+                response = await response
         except (TimeoutError, ConnectionError) as exc:
             raise StorageUnavailableError("Storage provider unavailable") from exc
         except Exception as exc:

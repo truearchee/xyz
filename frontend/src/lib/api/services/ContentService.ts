@@ -2,14 +2,70 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { AssetDownloadUrl } from '../models/AssetDownloadUrl';
 import type { SectionAssetListResponse } from '../models/SectionAssetListResponse';
 import type { SectionAssetResponse } from '../models/SectionAssetResponse';
 import type { SectionDetail } from '../models/SectionDetail';
+import type { SectionListItem } from '../models/SectionListItem';
+import type { StudentSectionDetail } from '../models/StudentSectionDetail';
 import type { UpdateSectionNotesRequest } from '../models/UpdateSectionNotesRequest';
 import type { CancelablePromise } from '../core/CancelablePromise';
 import { OpenAPI } from '../core/OpenAPI';
 import { request as __request } from '../core/request';
 export class ContentService {
+    /**
+     * List Sections
+     * @param moduleId
+     * @param authorization
+     * @returns SectionListItem Successful Response
+     * @throws ApiError
+     */
+    public static listSectionsModulesModuleIdSectionsGet(
+        moduleId: string,
+        authorization?: (string | null),
+    ): CancelablePromise<Array<SectionListItem>> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/modules/{module_id}/sections',
+            path: {
+                'module_id': moduleId,
+            },
+            headers: {
+                'Authorization': authorization,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Get Section
+     * @param moduleId
+     * @param sectionId
+     * @param authorization
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public static getSectionModulesModuleIdSectionsSectionIdGet(
+        moduleId: string,
+        sectionId: string,
+        authorization?: (string | null),
+    ): CancelablePromise<(SectionDetail | StudentSectionDetail)> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/modules/{module_id}/sections/{section_id}',
+            path: {
+                'module_id': moduleId,
+                'section_id': sectionId,
+            },
+            headers: {
+                'Authorization': authorization,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
     /**
      * List Assets
      * @param moduleId
@@ -67,6 +123,37 @@ export class ContentService {
             },
             formData: formData,
             mediaType: 'multipart/form-data',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Get Asset Download Url
+     * @param moduleId
+     * @param sectionId
+     * @param assetId
+     * @param authorization
+     * @returns AssetDownloadUrl Successful Response
+     * @throws ApiError
+     */
+    public static getAssetDownloadUrlModulesModuleIdSectionsSectionIdAssetsAssetIdDownloadUrlGet(
+        moduleId: string,
+        sectionId: string,
+        assetId: string,
+        authorization?: (string | null),
+    ): CancelablePromise<AssetDownloadUrl> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/modules/{module_id}/sections/{section_id}/assets/{asset_id}/download-url',
+            path: {
+                'module_id': moduleId,
+                'section_id': sectionId,
+                'asset_id': assetId,
+            },
+            headers: {
+                'Authorization': authorization,
+            },
             errors: {
                 422: `Validation Error`,
             },

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import inspect
+from datetime import UTC, datetime, timedelta
 from io import BytesIO
 from uuid import UUID, uuid4
 
@@ -45,6 +46,7 @@ class FakeStorageProvider:
         self.objects: dict[str, bytes] = {}
         self.put_calls: list[str] = []
         self.delete_calls: list[str] = []
+        self.signed_url_calls: list[tuple[str, int]] = []
         self.fail_put: Exception | None = None
         self.fail_delete = False
 
@@ -80,6 +82,7 @@ class FakeStorageProvider:
         key: str,
         expires_in_seconds: int,
     ) -> str:
+        self.signed_url_calls.append((key, expires_in_seconds))
         return f"https://storage.example/{key}?ttl={expires_in_seconds}"
 
 
@@ -162,6 +165,29 @@ async def _create_section(
     session.add(section)
     await session.flush()
     return section
+
+
+async def _create_asset(
+    session: AsyncSession,
+    *,
+    section_id: UUID,
+    uploaded_by_user_id: UUID,
+    file_name: str = "slides.pdf",
+    processing_status: str = "completed",
+) -> SectionAsset:
+    asset = SectionAsset(
+        module_section_id=section_id,
+        storage_key=f"modules/test/{uuid4()}.pdf",
+        file_name=file_name,
+        mime_type="application/pdf",
+        file_size=len(PDF_BYTES),
+        checksum_sha256=hashlib.sha256(PDF_BYTES).hexdigest(),
+        processing_status=processing_status,
+        uploaded_by_user_id=uploaded_by_user_id,
+    )
+    session.add(asset)
+    await session.flush()
+    return asset
 
 
 def _headers(user: AppUser, jwt_factory) -> dict[str, str]:
@@ -725,6 +751,370 @@ async def test_publish_unpublish_and_notes_round_trip(
     assert null_clear_response.json()["lecturerNotes"] is None
     assert persisted is not None
     assert persisted.lecturer_notes is None
+
+
+@pytest.mark.anyio
+async def test_student_reads_only_published_sections_and_completed_assets(
+    auth_client: AsyncClient,
+    db_session: AsyncSession,
+    jwt_factory,
+    mock_jwks_client,
+) -> None:
+    lecturer = await _create_user(db_session, email="student-read-lecturer@example.com", role="lecturer")
+    student = await _create_user(db_session, email="student-read-student@example.com")
+    admin = await _create_user(db_session, email="student-read-admin@example.com", role="admin")
+    module = await _create_module(db_session, owner_id=lecturer.id)
+    other_module = await _create_module(db_session, owner_id=lecturer.id, title="Hidden Module")
+    await _create_membership(db_session, user_id=lecturer.id, module_id=module.id, role="lecturer")
+    await _create_membership(db_session, user_id=student.id, module_id=module.id, role="student")
+
+    later_published = await _create_section(
+        db_session,
+        module_id=module.id,
+        title="Later",
+        order_index=2,
+        publish_status="published",
+        lecturer_notes="   ",
+    )
+    visible = await _create_section(
+        db_session,
+        module_id=module.id,
+        title="Visible",
+        order_index=1,
+        publish_status="published",
+        lecturer_notes="Read this first",
+    )
+    draft = await _create_section(
+        db_session,
+        module_id=module.id,
+        title="Draft",
+        order_index=3,
+        publish_status="draft",
+    )
+    unpublished = await _create_section(
+        db_session,
+        module_id=module.id,
+        title="Unpublished",
+        order_index=4,
+        publish_status="unpublished",
+    )
+    archived = await _create_section(
+        db_session,
+        module_id=module.id,
+        title="Archived",
+        order_index=5,
+        publish_status="published",
+        status="archived",
+    )
+    other_section = await _create_section(
+        db_session,
+        module_id=other_module.id,
+        title="Other",
+        publish_status="published",
+    )
+    completed_asset = await _create_asset(
+        db_session,
+        section_id=visible.id,
+        uploaded_by_user_id=lecturer.id,
+        file_name="visible.pdf",
+    )
+    earlier_asset = await _create_asset(
+        db_session,
+        section_id=visible.id,
+        uploaded_by_user_id=lecturer.id,
+        file_name="earlier.pdf",
+    )
+    later_asset = await _create_asset(
+        db_session,
+        section_id=visible.id,
+        uploaded_by_user_id=lecturer.id,
+        file_name="later.pdf",
+    )
+    earlier_asset.created_at = datetime.now(UTC) - timedelta(minutes=2)
+    completed_asset.created_at = datetime.now(UTC) - timedelta(minutes=1)
+    later_asset.created_at = datetime.now(UTC)
+    processing_asset = await _create_asset(
+        db_session,
+        section_id=visible.id,
+        uploaded_by_user_id=lecturer.id,
+        file_name="processing.pdf",
+        processing_status="processing",
+    )
+    await _create_asset(
+        db_session,
+        section_id=draft.id,
+        uploaded_by_user_id=lecturer.id,
+        file_name="draft.pdf",
+    )
+    await _create_asset(
+        db_session,
+        section_id=later_published.id,
+        uploaded_by_user_id=lecturer.id,
+        file_name="not-ready.pdf",
+        processing_status="uploaded",
+    )
+
+    student_headers = _headers(student, jwt_factory)
+    list_response = await auth_client.get(
+        f"/modules/{module.id}/sections",
+        headers=student_headers,
+    )
+    detail_response = await auth_client.get(
+        f"/modules/{module.id}/sections/{visible.id}",
+        headers=student_headers,
+    )
+
+    assert list_response.status_code == 200
+    assert list_response.json() == [
+        {
+            "id": str(visible.id),
+            "title": "Visible",
+            "type": "lecture",
+            "orderIndex": 1,
+            "hasAssets": True,
+            "hasNotes": True,
+        },
+        {
+            "id": str(later_published.id),
+            "title": "Later",
+            "type": "lecture",
+            "orderIndex": 2,
+            "hasAssets": False,
+            "hasNotes": False,
+        },
+    ]
+    assert detail_response.status_code == 200
+    assert detail_response.json() == {
+        "id": str(visible.id),
+        "title": "Visible",
+        "type": "lecture",
+        "orderIndex": 1,
+        "lecturerNotes": "Read this first",
+        "assets": [
+            {
+                "id": str(earlier_asset.id),
+                "fileName": "earlier.pdf",
+                "mimeType": "application/pdf",
+                "fileSize": len(PDF_BYTES),
+            },
+            {
+                "id": str(completed_asset.id),
+                "fileName": "visible.pdf",
+                "mimeType": "application/pdf",
+                "fileSize": len(PDF_BYTES),
+            },
+            {
+                "id": str(later_asset.id),
+                "fileName": "later.pdf",
+                "mimeType": "application/pdf",
+                "fileSize": len(PDF_BYTES),
+            }
+        ],
+    }
+    response_text = detail_response.text
+    assert "storageKey" not in response_text
+    assert "processingStatus" not in response_text
+    assert "publishStatus" not in response_text
+    assert str(processing_asset.id) not in response_text
+
+    for section in (draft, unpublished, archived):
+        hidden_response = await auth_client.get(
+            f"/modules/{module.id}/sections/{section.id}",
+            headers=student_headers,
+        )
+        assert hidden_response.status_code == 404
+        assert hidden_response.json()["detail"] == "SECTION_NOT_FOUND"
+
+    unassigned_response = await auth_client.get(
+        f"/modules/{other_module.id}/sections/{other_section.id}",
+        headers=student_headers,
+    )
+    admin_response = await auth_client.get(
+        f"/modules/{module.id}/sections",
+        headers=_headers(admin, jwt_factory),
+    )
+
+    assert unassigned_response.status_code == 404
+    assert admin_response.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_signed_download_url_is_role_aware_and_revalidated_live(
+    auth_client: AsyncClient,
+    db_session: AsyncSession,
+    jwt_factory,
+    mock_jwks_client,
+    fake_storage: FakeStorageProvider,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SIGNED_READ_URL_TTL_SECONDS", "300")
+    lecturer = await _create_user(db_session, email="download-lecturer@example.com", role="lecturer")
+    student = await _create_user(db_session, email="download-student@example.com")
+    module = await _create_module(db_session, owner_id=lecturer.id)
+    await _create_membership(db_session, user_id=lecturer.id, module_id=module.id, role="lecturer")
+    await _create_membership(db_session, user_id=student.id, module_id=module.id, role="student")
+    section = await _create_section(
+        db_session,
+        module_id=module.id,
+        publish_status="published",
+    )
+    draft_section = await _create_section(
+        db_session,
+        module_id=module.id,
+        order_index=1,
+        publish_status="draft",
+    )
+    archived_section = await _create_section(
+        db_session,
+        module_id=module.id,
+        order_index=2,
+        publish_status="published",
+        status="archived",
+    )
+    asset = await _create_asset(db_session, section_id=section.id, uploaded_by_user_id=lecturer.id)
+    draft_asset = await _create_asset(
+        db_session,
+        section_id=draft_section.id,
+        uploaded_by_user_id=lecturer.id,
+    )
+    archived_asset = await _create_asset(
+        db_session,
+        section_id=archived_section.id,
+        uploaded_by_user_id=lecturer.id,
+    )
+    processing_asset = await _create_asset(
+        db_session,
+        section_id=section.id,
+        uploaded_by_user_id=lecturer.id,
+        processing_status="processing",
+    )
+
+    student_headers = _headers(student, jwt_factory)
+    lecturer_headers = _headers(lecturer, jwt_factory)
+    student_response = await auth_client.get(
+        f"/modules/{module.id}/sections/{section.id}/assets/{asset.id}/download-url",
+        headers=student_headers,
+    )
+    draft_response = await auth_client.get(
+        f"/modules/{module.id}/sections/{draft_section.id}/assets/{draft_asset.id}/download-url",
+        headers=student_headers,
+    )
+    processing_response = await auth_client.get(
+        f"/modules/{module.id}/sections/{section.id}/assets/{processing_asset.id}/download-url",
+        headers=student_headers,
+    )
+    lecturer_response = await auth_client.get(
+        f"/modules/{module.id}/sections/{draft_section.id}/assets/{draft_asset.id}/download-url",
+        headers=lecturer_headers,
+    )
+    archived_lecturer_response = await auth_client.get(
+        f"/modules/{module.id}/sections/{archived_section.id}/assets/{archived_asset.id}/download-url",
+        headers=lecturer_headers,
+    )
+
+    assert student_response.status_code == 200
+    assert student_response.headers["cache-control"] == "no-store"
+    assert student_response.json()["url"] == f"https://storage.example/{asset.storage_key}?ttl=300"
+    assert student_response.json()["expiresAt"].endswith("Z")
+    assert fake_storage.signed_url_calls[0] == (asset.storage_key, 300)
+    assert "storageKey" not in student_response.text
+    assert draft_response.status_code == 404
+    assert processing_response.status_code == 404
+    assert lecturer_response.status_code == 200
+    assert archived_lecturer_response.status_code == 409
+    assert archived_lecturer_response.json()["detail"] == "SECTION_ARCHIVED"
+
+    unpublish_response = await auth_client.post(
+        f"/modules/{module.id}/sections/{section.id}/unpublish",
+        headers=lecturer_headers,
+    )
+    revalidated_response = await auth_client.get(
+        f"/modules/{module.id}/sections/{section.id}/assets/{asset.id}/download-url",
+        headers=student_headers,
+    )
+
+    assert unpublish_response.status_code == 200
+    assert revalidated_response.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_lecturer_sections_include_all_active_publish_states_and_student_writes_stay_forbidden(
+    auth_client: AsyncClient,
+    db_session: AsyncSession,
+    jwt_factory,
+    mock_jwks_client,
+    fake_storage: FakeStorageProvider,
+) -> None:
+    lecturer = await _create_user(db_session, email="role-list-lecturer@example.com", role="lecturer")
+    student = await _create_user(db_session, email="role-list-student@example.com")
+    module = await _create_module(db_session, owner_id=lecturer.id)
+    await _create_membership(db_session, user_id=lecturer.id, module_id=module.id, role="lecturer")
+    await _create_membership(db_session, user_id=student.id, module_id=module.id, role="student")
+    published = await _create_section(
+        db_session,
+        module_id=module.id,
+        title="Published",
+        order_index=0,
+        publish_status="published",
+    )
+    draft = await _create_section(
+        db_session,
+        module_id=module.id,
+        title="Draft",
+        order_index=1,
+        publish_status="draft",
+    )
+    unpublished = await _create_section(
+        db_session,
+        module_id=module.id,
+        title="Unpublished",
+        order_index=2,
+        publish_status="unpublished",
+    )
+    asset = await _create_asset(db_session, section_id=published.id, uploaded_by_user_id=lecturer.id)
+
+    lecturer_response = await auth_client.get(
+        f"/modules/{module.id}/sections",
+        headers=_headers(lecturer, jwt_factory),
+    )
+    student_headers = _headers(student, jwt_factory)
+    write_responses = [
+        await auth_client.post(
+            f"/modules/{module.id}/sections/{published.id}/assets",
+            files=_pdf_file(),
+            headers=student_headers,
+        ),
+        await auth_client.put(
+            f"/modules/{module.id}/sections/{published.id}/assets/{asset.id}",
+            files=_pdf_file("replace.pdf"),
+            headers=student_headers,
+        ),
+        await auth_client.post(
+            f"/modules/{module.id}/sections/{published.id}/publish",
+            headers=student_headers,
+        ),
+        await auth_client.post(
+            f"/modules/{module.id}/sections/{published.id}/unpublish",
+            headers=student_headers,
+        ),
+        await auth_client.patch(
+            f"/modules/{module.id}/sections/{published.id}/notes",
+            json={"lecturerNotes": "nope"},
+            headers=student_headers,
+        ),
+    ]
+
+    assert lecturer_response.status_code == 200
+    assert [row["id"] for row in lecturer_response.json()] == [
+        str(published.id),
+        str(draft.id),
+        str(unpublished.id),
+    ]
+    assert all("publishStatus" not in row for row in lecturer_response.json())
+    for response in write_responses:
+        assert response.status_code == 403
+        assert response.json()["detail"] == "CONTENT_FORBIDDEN"
+    assert fake_storage.put_calls == []
 
 
 @pytest.mark.anyio

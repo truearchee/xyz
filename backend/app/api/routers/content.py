@@ -1,27 +1,34 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.datastructures import UploadFile as StarletteUploadFile
 
 from app.domains.content.schemas import (
+    AssetDownloadUrl,
     SectionAssetListResponse,
     SectionAssetResponse,
     SectionDetail,
+    SectionListItem,
+    StudentSectionDetail,
     UpdateSectionNotesRequest,
 )
 from app.domains.content.service import (
     authorize_lecturer_section,
+    create_asset_download_url,
+    get_module_section_detail,
     list_section_assets,
+    list_module_sections,
     publish_section,
     replace_section_asset,
     unpublish_section,
     update_section_notes,
     upload_section_asset,
 )
-from app.platform.auth.context import CurrentUserContext
+from app.platform.auth.context import CurrentUserContext, ModuleAccessContext
 from app.platform.auth.dependencies import get_current_user
+from app.platform.auth.guards import require_module_access
 from app.platform.db.session import get_db_session
 from app.platform.storage import StorageProvider, get_storage_provider
 
@@ -30,6 +37,7 @@ router = APIRouter(tags=["content"])
 
 DbSession = Annotated[AsyncSession, Depends(get_db_session)]
 CurrentUser = Annotated[CurrentUserContext, Depends(get_current_user)]
+ModuleAccess = Annotated[ModuleAccessContext, Depends(require_module_access)]
 Storage = Annotated[StorageProvider, Depends(get_storage_provider)]
 
 _MULTIPART_FILE_OPENAPI = {
@@ -64,6 +72,32 @@ async def _extract_multipart_file(request: Request) -> UploadFile:
     return file
 
 
+@router.get("/modules/{module_id}/sections", response_model=list[SectionListItem])
+async def list_sections(
+    module_id: UUID,
+    db: DbSession,
+    module_access: ModuleAccess,
+) -> list[SectionListItem]:
+    return await list_module_sections(db, module_access=module_access)
+
+
+@router.get(
+    "/modules/{module_id}/sections/{section_id}",
+    response_model=SectionDetail | StudentSectionDetail,
+)
+async def get_section(
+    module_id: UUID,
+    section_id: UUID,
+    db: DbSession,
+    module_access: ModuleAccess,
+) -> SectionDetail | StudentSectionDetail:
+    return await get_module_section_detail(
+        db,
+        module_access=module_access,
+        section_id=section_id,
+    )
+
+
 @router.get(
     "/modules/{module_id}/sections/{section_id}/assets",
     response_model=SectionAssetListResponse,
@@ -81,6 +115,30 @@ async def list_assets(
         section_id=section_id,
     )
     return SectionAssetListResponse(assets=assets)
+
+
+@router.get(
+    "/modules/{module_id}/sections/{section_id}/assets/{asset_id}/download-url",
+    response_model=AssetDownloadUrl,
+)
+async def get_asset_download_url(
+    module_id: UUID,
+    section_id: UUID,
+    asset_id: UUID,
+    response: Response,
+    db: DbSession,
+    module_access: ModuleAccess,
+    storage_provider: Storage,
+) -> AssetDownloadUrl:
+    download_url = await create_asset_download_url(
+        db,
+        module_access=module_access,
+        storage_provider=storage_provider,
+        section_id=section_id,
+        asset_id=asset_id,
+    )
+    response.headers["Cache-Control"] = "no-store"
+    return download_url
 
 
 @router.post(
