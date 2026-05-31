@@ -19,3 +19,4 @@ Format: `YYYY-MM-DD  [type]  summary  (#stage.session)` — type: spec | plan | 
 2026-05-30 23:42  [fix]  implement session 3.1 completion patch; Docker verification blocked by unavailable daemon  (#3.1)
 2026-05-31 00:03  [report]  accept session 3.1 file upload after Docker verification; backend 60 passed, frontend type-check passed, and diff check passed  (#3.1)
 2026-05-31 00:06  [report]  correct session 3.1 closure evidence to current rebuilt-container results: backend 65 passed, content 13 passed, frontend type-check passed  (#3.1)
+2026-05-31 14:36  [report]  complete session 3.2 publish/unpublish and lecturer notes; backend 69 passed, content 17 passed, frontend type-check passed  (#3.2)

@@ -2,7 +2,7 @@
 type: architecture
 stage: 02
 created: 2026-05-29
-updated: 2026-05-30 23:42
+updated: 2026-05-31 14:36
 related-session: knowledge/specs/stage-02/2.1-db-spine.md
 ---
 
@@ -14,6 +14,8 @@ related-session: knowledge/specs/stage-02/2.1-db-spine.md
 - Report: [[steps/stage-02/2.1-db-spine]]
 - Spec: [[specs/stage-03/3.1-file-upload]]
 - Report: [[steps/stage-03/3.1-file-upload]]
+- Spec: [[specs/stage-03/3.2-publish-and-notes]]
+- Report: [[steps/stage-03/3.2-publish-and-notes]]
 - Architecture: [[architecture/storage]]
 
 ## Current structure
@@ -32,6 +34,11 @@ The backend now has a SQLAlchemy declarative model package under `backend/app/pl
 - `section_assets.uploaded_by_user_id` points at `app_users(id)` and is updated on replace.
 - `section_assets.processing_status` is technical file state and remains separate from `module_sections.publish_status`, which controls student visibility in later Stage 3 work.
 - Section asset list responses are read through `platform/query/content_read.py` projection rows; write behavior remains in the content domain service.
+
+## Section publish and notes behavior
+- `module_sections.publish_status` is a service-managed visibility state with values `draft`, `published`, and `unpublished`; `draft` is initial-only.
+- `module_sections.lecturer_notes` stores shared plain-text lecturer notes for the section and uses `NULL` as the canonical empty value.
+- Session 3.2 implements behavior only; no schema change or `published_at` field was added.
 
 ## ID strategy
 All primary keys are PostgreSQL `UUID` columns with no database-side default. Application models generate UUIDv7 values through `uuid6.uuid7`, keeping IDs time-ordered while avoiding `gen_random_uuid()` defaults.

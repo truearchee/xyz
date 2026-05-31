@@ -12,13 +12,16 @@ from uuid6 import uuid7
 
 from app.domains.content.validators import (
     InvalidPdfError,
+    SectionNotesTooLongError,
     UploadTooLargeError,
+    normalize_section_notes,
     spool_and_validate_pdf,
 )
 from app.platform.auth.context import CurrentUserContext
 from app.platform.config import settings
-from app.platform.db.models import SectionAsset
+from app.platform.db.models import CourseMembership, CourseModule, ModuleSection, SectionAsset
 from app.platform.query.content_read import (
+    SectionDetailReadRow,
     SectionAssetReadRow,
     get_section_access_row,
     lecturer_has_active_module_membership,
@@ -34,9 +37,94 @@ from app.platform.storage.keys import generate_section_asset_storage_key
 
 logger = logging.getLogger(__name__)
 
+CONTENT_FORBIDDEN = "CONTENT_FORBIDDEN"
+SECTION_NOT_FOUND = "SECTION_NOT_FOUND"
+SECTION_ARCHIVED = "SECTION_ARCHIVED"
+SECTION_TRANSITION_INVALID = "SECTION_TRANSITION_INVALID"
+SECTION_NOTES_TOO_LONG = "SECTION_NOTES_TOO_LONG"
+
 
 def _http_error(status_code: int, detail: str) -> HTTPException:
     return HTTPException(status_code=status_code, detail=detail)
+
+
+def _coded_error(status_code: int, code: str) -> HTTPException:
+    return HTTPException(status_code=status_code, detail=code)
+
+
+def _section_detail_from_model(section: ModuleSection) -> SectionDetailReadRow:
+    return SectionDetailReadRow(
+        id=section.id,
+        course_module_id=section.course_module_id,
+        title=section.title,
+        type=section.type,
+        publish_status=section.publish_status,
+        lecturer_notes=section.lecturer_notes,
+        updated_at=section.updated_at,
+    )
+
+
+async def _get_assigned_lecturer_section(
+    db: AsyncSession,
+    *,
+    current_user: CurrentUserContext,
+    module_id: UUID,
+    section_id: UUID,
+    for_update: bool = False,
+) -> ModuleSection:
+    if current_user.role != "lecturer":
+        raise _coded_error(status.HTTP_403_FORBIDDEN, CONTENT_FORBIDDEN)
+
+    query = (
+        select(ModuleSection)
+        .join(CourseModule, ModuleSection.course_module_id == CourseModule.id)
+        .join(CourseMembership, CourseMembership.module_id == CourseModule.id)
+        .where(
+            ModuleSection.id == section_id,
+            ModuleSection.course_module_id == module_id,
+            CourseMembership.user_id == current_user.user_id,
+            CourseMembership.role == "lecturer",
+            CourseMembership.status == "active",
+            CourseModule.is_active.is_(True),
+        )
+    )
+    if for_update:
+        query = query.with_for_update(of=ModuleSection)
+
+    section = await db.scalar(query)
+    if section is None:
+        raise _coded_error(status.HTTP_404_NOT_FOUND, SECTION_NOT_FOUND)
+
+    if section.status == "archived":
+        raise _coded_error(status.HTTP_409_CONFLICT, SECTION_ARCHIVED)
+
+    return section
+
+
+def resolve_publish_status_transition(current_status: str, target_status: str) -> str:
+    if target_status == "draft":
+        raise _coded_error(
+            422,
+            SECTION_TRANSITION_INVALID,
+        )
+
+    if target_status == "published":
+        if current_status in {"draft", "published", "unpublished"}:
+            return "published"
+
+    if target_status == "unpublished":
+        if current_status == "draft":
+            raise _coded_error(
+                422,
+                SECTION_TRANSITION_INVALID,
+            )
+        if current_status in {"published", "unpublished"}:
+            return "unpublished"
+
+    raise _coded_error(
+        422,
+        SECTION_TRANSITION_INVALID,
+    )
 
 
 async def authorize_lecturer_section(
@@ -275,3 +363,113 @@ async def replace_section_asset(
         )
 
     return asset
+
+
+async def set_section_publish_status(
+    db: AsyncSession,
+    *,
+    current_user: CurrentUserContext,
+    module_id: UUID,
+    section_id: UUID,
+    target_status: str,
+) -> SectionDetailReadRow:
+    section = await _get_assigned_lecturer_section(
+        db,
+        current_user=current_user,
+        module_id=module_id,
+        section_id=section_id,
+        for_update=True,
+    )
+    next_status = resolve_publish_status_transition(
+        section.publish_status,
+        target_status,
+    )
+    if next_status == section.publish_status:
+        return _section_detail_from_model(section)
+
+    section.publish_status = next_status
+    section.updated_at = datetime.now(UTC)
+    try:
+        await db.commit()
+    except SQLAlchemyError as exc:
+        await db.rollback()
+        raise _http_error(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            "Could not update section publish status",
+        ) from exc
+
+    await db.refresh(section)
+    return _section_detail_from_model(section)
+
+
+async def publish_section(
+    db: AsyncSession,
+    *,
+    current_user: CurrentUserContext,
+    module_id: UUID,
+    section_id: UUID,
+) -> SectionDetailReadRow:
+    return await set_section_publish_status(
+        db,
+        current_user=current_user,
+        module_id=module_id,
+        section_id=section_id,
+        target_status="published",
+    )
+
+
+async def unpublish_section(
+    db: AsyncSession,
+    *,
+    current_user: CurrentUserContext,
+    module_id: UUID,
+    section_id: UUID,
+) -> SectionDetailReadRow:
+    return await set_section_publish_status(
+        db,
+        current_user=current_user,
+        module_id=module_id,
+        section_id=section_id,
+        target_status="unpublished",
+    )
+
+
+async def update_section_notes(
+    db: AsyncSession,
+    *,
+    current_user: CurrentUserContext,
+    module_id: UUID,
+    section_id: UUID,
+    lecturer_notes: str | None,
+) -> SectionDetailReadRow:
+    section = await _get_assigned_lecturer_section(
+        db,
+        current_user=current_user,
+        module_id=module_id,
+        section_id=section_id,
+        for_update=True,
+    )
+    try:
+        normalized_notes = normalize_section_notes(lecturer_notes)
+    except SectionNotesTooLongError as exc:
+        raise _coded_error(
+            422,
+            SECTION_NOTES_TOO_LONG,
+        ) from exc
+
+    if normalized_notes == section.lecturer_notes:
+        return _section_detail_from_model(section)
+
+    section.lecturer_notes = normalized_notes
+    section.updated_at = datetime.now(UTC)
+    try:
+        await db.commit()
+    except SQLAlchemyError as exc:
+        await db.rollback()
+        raise _http_error(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            "Could not update section notes",
+        ) from exc
+
+    await db.refresh(section)
+    return _section_detail_from_model(section)

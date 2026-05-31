@@ -18,7 +18,9 @@ export type { ModuleSummary } from './models/ModuleSummary';
 export type { ResetPasswordRequest } from './models/ResetPasswordRequest';
 export type { SectionAssetListResponse } from './models/SectionAssetListResponse';
 export type { SectionAssetResponse } from './models/SectionAssetResponse';
+export type { SectionDetail } from './models/SectionDetail';
 export type { StatusResponse } from './models/StatusResponse';
+export type { UpdateSectionNotesRequest } from './models/UpdateSectionNotesRequest';
 export type { UserResponse } from './models/UserResponse';
 export type { ValidationError } from './models/ValidationError';
 

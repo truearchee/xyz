@@ -30,3 +30,17 @@ class SectionAssetResponse(CamelModel):
 
 class SectionAssetListResponse(CamelModel):
     assets: list[SectionAssetResponse]
+
+
+class UpdateSectionNotesRequest(CamelModel):
+    lecturer_notes: str | None
+
+
+class SectionDetail(CamelModel):
+    id: UUID
+    course_module_id: UUID
+    title: str
+    type: str
+    publish_status: str
+    lecturer_notes: str | None
+    updated_at: datetime

@@ -5,11 +5,19 @@ from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, stat
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.datastructures import UploadFile as StarletteUploadFile
 
-from app.domains.content.schemas import SectionAssetListResponse, SectionAssetResponse
+from app.domains.content.schemas import (
+    SectionAssetListResponse,
+    SectionAssetResponse,
+    SectionDetail,
+    UpdateSectionNotesRequest,
+)
 from app.domains.content.service import (
     authorize_lecturer_section,
     list_section_assets,
+    publish_section,
     replace_section_asset,
+    unpublish_section,
+    update_section_notes,
     upload_section_asset,
 )
 from app.platform.auth.context import CurrentUserContext
@@ -137,4 +145,60 @@ async def replace_asset(
         asset_id=asset_id,
         upload=file,
         authorize=False,
+    )
+
+
+@router.patch(
+    "/modules/{module_id}/sections/{section_id}/notes",
+    response_model=SectionDetail,
+)
+async def update_notes(
+    module_id: UUID,
+    section_id: UUID,
+    payload: UpdateSectionNotesRequest,
+    db: DbSession,
+    current_user: CurrentUser,
+) -> SectionDetail:
+    return await update_section_notes(
+        db,
+        current_user=current_user,
+        module_id=module_id,
+        section_id=section_id,
+        lecturer_notes=payload.lecturer_notes,
+    )
+
+
+@router.post(
+    "/modules/{module_id}/sections/{section_id}/publish",
+    response_model=SectionDetail,
+)
+async def publish(
+    module_id: UUID,
+    section_id: UUID,
+    db: DbSession,
+    current_user: CurrentUser,
+) -> SectionDetail:
+    return await publish_section(
+        db,
+        current_user=current_user,
+        module_id=module_id,
+        section_id=section_id,
+    )
+
+
+@router.post(
+    "/modules/{module_id}/sections/{section_id}/unpublish",
+    response_model=SectionDetail,
+)
+async def unpublish(
+    module_id: UUID,
+    section_id: UUID,
+    db: DbSession,
+    current_user: CurrentUser,
+) -> SectionDetail:
+    return await unpublish_section(
+        db,
+        current_user=current_user,
+        module_id=module_id,
+        section_id=section_id,
     )

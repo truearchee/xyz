@@ -14,6 +14,7 @@ PDF_MIME_TYPE = "application/pdf"
 _CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f]")
 _MAX_FILENAME_LENGTH = 255
 _CHUNK_SIZE = 1024 * 1024
+MAX_SECTION_NOTES_CHARACTERS = 5000
 
 
 class InvalidPdfError(ValueError):
@@ -21,6 +22,10 @@ class InvalidPdfError(ValueError):
 
 
 class UploadTooLargeError(ValueError):
+    pass
+
+
+class SectionNotesTooLongError(ValueError):
     pass
 
 
@@ -85,3 +90,14 @@ async def spool_and_validate_pdf(
         file_size=total,
         checksum_sha256=sha256.hexdigest(),
     )
+
+
+def normalize_section_notes(notes: str | None) -> str | None:
+    if notes is None:
+        return None
+    normalized = notes.replace("\r\n", "\n").replace("\r", "\n").strip()
+    if normalized == "":
+        return None
+    if len(normalized) > MAX_SECTION_NOTES_CHARACTERS:
+        raise SectionNotesTooLongError("Section notes exceed the configured limit")
+    return normalized

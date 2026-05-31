@@ -5,7 +5,7 @@ import inspect
 from io import BytesIO
 from uuid import UUID, uuid4
 
-from fastapi import UploadFile
+from fastapi import HTTPException, UploadFile
 from httpx import AsyncClient
 import pytest
 from sqlalchemy import select
@@ -89,12 +89,14 @@ async def _create_user(
     email: str,
     role: str = "student",
     auth_provider_id: str | None = None,
+    is_active: bool = True,
 ) -> AppUser:
     user = AppUser(
         auth_provider_id=auth_provider_id or f"provider-{uuid4()}",
         email=email,
         full_name="Test User",
         role=role,
+        is_active=is_active,
         timezone="UTC",
     )
     session.add(user)
@@ -144,14 +146,18 @@ async def _create_section(
     title: str = "Lecture 1",
     section_type: str = "lecture",
     order_index: int = 0,
+    publish_status: str = "draft",
+    lecturer_notes: str | None = None,
+    status: str = "active",
 ) -> ModuleSection:
     section = ModuleSection(
         course_module_id=module_id,
         title=title,
         type=section_type,
         order_index=order_index,
-        publish_status="draft",
-        status="active",
+        publish_status=publish_status,
+        lecturer_notes=lecturer_notes,
+        status=status,
     )
     session.add(section)
     await session.flush()
@@ -625,3 +631,260 @@ def test_replace_asset_query_uses_row_lock_for_concurrent_replaces() -> None:
     source = inspect.getsource(content_service.replace_section_asset)
 
     assert ".with_for_update()" in source
+
+
+def test_publish_transition_matrix_and_internal_draft_rejection() -> None:
+    assert content_service.resolve_publish_status_transition("draft", "published") == "published"
+    assert (
+        content_service.resolve_publish_status_transition("published", "published")
+        == "published"
+    )
+    assert (
+        content_service.resolve_publish_status_transition("unpublished", "published")
+        == "published"
+    )
+    assert (
+        content_service.resolve_publish_status_transition("published", "unpublished")
+        == "unpublished"
+    )
+    assert (
+        content_service.resolve_publish_status_transition("unpublished", "unpublished")
+        == "unpublished"
+    )
+
+    with pytest.raises(HTTPException) as draft_unpublish:
+        content_service.resolve_publish_status_transition("draft", "unpublished")
+    assert draft_unpublish.value.status_code == 422
+    assert draft_unpublish.value.detail == "SECTION_TRANSITION_INVALID"
+
+    with pytest.raises(HTTPException) as internal_draft:
+        content_service.resolve_publish_status_transition("published", "draft")
+    assert internal_draft.value.status_code == 422
+    assert internal_draft.value.detail == "SECTION_TRANSITION_INVALID"
+
+
+@pytest.mark.anyio
+async def test_publish_unpublish_and_notes_round_trip(
+    auth_client: AsyncClient,
+    db_session: AsyncSession,
+    jwt_factory,
+    mock_jwks_client,
+) -> None:
+    lecturer = await _create_user(db_session, email="publish-lecturer@example.com", role="lecturer")
+    module = await _create_module(db_session, owner_id=lecturer.id)
+    await _create_membership(
+        db_session,
+        user_id=lecturer.id,
+        module_id=module.id,
+        role="lecturer",
+    )
+    section = await _create_section(db_session, module_id=module.id)
+    headers = _headers(lecturer, jwt_factory)
+
+    publish_response = await auth_client.post(
+        f"/modules/{module.id}/sections/{section.id}/publish",
+        headers=headers,
+    )
+    unpublish_response = await auth_client.post(
+        f"/modules/{module.id}/sections/{section.id}/unpublish",
+        headers=headers,
+    )
+    republish_response = await auth_client.post(
+        f"/modules/{module.id}/sections/{section.id}/publish",
+        headers=headers,
+    )
+    notes_response = await auth_client.patch(
+        f"/modules/{module.id}/sections/{section.id}/notes",
+        json={"lecturerNotes": " \r\nLine one\rLine two\n "},
+        headers=headers,
+    )
+    whitespace_clear_response = await auth_client.patch(
+        f"/modules/{module.id}/sections/{section.id}/notes",
+        json={"lecturerNotes": "   \n\t  "},
+        headers=headers,
+    )
+    null_clear_response = await auth_client.patch(
+        f"/modules/{module.id}/sections/{section.id}/notes",
+        json={"lecturerNotes": None},
+        headers=headers,
+    )
+    persisted = await db_session.get(ModuleSection, section.id)
+
+    assert publish_response.status_code == 200
+    assert publish_response.json()["publishStatus"] == "published"
+    assert publish_response.json()["courseModuleId"] == str(module.id)
+    assert unpublish_response.status_code == 200
+    assert unpublish_response.json()["publishStatus"] == "unpublished"
+    assert republish_response.status_code == 200
+    assert republish_response.json()["publishStatus"] == "published"
+    assert notes_response.status_code == 200
+    assert notes_response.json()["lecturerNotes"] == "Line one\nLine two"
+    assert whitespace_clear_response.status_code == 200
+    assert whitespace_clear_response.json()["lecturerNotes"] is None
+    assert null_clear_response.status_code == 200
+    assert null_clear_response.json()["lecturerNotes"] is None
+    assert persisted is not None
+    assert persisted.lecturer_notes is None
+
+
+@pytest.mark.anyio
+async def test_publish_notes_authz_archived_mismatch_and_validation_timing(
+    auth_client: AsyncClient,
+    db_session: AsyncSession,
+    jwt_factory,
+    mock_jwks_client,
+) -> None:
+    lecturer = await _create_user(db_session, email="matrix-lecturer@example.com", role="lecturer")
+    other_lecturer = await _create_user(
+        db_session,
+        email="matrix-other-lecturer@example.com",
+        role="lecturer",
+    )
+    inactive_lecturer = await _create_user(
+        db_session,
+        email="matrix-inactive@example.com",
+        role="lecturer",
+        is_active=False,
+    )
+    student = await _create_user(db_session, email="matrix-student@example.com")
+    admin = await _create_user(db_session, email="matrix-admin@example.com", role="admin")
+    module = await _create_module(db_session, owner_id=lecturer.id)
+    other_module = await _create_module(db_session, owner_id=other_lecturer.id, title="Other")
+    await _create_membership(
+        db_session,
+        user_id=lecturer.id,
+        module_id=module.id,
+        role="lecturer",
+    )
+    await _create_membership(
+        db_session,
+        user_id=other_lecturer.id,
+        module_id=other_module.id,
+        role="lecturer",
+    )
+    await _create_membership(
+        db_session,
+        user_id=student.id,
+        module_id=module.id,
+        role="student",
+    )
+    section = await _create_section(db_session, module_id=module.id)
+    other_section = await _create_section(db_session, module_id=other_module.id)
+    archived_section = await _create_section(
+        db_session,
+        module_id=module.id,
+        order_index=1,
+        status="archived",
+    )
+    long_notes = "x" * 5001
+
+    for user in (student, admin):
+        publish_response = await auth_client.post(
+            f"/modules/{module.id}/sections/{section.id}/publish",
+            headers=_headers(user, jwt_factory),
+        )
+        notes_response = await auth_client.patch(
+            f"/modules/{module.id}/sections/{section.id}/notes",
+            json={"lecturerNotes": long_notes},
+            headers=_headers(user, jwt_factory),
+        )
+        assert publish_response.status_code == 403
+        assert publish_response.json()["detail"] == "CONTENT_FORBIDDEN"
+        assert notes_response.status_code == 403
+        assert notes_response.json()["detail"] == "CONTENT_FORBIDDEN"
+
+    inactive_response = await auth_client.post(
+        f"/modules/{module.id}/sections/{section.id}/publish",
+        headers=_headers(inactive_lecturer, jwt_factory),
+    )
+    inaccessible_response = await auth_client.patch(
+        f"/modules/{module.id}/sections/{section.id}/notes",
+        json={"lecturerNotes": long_notes},
+        headers=_headers(other_lecturer, jwt_factory),
+    )
+    mismatch_response = await auth_client.post(
+        f"/modules/{module.id}/sections/{other_section.id}/publish",
+        headers=_headers(lecturer, jwt_factory),
+    )
+    archived_response = await auth_client.patch(
+        f"/modules/{module.id}/sections/{archived_section.id}/notes",
+        json={"lecturerNotes": "archived"},
+        headers=_headers(lecturer, jwt_factory),
+    )
+    invalid_transition_response = await auth_client.post(
+        f"/modules/{module.id}/sections/{section.id}/unpublish",
+        headers=_headers(lecturer, jwt_factory),
+    )
+    over_cap_response = await auth_client.patch(
+        f"/modules/{module.id}/sections/{section.id}/notes",
+        json={"lecturerNotes": long_notes},
+        headers=_headers(lecturer, jwt_factory),
+    )
+
+    assert inactive_response.status_code == 403
+    assert inaccessible_response.status_code == 404
+    assert inaccessible_response.json()["detail"] == "SECTION_NOT_FOUND"
+    assert mismatch_response.status_code == 404
+    assert mismatch_response.json()["detail"] == "SECTION_NOT_FOUND"
+    assert archived_response.status_code == 409
+    assert archived_response.json()["detail"] == "SECTION_ARCHIVED"
+    assert invalid_transition_response.status_code == 422
+    assert invalid_transition_response.json()["detail"] == "SECTION_TRANSITION_INVALID"
+    assert over_cap_response.status_code == 422
+    assert over_cap_response.json()["detail"] == "SECTION_NOTES_TOO_LONG"
+
+
+@pytest.mark.anyio
+async def test_publish_and_notes_no_ops_do_not_commit_or_bump_updated_at(
+    db_session: AsyncSession,
+    jwt_factory,
+    mock_jwks_client,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    lecturer = await _create_user(db_session, email="noop-lecturer@example.com", role="lecturer")
+    module = await _create_module(db_session, owner_id=lecturer.id)
+    await _create_membership(
+        db_session,
+        user_id=lecturer.id,
+        module_id=module.id,
+        role="lecturer",
+    )
+    section = await _create_section(
+        db_session,
+        module_id=module.id,
+        publish_status="published",
+        lecturer_notes="Already normalized",
+    )
+    await db_session.commit()
+    original_updated_at = section.updated_at
+    current_user = content_service.CurrentUserContext(
+        user_id=lecturer.id,
+        auth_provider_id=lecturer.auth_provider_id,
+        email=lecturer.email,
+        full_name=lecturer.full_name,
+        role=lecturer.role,
+        is_active=lecturer.is_active,
+        timezone=lecturer.timezone,
+    )
+
+    async def fail_commit() -> None:
+        raise AssertionError("no-op should return before commit")
+
+    monkeypatch.setattr(db_session, "commit", fail_commit)
+
+    publish_result = await content_service.publish_section(
+        db_session,
+        current_user=current_user,
+        module_id=module.id,
+        section_id=section.id,
+    )
+    notes_result = await content_service.update_section_notes(
+        db_session,
+        current_user=current_user,
+        module_id=module.id,
+        section_id=section.id,
+        lecturer_notes="Already normalized",
+    )
+
+    assert publish_result.updated_at == original_updated_at
+    assert notes_result.updated_at == original_updated_at

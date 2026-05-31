@@ -30,6 +30,17 @@ class SectionAssetReadRow:
     updated_at: datetime
 
 
+@dataclass(frozen=True)
+class SectionDetailReadRow:
+    id: UUID
+    course_module_id: UUID
+    title: str
+    type: str
+    publish_status: str
+    lecturer_notes: str | None
+    updated_at: datetime
+
+
 async def lecturer_has_active_module_membership(
     db: AsyncSession,
     *,
@@ -108,3 +119,45 @@ async def list_section_asset_rows(
         )
         for row in result.all()
     ]
+
+
+async def get_lecturer_section_detail_row(
+    db: AsyncSession,
+    *,
+    user_id: UUID,
+    module_id: UUID,
+    section_id: UUID,
+) -> SectionDetailReadRow | None:
+    result = await db.execute(
+        select(
+            ModuleSection.id,
+            ModuleSection.course_module_id,
+            ModuleSection.title,
+            ModuleSection.type,
+            ModuleSection.publish_status,
+            ModuleSection.lecturer_notes,
+            ModuleSection.updated_at,
+        )
+        .join(CourseModule, ModuleSection.course_module_id == CourseModule.id)
+        .join(CourseMembership, CourseMembership.module_id == CourseModule.id)
+        .where(
+            ModuleSection.id == section_id,
+            ModuleSection.course_module_id == module_id,
+            CourseMembership.user_id == user_id,
+            CourseMembership.role == "lecturer",
+            CourseMembership.status == "active",
+            CourseModule.is_active.is_(True),
+        )
+    )
+    row = result.one_or_none()
+    if row is None:
+        return None
+    return SectionDetailReadRow(
+        id=row.id,
+        course_module_id=row.course_module_id,
+        title=row.title,
+        type=row.type,
+        publish_status=row.publish_status,
+        lecturer_notes=row.lecturer_notes,
+        updated_at=row.updated_at,
+    )
