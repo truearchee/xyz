@@ -2,7 +2,7 @@
 type: architecture
 stage: 03
 created: 2026-05-30
-updated: 2026-06-01 00:18
+updated: 2026-06-01 15:03
 related-session: knowledge/specs/stage-03/3.1-file-upload.md
 ---
 
@@ -18,7 +18,11 @@ related-session: knowledge/specs/stage-03/3.1-file-upload.md
 - Spec: [[specs/stage-04/4.1-transcript-upload]]
 - Plan: [[plans/stage-04/4.1-transcript-upload]]
 - Report: [[steps/stage-04/4.1-transcript-upload]]
+- Spec: [[specs/stage-04/4.2-transcript-parse-segments]]
+- Plan: [[plans/stage-04/4.2-transcript-parse-segments]]
+- Report: [[steps/stage-04/4.2-transcript-parse-segments]]
 - Architecture: [[architecture/db-spine]]
+- Architecture: [[architecture/worker]]
 - Decision: [[decisions/adr-004-section-assets-owned-by-upload]]
 - Decision: [[decisions/adr-005-section-assets-use-storage-key]]
 - Decision: [[decisions/adr-006-section-assets-allow-multiple-files]]
@@ -27,9 +31,12 @@ related-session: knowledge/specs/stage-03/3.1-file-upload.md
 - Decision: [[decisions/adr-013-signed-read-url-download-authz]]
 - Decision: [[decisions/adr-015-transcript-upload-boundary-active-invariant]]
 - Decision: [[decisions/adr-016-transcript-file-validation-storage-metadata]]
+- Decision: [[decisions/adr-019-transcript-parse-strategy]]
 
 ## Provider boundary
 Storage access goes through `backend/app/platform/storage/base.py`. Domain code depends on the async `StorageProvider` protocol and receives a provider dependency, so upload logic does not import or construct Supabase SDK clients.
+
+Session 4.2 adds `get_object(key) -> bytes` to the same provider boundary. Workers read raw transcript bytes through this method; parse jobs do not receive raw bytes in queue payloads and do not call Supabase directly.
 
 ## Private bucket posture
 Section assets and raw transcript uploads are written to a private Supabase Storage bucket configured by `SUPABASE_STORAGE_BUCKET`. The backend stores private storage keys in database rows; clients receive freshly minted signed read URLs only for authorized section assets, not for raw transcripts in Session 4.1.

@@ -51,6 +51,26 @@ class SupabaseStorageProvider:
 
         return StoredObject(key=key, size=content_length, content_type=content_type)
 
+    async def get_object(self, *, key: str) -> bytes:
+        try:
+            bucket = await self._bucket()
+            download = bucket.download
+            if inspect.iscoroutinefunction(download):
+                response = await download(key)
+            else:
+                response = await asyncio.to_thread(download, key)
+            if inspect.isawaitable(response):
+                response = await response
+        except (TimeoutError, ConnectionError) as exc:
+            raise StorageUnavailableError("Storage provider unavailable") from exc
+        except Exception as exc:
+            raise StorageProviderError("Storage provider read failed") from exc
+
+        error = _storage_response_error(response)
+        if error is not None:
+            raise StorageProviderError(f"Storage provider read failed: {error}")
+        return _storage_response_bytes(response)
+
     async def delete_object(self, *, key: str) -> None:
         try:
             bucket = await self._bucket()
@@ -131,3 +151,28 @@ def _storage_response_error(response: Any) -> str | None:
     if isinstance(status_code, int) and status_code >= 400:
         return str(getattr(response, "message", status_code))
     return None
+
+
+def _storage_response_bytes(response: Any) -> bytes:
+    if isinstance(response, bytes):
+        return response
+    if isinstance(response, bytearray):
+        return bytes(response)
+    if isinstance(response, memoryview):
+        return response.tobytes()
+    if isinstance(response, dict):
+        data = response.get("data")
+        if isinstance(data, bytes):
+            return data
+        if isinstance(data, bytearray):
+            return bytes(data)
+        if isinstance(data, memoryview):
+            return data.tobytes()
+    data = getattr(response, "data", None)
+    if isinstance(data, bytes):
+        return data
+    if isinstance(data, bytearray):
+        return bytes(data)
+    if isinstance(data, memoryview):
+        return data.tobytes()
+    raise StorageProviderError("Storage provider read response was invalid")

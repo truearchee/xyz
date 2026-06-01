@@ -2,7 +2,7 @@
 type: architecture
 stage: 02
 created: 2026-05-29
-updated: 2026-06-01 00:18
+updated: 2026-06-01 15:03
 related-session: knowledge/specs/stage-02/2.1-db-spine.md
 ---
 
@@ -19,9 +19,16 @@ related-session: knowledge/specs/stage-02/2.1-db-spine.md
 - Spec: [[specs/stage-04/4.1-transcript-upload]]
 - Plan: [[plans/stage-04/4.1-transcript-upload]]
 - Report: [[steps/stage-04/4.1-transcript-upload]]
+- Spec: [[specs/stage-04/4.2-transcript-parse-segments]]
+- Plan: [[plans/stage-04/4.2-transcript-parse-segments]]
+- Report: [[steps/stage-04/4.2-transcript-parse-segments]]
 - Architecture: [[architecture/storage]]
+- Architecture: [[architecture/worker]]
 - Decision: [[decisions/adr-015-transcript-upload-boundary-active-invariant]]
 - Decision: [[decisions/adr-016-transcript-file-validation-storage-metadata]]
+- Decision: [[decisions/adr-017-ingestion-job-worker-spine]]
+- Decision: [[decisions/adr-018-transcript-segment-timestamps]]
+- Decision: [[decisions/adr-019-transcript-parse-strategy]]
 
 ## Current structure
 The backend now has a SQLAlchemy declarative model package under `backend/app/platform/db/models/`. Alembic imports `app.platform.db.models` to register all model metadata before migrations run.
@@ -33,6 +40,8 @@ The backend now has a SQLAlchemy declarative model package under `backend/app/pl
 - `module_sections` stores ordered module content instances and keeps scheduling fields separate.
 - `section_assets` stores private storage keys and file metadata for uploaded section PDFs. Session 3.1 migrated the Stage 2 placeholder from `file_url` to `storage_key`, added `checksum_sha256`, and records `uploaded_by_user_id` for the current stored object.
 - `transcripts` stores raw transcript upload metadata for lecture/lab sections. Session 4.1 adds the table with full lifecycle status values but only writes `status='uploaded'` and `source_type='manual_upload'`.
+- `transcript_segments` stores immutable parsed VTT/TXT output for transcripts. VTT segments use integer millisecond timestamps; TXT fallback segments have null timestamps.
+- `ingestion_jobs` tracks idempotent background ingestion work. Session 4.2 wires only `job_type='parse'`, while the table accepts later chunk/embed/summary job types.
 
 ## Section asset schema notes
 - `section_assets.storage_key` is a private object-storage path and is unique.
@@ -52,6 +61,9 @@ The backend now has a SQLAlchemy declarative model package under `backend/app/pl
 - `transcripts.uploaded_by_user_id` is nullable and points at `app_users(id)`, matching the P6-confirmed target of `section_assets.uploaded_by_user_id`.
 - `transcripts.status` and `transcripts.source_type` use `text + CHECK`, matching the existing status column convention.
 - `transcripts.checksum` stores lowercase SHA-256 over raw uploaded bytes; it is not exposed in public `TranscriptMeta`.
+- `ix_transcripts_status_created_at` supports future recovery sweeps over low-cardinality transcript states.
+- `transcript_segments.sequence_number` is assigned after empty parse output is filtered and is unique per transcript. The database enforces nonblank text, paired timestamp nullability, non-negative starts, and `end_ms > start_ms`.
+- `ingestion_jobs.idempotency_key` is unique. Parse uses `parse:{transcript_id}:{checksum}`; `processor_version` is stored as metadata and is not part of the key.
 
 ## ID strategy
 All primary keys are PostgreSQL `UUID` columns with no database-side default. Application models generate UUIDv7 values through `uuid6.uuid7`, keeping IDs time-ordered while avoiding `gen_random_uuid()` defaults.

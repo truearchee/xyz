@@ -22,6 +22,8 @@ EXPECTED_TABLES = {
     "module_sections",
     "section_assets",
     "transcripts",
+    "transcript_segments",
+    "ingestion_jobs",
 }
 EXPECTED_ID_DEFAULTS = {table: None for table in EXPECTED_TABLES}
 EXPECTED_CHECKS = {
@@ -41,6 +43,14 @@ EXPECTED_CHECKS = {
     "ck_transcripts_manual_upload_has_uploader",
     "ck_transcripts_source_type",
     "ck_transcripts_status",
+    "ck_transcript_segments_sequence_number",
+    "ck_transcript_segments_timestamp_pair",
+    "ck_transcript_segments_start_ms",
+    "ck_transcript_segments_end_ms",
+    "ck_transcript_segments_text_not_blank",
+    "ck_ingestion_jobs_job_type",
+    "ck_ingestion_jobs_status",
+    "ck_ingestion_jobs_attempts",
 }
 EXPECTED_INDEXES = {
     "ix_course_memberships_active_user_module",
@@ -51,7 +61,11 @@ EXPECTED_INDEXES = {
     "ix_section_assets_section",
     "ix_section_assets_uploader",
     "ix_transcripts_module_section_id",
+    "ix_transcripts_status_created_at",
+    "ix_ingestion_jobs_transcript_job_type",
     "uq_active_transcript_per_section",
+    "uq_ingestion_jobs_idempotency_key",
+    "uq_transcript_segments_transcript_sequence",
     "uq_transcripts_storage_key",
 }
 

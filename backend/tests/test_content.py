@@ -48,6 +48,7 @@ class FakeStorageProvider:
         self.delete_calls: list[str] = []
         self.signed_url_calls: list[tuple[str, int]] = []
         self.fail_put: Exception | None = None
+        self.fail_get: Exception | None = None
         self.fail_delete = False
 
     async def put_object(
@@ -69,6 +70,11 @@ class FakeStorageProvider:
         self.objects[key] = data
         self.put_calls.append(key)
         return StoredObject(key=key, size=content_length, content_type=content_type)
+
+    async def get_object(self, *, key: str) -> bytes:
+        if self.fail_get is not None:
+            raise self.fail_get
+        return self.objects[key]
 
     async def delete_object(self, *, key: str) -> None:
         self.delete_calls.append(key)

@@ -8,4 +8,4 @@ Format: `- [ ] <question> — raised YYYY-MM-DD (#stage.session)`
 
 ---
 
-- (none yet)
+- [x] Queue tech for Stage 4 worker sessions resolved to RQ on Redis per locked roadmap guidance and existing Stage 1 worker service — resolved 2026-06-01 by [[decisions/adr-017-ingestion-job-worker-spine]] (#4.2)

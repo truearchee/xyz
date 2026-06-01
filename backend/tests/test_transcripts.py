@@ -160,6 +160,17 @@ def fake_storage() -> FakeStorageProvider:
     return provider
 
 
+@pytest.fixture(autouse=True)
+def fake_enqueue(monkeypatch: pytest.MonkeyPatch) -> list[UUID]:
+    enqueued: list[UUID] = []
+    monkeypatch.setattr(
+        transcript_service,
+        "enqueue_parse_transcript",
+        lambda transcript_id: enqueued.append(transcript_id),
+    )
+    return enqueued
+
+
 @pytest.mark.anyio
 async def test_transcript_validator_accepts_vtt_txt_and_hashes_raw_bytes() -> None:
     vtt_upload = UploadFile(filename="../../lecture.vtt", file=BytesIO(VTT_BYTES))
@@ -221,6 +232,7 @@ async def test_assigned_lecturer_uploads_vtt_and_txt_to_lecture_and_lab(
     jwt_factory,
     mock_jwks_client,
     fake_storage: FakeStorageProvider,
+    fake_enqueue: list[UUID],
 ) -> None:
     lecturer = await _create_user(db_session, email="transcript-lecturer@example.com", role="lecturer")
     module = await _create_module(db_session, owner_id=lecturer.id)
@@ -254,15 +266,17 @@ async def test_assigned_lecturer_uploads_vtt_and_txt_to_lecture_and_lab(
     ).scalars().all()
 
     assert lecture_response.status_code == 201
-    assert lecture_response.json()["status"] == "uploaded"
+    assert lecture_response.json()["status"] == "queued"
     assert lecture_response.json()["mimeType"] == "text/vtt"
     assert lecture_response.json()["originalFileName"] == "lecture.vtt"
     assert not {"storageKey", "checksum", "isActive", "supersededAt"} & set(
         lecture_response.json()
     )
     assert lab_response.status_code == 201
+    assert lab_response.json()["status"] == "queued"
     assert lab_response.json()["mimeType"] == "text/plain"
     assert len(rows) == 2
+    assert fake_enqueue == [rows[0].id, rows[1].id]
     assert rows[0].checksum == hashlib.sha256(VTT_BYTES).hexdigest()
     assert rows[0].storage_key in fake_storage.objects
     assert fake_storage.objects[rows[0].storage_key] == VTT_BYTES
@@ -558,6 +572,7 @@ async def test_storage_and_db_failures_do_not_leave_bad_rows_or_objects(
     mock_jwks_client,
     fake_storage: FakeStorageProvider,
     monkeypatch: pytest.MonkeyPatch,
+    fake_enqueue: list[UUID],
 ) -> None:
     lecturer = await _create_user(db_session, email="failure-lecturer@example.com", role="lecturer")
     module = await _create_module(db_session, owner_id=lecturer.id)
@@ -599,6 +614,7 @@ async def test_storage_and_db_failures_do_not_leave_bad_rows_or_objects(
     assert fake_storage.delete_calls == [fake_storage.put_calls[0]]
     assert fake_storage.objects == {}
     assert rows == []
+    assert fake_enqueue == []
 
 
 @pytest.mark.anyio

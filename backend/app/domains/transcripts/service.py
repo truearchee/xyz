@@ -4,7 +4,7 @@ import logging
 from uuid import UUID
 
 from fastapi import HTTPException, UploadFile, status
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from uuid6 import uuid7
@@ -27,6 +27,7 @@ from app.platform.storage.base import (
     StorageUnavailableError,
 )
 from app.platform.storage.keys import generate_transcript_storage_key
+from app.workers.queues import enqueue_parse_transcript
 
 
 logger = logging.getLogger(__name__)
@@ -219,6 +220,8 @@ async def upload_transcript(
         validated.content.close()
 
     await db.refresh(transcript)
+    await _enqueue_parse_job(db, transcript_id=transcript.id)
+    await db.refresh(transcript)
     return transcript
 
 
@@ -245,3 +248,31 @@ async def get_active_transcript(
     if transcript is None:
         raise _coded_error(status.HTTP_404_NOT_FOUND, TRANSCRIPT_NOT_FOUND)
     return transcript
+
+
+async def _enqueue_parse_job(db: AsyncSession, *, transcript_id: UUID) -> None:
+    try:
+        enqueue_parse_transcript(transcript_id)
+    except Exception:
+        logger.warning(
+            "Failed to enqueue transcript parse job",
+            extra={"transcript_id": str(transcript_id), "job_type": "parse"},
+        )
+        return
+
+    try:
+        await db.execute(
+            update(Transcript)
+            .where(
+                Transcript.id == transcript_id,
+                Transcript.status == "uploaded",
+            )
+            .values(status="queued")
+        )
+        await db.commit()
+    except SQLAlchemyError:
+        await db.rollback()
+        logger.warning(
+            "Failed to mark transcript queued after parse enqueue",
+            extra={"transcript_id": str(transcript_id), "job_type": "parse"},
+        )
