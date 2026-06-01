@@ -36,6 +36,17 @@ class Settings:
         return value
 
     @property
+    def MAX_TRANSCRIPT_UPLOAD_BYTES(self) -> int:
+        raw_value = os.environ.get("MAX_TRANSCRIPT_UPLOAD_BYTES", "10485760")
+        try:
+            value = int(raw_value)
+        except ValueError as exc:
+            raise SettingsError("MAX_TRANSCRIPT_UPLOAD_BYTES must be an integer") from exc
+        if value <= 0:
+            raise SettingsError("MAX_TRANSCRIPT_UPLOAD_BYTES must be greater than zero")
+        return value
+
+    @property
     def SIGNED_READ_URL_TTL_SECONDS(self) -> int:
         raw_value = os.environ.get("SIGNED_READ_URL_TTL_SECONDS", "300")
         try:

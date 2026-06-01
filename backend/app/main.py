@@ -4,6 +4,7 @@ from app.api.routers.admin import router as admin_router
 from app.api.routers.content import router as content_router
 from app.api.routers.health import router as health_router
 from app.api.routers.modules import router as modules_router
+from app.api.routers.transcripts import router as transcripts_router
 
 
 def create_app() -> FastAPI:
@@ -12,6 +13,7 @@ def create_app() -> FastAPI:
     app.include_router(admin_router)
     app.include_router(content_router)
     app.include_router(modules_router)
+    app.include_router(transcripts_router)
     return app
 
 

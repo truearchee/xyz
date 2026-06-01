@@ -21,6 +21,7 @@ EXPECTED_TABLES = {
     "course_memberships",
     "module_sections",
     "section_assets",
+    "transcripts",
 }
 EXPECTED_ID_DEFAULTS = {table: None for table in EXPECTED_TABLES}
 EXPECTED_CHECKS = {
@@ -34,6 +35,12 @@ EXPECTED_CHECKS = {
     "ck_module_sections_week_number",
     "ck_section_assets_processing_status",
     "ck_section_assets_file_size",
+    "ck_transcripts_active_not_superseded",
+    "ck_transcripts_checksum_lower_hex",
+    "ck_transcripts_file_size",
+    "ck_transcripts_manual_upload_has_uploader",
+    "ck_transcripts_source_type",
+    "ck_transcripts_status",
 }
 EXPECTED_INDEXES = {
     "ix_course_memberships_active_user_module",
@@ -43,6 +50,9 @@ EXPECTED_INDEXES = {
     "ix_module_sections_module_publish_status",
     "ix_section_assets_section",
     "ix_section_assets_uploader",
+    "ix_transcripts_module_section_id",
+    "uq_active_transcript_per_section",
+    "uq_transcripts_storage_key",
 }
 
 
@@ -182,7 +192,7 @@ def test_migration_round_trip() -> None:
     _assert_success(_run_alembic("upgrade", "head"))
 
 
-def test_all_five_tables_exist_after_upgrade_head() -> None:
+def test_expected_tables_exist_after_upgrade_head() -> None:
     _assert_success(_run_alembic("upgrade", "head"))
 
     tables = asyncio.run(

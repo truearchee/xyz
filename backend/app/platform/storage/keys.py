@@ -9,3 +9,16 @@ def generate_section_asset_storage_key(
 ) -> str:
     nonce = uuid4().hex
     return f"modules/{module_id}/sections/{section_id}/assets/{asset_id}/{nonce}.pdf"
+
+
+def generate_transcript_storage_key(
+    *,
+    module_id: UUID,
+    section_id: UUID,
+    transcript_id: UUID,
+    safe_file_name: str,
+) -> str:
+    return (
+        f"modules/{module_id}/sections/{section_id}/transcripts/"
+        f"{transcript_id}/{safe_file_name}"
+    )

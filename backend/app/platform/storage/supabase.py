@@ -54,9 +54,21 @@ class SupabaseStorageProvider:
     async def delete_object(self, *, key: str) -> None:
         try:
             bucket = await self._bucket()
-            await bucket.remove([key])
-        except Exception:
-            return
+            remove = bucket.remove
+            if inspect.iscoroutinefunction(remove):
+                response = await remove([key])
+            else:
+                response = await asyncio.to_thread(remove, [key])
+            if inspect.isawaitable(response):
+                response = await response
+        except (TimeoutError, ConnectionError) as exc:
+            raise StorageUnavailableError("Storage provider unavailable") from exc
+        except Exception as exc:
+            raise StorageProviderError("Storage provider delete failed") from exc
+
+        error = _storage_response_error(response)
+        if error is not None:
+            raise StorageProviderError(f"Storage provider delete failed: {error}")
 
     async def create_signed_read_url(
         self,
@@ -102,3 +114,20 @@ async def get_storage_provider() -> SupabaseStorageProvider:
             bucket_name=settings.SUPABASE_STORAGE_BUCKET,
         )
     return _storage_provider
+
+
+def _storage_response_error(response: Any) -> str | None:
+    if isinstance(response, dict):
+        error = response.get("error")
+        if error:
+            return str(error)
+        status_code = response.get("statusCode") or response.get("status_code")
+        if isinstance(status_code, int) and status_code >= 400:
+            return str(response.get("message") or status_code)
+    error = getattr(response, "error", None)
+    if error:
+        return str(error)
+    status_code = getattr(response, "status_code", None) or getattr(response, "statusCode", None)
+    if isinstance(status_code, int) and status_code >= 400:
+        return str(getattr(response, "message", status_code))
+    return None
