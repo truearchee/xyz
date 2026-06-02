@@ -10,6 +10,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from uuid6 import uuid7
 
+from app.domains.transcripts.chunk_service import create_chunk_job_for_parse_success
 from app.domains.transcripts.parsers import ParsedSegment, route_and_parse
 from app.domains.transcripts.parsers.timestamps import validate_range
 from app.domains.transcripts.parsers.types import TranscriptParseError
@@ -21,6 +22,7 @@ from app.platform.storage.base import (
     StorageUnavailableError,
 )
 from app.platform.storage.supabase import get_storage_provider
+from app.workers.queues import enqueue_chunk_transcript
 
 
 logger = logging.getLogger(__name__)
@@ -62,7 +64,23 @@ async def parse_transcript_async(
         if not persisted_segments:
             raise TranscriptParseError("no parsable content")
         async with factory() as session:
-            await _persist_success(session, claim=claim, segments=persisted_segments)
+            chunk_job_id = await _persist_success(
+                session,
+                claim=claim,
+                segments=persisted_segments,
+            )
+        if chunk_job_id is not None:
+            try:
+                enqueue_chunk_transcript(chunk_job_id)
+            except Exception:
+                logger.warning(
+                    "Failed to enqueue transcript chunk job",
+                    extra={
+                        "transcript_id": str(claim.transcript_id),
+                        "job_id": str(chunk_job_id),
+                        "job_type": "chunk",
+                    },
+                )
     except Exception as exc:
         async with factory() as session:
             await _persist_failure(session, claim=claim, exc=exc)
@@ -138,11 +156,19 @@ async def _persist_success(
     *,
     claim: ParseClaim,
     segments: list[ParsedSegment],
-) -> None:
+) -> UUID | None:
     async with session.begin():
         job = await _lock_owned_job(session, claim)
         if job is None:
-            return
+            return None
+
+        transcript = (
+            await session.execute(
+                select(Transcript)
+                .where(Transcript.id == claim.transcript_id)
+                .with_for_update()
+            )
+        ).scalar_one()
 
         await session.execute(
             delete(TranscriptSegment).where(TranscriptSegment.transcript_id == claim.transcript_id)
@@ -165,6 +191,11 @@ async def _persist_success(
         job.completed_at = now
         job.updated_at = now
         job.error_message = None
+        return await create_chunk_job_for_parse_success(
+            session,
+            transcript=transcript,
+            parse_job=job,
+        )
 
 
 async def _persist_failure(

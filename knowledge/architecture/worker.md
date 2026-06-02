@@ -2,7 +2,7 @@
 type: architecture
 stage: 04
 created: 2026-06-01
-updated: 2026-06-01 15:03
+updated: 2026-06-01 19:58
 related-session: knowledge/specs/stage-04/4.2-transcript-parse-segments.md
 ---
 
@@ -12,15 +12,20 @@ related-session: knowledge/specs/stage-04/4.2-transcript-parse-segments.md
 - Spec: [[specs/stage-04/4.2-transcript-parse-segments]]
 - Plan: [[plans/stage-04/4.2-transcript-parse-segments]]
 - Report: [[steps/stage-04/4.2-transcript-parse-segments]]
+- Spec: [[specs/stage-04/4.3-transcript-chunking]]
+- Plan: [[plans/stage-04/4.3-transcript-chunking]]
+- Report: [[steps/stage-04/4.3-transcript-chunking]]
 - Architecture: [[architecture/db-spine]]
 - Architecture: [[architecture/storage]]
 - Decision: [[decisions/adr-017-ingestion-job-worker-spine]]
 - Decision: [[decisions/adr-019-transcript-parse-strategy]]
+- Decision: [[decisions/adr-020-transcript-chunk-normalization-versioning]]
+- Decision: [[decisions/adr-021-transcript-chunk-transactional-handoff]]
 
 ## Current worker shape
 The Docker `worker` service runs `python -m app.workers.worker`, connects to the Stage 1 Redis instance from `REDIS_URL`, and listens on the single `ingestion` RQ queue.
 
-RQ is treated as at-least-once delivery. The queue payload contains only `transcript_id`; workers re-fetch database rows and storage objects inside the handler.
+RQ is treated as at-least-once delivery. Parse queue payloads contain only `transcript_id`; chunk queue payloads contain only `ingestion_job.id`. Workers re-fetch database rows and storage objects inside the handler.
 
 ## Enqueue boundary
 Transcript upload commits the `transcripts` row first, then enqueues `parse_transcript(transcript_id)`. After enqueue succeeds, the upload service conditionally updates the transcript from `uploaded` to `queued`.
@@ -36,5 +41,12 @@ The parse handler uses three phases:
 
 The claimed-attempt guard applies on both success and failure paths. If a worker no longer owns the running attempt, it aborts without changing `transcript_segments` or `transcripts.status`.
 
+Successful parse completion now creates a queued `chunk` ingestion job in the same transaction that marks parse complete. After that commit, the handler enqueues the chunk worker by job id. If RQ enqueue fails, the queued DB row remains recoverable for Session 4.6.
+
+## Chunk handler structure
+The chunk handler locks the `chunk` `ingestion_jobs` row, marks it running, then locks the owning `transcripts` row before replacing any chunk rows. It verifies that a completed parse job exists and uses the parse job's persisted `processor_version` in the chunk idempotency key.
+
+Chunk replacement is atomic: one transaction deletes old chunks, inserts the fresh chunk set, advances the transcript to `chunking`, and completes the job with `result_metadata.chunk_count` and `result_metadata.oversized_segment_count`. If insertion fails, that transaction rolls back and preserves the prior committed chunk set. A separate cleanup transaction then marks the job and transcript failed with a sanitized error.
+
 ## Intentional gaps
-Session 4.2 does not implement retry, backoff, stale-running recovery, replacement, or supersession. A process death after upload commit can leave `uploaded`; a mid-parse crash can leave `parsing` plus `running`. Session 4.6 owns recovery.
+Session 4.3 does not implement retry, backoff, stale-running recovery, replacement, or supersession. A process death after parse commit can leave a queued chunk job that has not been enqueued to RQ; Session 4.6 owns recovery.

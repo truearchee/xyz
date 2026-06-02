@@ -5,6 +5,7 @@ from app.platform.db.models.ingestion_job import IngestionJob
 from app.platform.db.models.module_section import ModuleSection
 from app.platform.db.models.section_asset import SectionAsset
 from app.platform.db.models.transcript import Transcript
+from app.platform.db.models.transcript_chunk import TranscriptChunk
 from app.platform.db.models.transcript_segment import TranscriptSegment
 from app.platform.db.models.user import AppUser
 
@@ -17,5 +18,6 @@ __all__ = [
     "ModuleSection",
     "SectionAsset",
     "Transcript",
+    "TranscriptChunk",
     "TranscriptSegment",
 ]

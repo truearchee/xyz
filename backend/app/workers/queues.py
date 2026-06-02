@@ -22,3 +22,9 @@ def enqueue_parse_transcript(transcript_id: UUID) -> None:
     from app.domains.transcripts.jobs import parse_transcript
 
     get_ingestion_queue().enqueue(parse_transcript, str(transcript_id))
+
+
+def enqueue_chunk_transcript(ingestion_job_id: UUID) -> None:
+    from app.domains.transcripts.jobs import chunk_transcript
+
+    get_ingestion_queue().enqueue(chunk_transcript, str(ingestion_job_id))

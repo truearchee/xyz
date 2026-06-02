@@ -4,7 +4,7 @@ from datetime import datetime
 from uuid import UUID
 
 from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, Integer, Text, text
-from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID as PostgresUUID
 from sqlalchemy.orm import Mapped, mapped_column
 from uuid6 import uuid7
 
@@ -45,6 +45,7 @@ class IngestionJob(Base):
     )
     idempotency_key: Mapped[str] = mapped_column(Text, nullable=False)
     processor_version: Mapped[str | None] = mapped_column(Text)
+    result_metadata: Mapped[dict | None] = mapped_column(JSONB)
     attempts: Mapped[int] = mapped_column(
         Integer,
         nullable=False,

@@ -13,6 +13,7 @@ import jwt
 import pytest
 from sqlalchemy import text
 from sqlalchemy.engine import make_url
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.main import app
@@ -26,6 +27,7 @@ TEST_JWT_AUDIENCE = "authenticated"
 TEST_JWT_ISSUER = "https://test.supabase.co/auth/v1"
 TRUNCATE_TABLES = """
 TRUNCATE TABLE
+    transcript_chunks,
     ingestion_jobs,
     transcript_segments,
     transcripts,
@@ -36,6 +38,7 @@ TRUNCATE TABLE
     app_users
 RESTART IDENTITY CASCADE
 """
+TRUNCATE_RETRIES = 3
 
 
 @pytest.fixture(scope="session")
@@ -94,17 +97,27 @@ async def db_session(migrated_test_database: str) -> AsyncIterator[AsyncSession]
     engine = create_async_engine(migrated_test_database)
     session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     try:
-        async with engine.begin() as connection:
-            await connection.execute(text(TRUNCATE_TABLES))
+        await _truncate_test_tables(engine)
 
         async with session_factory() as session:
             yield session
             await session.rollback()
 
-        async with engine.begin() as connection:
-            await connection.execute(text(TRUNCATE_TABLES))
+        await _truncate_test_tables(engine)
     finally:
         await engine.dispose()
+
+
+async def _truncate_test_tables(engine) -> None:
+    for attempt in range(TRUNCATE_RETRIES):
+        try:
+            async with engine.begin() as connection:
+                await connection.execute(text(TRUNCATE_TABLES))
+            return
+        except DBAPIError as exc:
+            if "deadlock detected" not in str(exc).lower() or attempt == TRUNCATE_RETRIES - 1:
+                raise
+            await asyncio.sleep(0.05 * (attempt + 1))
 
 
 @pytest.fixture

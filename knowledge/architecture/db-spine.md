@@ -2,7 +2,7 @@
 type: architecture
 stage: 02
 created: 2026-05-29
-updated: 2026-06-01 15:03
+updated: 2026-06-01 19:58
 related-session: knowledge/specs/stage-02/2.1-db-spine.md
 ---
 
@@ -22,6 +22,9 @@ related-session: knowledge/specs/stage-02/2.1-db-spine.md
 - Spec: [[specs/stage-04/4.2-transcript-parse-segments]]
 - Plan: [[plans/stage-04/4.2-transcript-parse-segments]]
 - Report: [[steps/stage-04/4.2-transcript-parse-segments]]
+- Spec: [[specs/stage-04/4.3-transcript-chunking]]
+- Plan: [[plans/stage-04/4.3-transcript-chunking]]
+- Report: [[steps/stage-04/4.3-transcript-chunking]]
 - Architecture: [[architecture/storage]]
 - Architecture: [[architecture/worker]]
 - Decision: [[decisions/adr-015-transcript-upload-boundary-active-invariant]]
@@ -29,6 +32,8 @@ related-session: knowledge/specs/stage-02/2.1-db-spine.md
 - Decision: [[decisions/adr-017-ingestion-job-worker-spine]]
 - Decision: [[decisions/adr-018-transcript-segment-timestamps]]
 - Decision: [[decisions/adr-019-transcript-parse-strategy]]
+- Decision: [[decisions/adr-020-transcript-chunk-normalization-versioning]]
+- Decision: [[decisions/adr-021-transcript-chunk-transactional-handoff]]
 
 ## Current structure
 The backend now has a SQLAlchemy declarative model package under `backend/app/platform/db/models/`. Alembic imports `app.platform.db.models` to register all model metadata before migrations run.
@@ -41,7 +46,8 @@ The backend now has a SQLAlchemy declarative model package under `backend/app/pl
 - `section_assets` stores private storage keys and file metadata for uploaded section PDFs. Session 3.1 migrated the Stage 2 placeholder from `file_url` to `storage_key`, added `checksum_sha256`, and records `uploaded_by_user_id` for the current stored object.
 - `transcripts` stores raw transcript upload metadata for lecture/lab sections. Session 4.1 adds the table with full lifecycle status values but only writes `status='uploaded'` and `source_type='manual_upload'`.
 - `transcript_segments` stores immutable parsed VTT/TXT output for transcripts. VTT segments use integer millisecond timestamps; TXT fallback segments have null timestamps.
-- `ingestion_jobs` tracks idempotent background ingestion work. Session 4.2 wires only `job_type='parse'`, while the table accepts later chunk/embed/summary job types.
+- `transcript_chunks` stores normalized, ordered chunk text derived from immutable segments. Chunks carry segment ids, sequence bounds, millisecond time bounds or null TXT bounds, version strings, token counts, nullable `vector(384)` embedding placeholders, and `updated_at` for future embedding writes.
+- `ingestion_jobs` tracks idempotent background ingestion work. Session 4.3 wires `job_type='chunk'` after parse and adds `result_metadata jsonb` for structured worker output counts.
 
 ## Section asset schema notes
 - `section_assets.storage_key` is a private object-storage path and is unique.
@@ -64,12 +70,15 @@ The backend now has a SQLAlchemy declarative model package under `backend/app/pl
 - `ix_transcripts_status_created_at` supports future recovery sweeps over low-cardinality transcript states.
 - `transcript_segments.sequence_number` is assigned after empty parse output is filtered and is unique per transcript. The database enforces nonblank text, paired timestamp nullability, non-negative starts, and `end_ms > start_ms`.
 - `ingestion_jobs.idempotency_key` is unique. Parse uses `parse:{transcript_id}:{checksum}`; `processor_version` is stored as metadata and is not part of the key.
+- `transcript_chunks.chunk_index` is unique per transcript. The unique btree on `(transcript_id, chunk_index)` is the transcript lookup path; no separate `transcript_id` index is present.
+- `transcript_chunks.embedding` is nullable until Session 4.4. `embedding_generated_at` records embedding time, while `updated_at` records the row's latest mutation.
+- `transcripts.status='chunking'` means the transcript has reached the chunking stage. Completion is represented by the completed `chunk` row in `ingestion_jobs`; there is intentionally no `chunked` transcript status.
 
 ## ID strategy
 All primary keys are PostgreSQL `UUID` columns with no database-side default. Application models generate UUIDv7 values through `uuid6.uuid7`, keeping IDs time-ordered while avoiding `gen_random_uuid()` defaults.
 
 ## Local database extensions
-Local Docker Postgres initializes both `vector` and `pgcrypto` from `docker/postgres/init/001-create-vector.sql`. Hosted Postgres will not run this init script, so first deployment must bootstrap required extensions explicitly for the target database.
+Local Docker Postgres initializes both `vector` and `pgcrypto` from `docker/postgres/init/001-create-vector.sql`. Migration `0006` also runs `CREATE EXTENSION IF NOT EXISTS vector` before creating `transcript_chunks.embedding`. Hosted Postgres still needs required extensions available to the migration role before first deployment.
 
 ## Intentional gaps
 Role semantics that require cross-row checks remain service-layer responsibilities for later sessions: lecturer-only module ownership and no-admin memberships are not enforced by database constraints in the MVP schema.

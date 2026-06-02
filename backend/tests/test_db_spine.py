@@ -23,6 +23,7 @@ EXPECTED_TABLES = {
     "section_assets",
     "transcripts",
     "transcript_segments",
+    "transcript_chunks",
     "ingestion_jobs",
 }
 EXPECTED_ID_DEFAULTS = {table: None for table in EXPECTED_TABLES}
@@ -51,6 +52,10 @@ EXPECTED_CHECKS = {
     "ck_ingestion_jobs_job_type",
     "ck_ingestion_jobs_status",
     "ck_ingestion_jobs_attempts",
+    "ck_transcript_chunks_token_count",
+    "ck_transcript_chunks_text_not_blank",
+    "ck_transcript_chunks_chunk_index",
+    "ck_transcript_chunks_sequence_range",
 }
 EXPECTED_INDEXES = {
     "ix_course_memberships_active_user_module",
@@ -66,6 +71,7 @@ EXPECTED_INDEXES = {
     "uq_active_transcript_per_section",
     "uq_ingestion_jobs_idempotency_key",
     "uq_transcript_segments_transcript_sequence",
+    "uq_transcript_chunks_transcript_chunk_index",
     "uq_transcripts_storage_key",
 }
 
@@ -156,6 +162,26 @@ async def _fetch_id_defaults() -> dict[str, str | None]:
         await engine.dispose()
 
 
+async def _fetch_columns(table_name: str) -> dict[str, str]:
+    engine = create_async_engine(_test_database_url())
+    try:
+        async with engine.connect() as connection:
+            result = await connection.execute(
+                text(
+                    """
+                    SELECT column_name, udt_name
+                    FROM information_schema.columns
+                    WHERE table_schema = 'public'
+                      AND table_name = :table_name
+                    """
+                ),
+                {"table_name": table_name},
+            )
+            return dict(result.all())
+    finally:
+        await engine.dispose()
+
+
 async def _assert_app_user_constraint_and_uuid7_default() -> None:
     engine = create_async_engine(_test_database_url())
     session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
@@ -238,11 +264,17 @@ def test_expected_tables_exist_after_upgrade_head() -> None:
         )
     )
     id_defaults = asyncio.run(_fetch_id_defaults())
+    chunk_columns = asyncio.run(_fetch_columns("transcript_chunks"))
+    job_columns = asyncio.run(_fetch_columns("ingestion_jobs"))
 
     assert EXPECTED_TABLES <= tables
     assert EXPECTED_CHECKS <= checks
     assert EXPECTED_INDEXES <= indexes
     assert id_defaults == EXPECTED_ID_DEFAULTS
+    assert chunk_columns["embedding"] == "vector"
+    assert chunk_columns["updated_at"] == "timestamptz"
+    assert job_columns["result_metadata"] == "jsonb"
+    assert "ix_transcript_chunks_transcript_id" not in indexes
 
 
 def test_app_user_role_check_constraint_is_enforced() -> None:
