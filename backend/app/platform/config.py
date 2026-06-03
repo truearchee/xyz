@@ -7,6 +7,22 @@ class SettingsError(RuntimeError):
 
 class Settings:
     @property
+    def CORS_ORIGINS(self) -> list[str]:
+        return self.parse_cors_origins(os.environ.get("CORS_ORIGINS"))
+
+    @staticmethod
+    def parse_cors_origins(value: str | list[str] | None) -> list[str]:
+        if value is None or value == "":
+            return ["http://localhost:3000"]
+        if isinstance(value, str):
+            return [
+                origin.strip().rstrip("/")
+                for origin in value.split(",")
+                if origin.strip()
+            ]
+        return value
+
+    @property
     def SUPABASE_URL(self) -> str:
         return self._required("SUPABASE_URL")
 

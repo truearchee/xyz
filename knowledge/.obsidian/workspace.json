@@ -13,12 +13,12 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "steps/stage-04/4.2-transcript-parse-segments.md",
+                "file": "steps/stage-01/1.1b-browser-gate.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "4.2-transcript-parse-segments"
+              "title": "1.1b-browser-gate"
             }
           }
         ]
@@ -185,9 +185,17 @@
   },
   "active": "7a755bf9b78bcc19",
   "lastOpenFiles": [
-    "steps/stage-04/4.1-transcript-upload.md",
-    "steps/stage-04/4.2-transcript-parse-segments.md",
+    "steps/stage-01/1.1-repo-skeleton.md",
+    "steps/stage-01/1.0-bootstrap-memory.md",
+    "steps/stage-01/1.1b-browser-gate.md",
+    "plans/stage-01/1.1b-browser-gate.md",
+    "plans/stage-01/1.1-repo-skeleton.md",
+    "STATUS.md",
+    "plans/stage-01/1.0-bootstrap-memory.md",
     "steps/stage-04/4.3-transcript-chunking.md",
+    "specs/stage-01/1.1b-browser-gate.md",
+    "steps/stage-04/4.2-transcript-parse-segments.md",
+    "steps/stage-04/4.1-transcript-upload.md",
     "decisions/adr-021-transcript-chunk-transactional-handoff.md",
     "decisions/adr-020-transcript-chunk-normalization-versioning.md",
     "plans/stage-04/4.3-transcript-chunking.md",
@@ -203,17 +211,9 @@
     "decisions/adr-016-transcript-file-validation-storage-metadata.md",
     "decisions/adr-015-transcript-upload-boundary-active-invariant.md",
     "plans/stage-04/4.1-transcript-upload.md",
-    "specs/stage-04/4.1-transcript-upload.md",
     "steps/stage-04",
     "plans/stage-04",
     "specs/stage-04",
-    "specs/stage-03/3.3-student-visibility.md",
-    "specs/stage-03/3.2-publish-and-notes.md",
-    "specs/stage-03/3.1-file-upload.md",
-    "steps/stage-03/3.2-publish-and-notes.md",
-    "steps/stage-03/3.1-file-upload.md",
-    "STATUS.md",
-    "decisions/adr-014-shared-role-aware-content-endpoints.md",
     "steps/stage-03",
     "plans/stage-03",
     "specs/stage-03",

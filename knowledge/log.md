@@ -26,3 +26,5 @@ Format: `YYYY-MM-DD  [type]  summary  (#stage.session)` — type: spec | plan | 
 2026-06-01 15:03  [report]  complete session 4.2 transcript parse worker; backend 106 passed, targeted parser/worker tests passed, frontend type-check and diff check passed  (#4.2)
 2026-06-01 19:58  [report]  complete session 4.3 transcript chunking; backend 123 passed, targeted chunker/worker tests passed, frontend type-check and diff check passed  (#4.3)
 2026-06-02 11:40  [fix]  close session 4.3 review findings; added concurrency/version-provenance tests, P1-P7 report trail, and truncate deadlock retry; backend passed twice with 130 tests  (#4.3)
+2026-06-03 12:39  [report]  session 1.1b browser gate code verified by Docker checks and visible browser polling; human DevTools Network confirmation pending  (#1.1b)
+2026-06-03 13:58  [report]  complete session 1.1b browser gate; human DevTools confirmed direct health request and CORS header; Stage 1 FULLY VERIFIED  (#1.1b)
