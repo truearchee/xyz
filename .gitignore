@@ -15,3 +15,12 @@ dist/
 build/
 .DS_Store
 .obsidian/
+
+# Obsidian local workspace/editor state
+knowledge/.obsidian/workspace.json
+knowledge/.obsidian/workspace-mobile.json
+knowledge/.obsidian/app.json
+knowledge/.obsidian/appearance.json
+knowledge/.obsidian/hotkeys.json
+knowledge/.obsidian/cache/
+knowledge/.obsidian/plugins/*/data.json
