@@ -1,0 +1,15 @@
+services:
+  backend:
+    env_file:
+      - .env
+      - .env.e2e
+
+  worker:
+    env_file:
+      - .env
+      - .env.e2e
+
+  frontend:
+    env_file:
+      - .env
+      - .env.e2e

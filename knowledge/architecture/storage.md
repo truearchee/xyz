@@ -2,7 +2,7 @@
 type: architecture
 stage: 03
 created: 2026-05-30
-updated: 2026-06-01 15:03
+updated: 2026-06-03 20:00
 related-session: knowledge/specs/stage-03/3.1-file-upload.md
 ---
 
@@ -32,6 +32,7 @@ related-session: knowledge/specs/stage-03/3.1-file-upload.md
 - Decision: [[decisions/adr-015-transcript-upload-boundary-active-invariant]]
 - Decision: [[decisions/adr-016-transcript-file-validation-storage-metadata]]
 - Decision: [[decisions/adr-019-transcript-parse-strategy]]
+- Decision: [[decisions/adr-022-supabase-public-url-for-signed-urls]]
 
 ## Provider boundary
 Storage access goes through `backend/app/platform/storage/base.py`. Domain code depends on the async `StorageProvider` protocol and receives a provider dependency, so upload logic does not import or construct Supabase SDK clients.
@@ -64,6 +65,8 @@ Session 3.3 activates `StorageProvider.create_signed_read_url` for section asset
 Signed read URL TTL is configured by `SIGNED_READ_URL_TTL_SECONDS` and defaults to `300`. Responses set `Cache-Control: no-store`; the backend does not persist, cache, or proxy signed URLs.
 
 Already-issued signed URLs remain usable until provider expiry. Unpublish blocks future URL minting, not previously issued bearer URLs.
+
+Backend services call Supabase through `SUPABASE_URL`. When local Docker needs an internal URL that browsers cannot open, `SUPABASE_PUBLIC_URL` can be set to a browser-facing origin. The Supabase storage provider rewrites only the signed URL origin from `SUPABASE_URL` to `SUPABASE_PUBLIC_URL`; path, query string, token, and fragment are preserved exactly. If `SUPABASE_PUBLIC_URL` is unset, it defaults to `SUPABASE_URL`.
 
 ## Upload compensation
 Upload endpoints authorize the current user and section access before parsing multipart form data. After authorization, upload writes to storage first with `overwrite=False`, then inserts the DB row. If DB persistence fails after storage succeeds, the backend attempts an idempotent `delete_object(storage_key)` cleanup and returns a server error.

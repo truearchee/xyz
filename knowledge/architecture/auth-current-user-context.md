@@ -2,7 +2,7 @@
 type: architecture
 stage: 02
 created: 2026-05-29
-updated: 2026-05-30 12:24
+updated: 2026-06-03 17:47
 related-session: knowledge/specs/stage-02/2.2-supabase-auth-current-user-context.md
 ---
 
@@ -18,6 +18,9 @@ related-session: knowledge/specs/stage-02/2.2-supabase-auth-current-user-context
 - Spec: [[specs/stage-02/2.4-module-base-views]]
 - Plan: [[plans/stage-02/2.4-module-base-views]]
 - Report: [[steps/stage-02/2.4-module-base-views]]
+- Spec: [[specs/stage-04/4.3.5a-client-edge-tracer-bullet]]
+- Plan: [[plans/stage-04/4.3.5a-client-edge-tracer-bullet]]
+- Report: [[steps/stage-04/4.3.5a-client-edge-tracer-bullet]]
 - ADR: [[decisions/adr-003-module-authz-db-lookup]]
 - Architecture: [[architecture/db-spine]]
 
@@ -47,3 +50,5 @@ Authenticated routes consume `Depends(get_current_user)` and do not parse JWTs o
 Module-gated routes consume `Depends(require_module_access)` and do not hand-roll membership queries in participant feature routers.
 
 `GET /health/authed` remains an auth smoke endpoint using `get_current_user`. Admin routes use `require_role("admin")` as their only identity dependency, so handlers do not double-resolve identity or inline role checks.
+
+`GET /me` is the browser bootstrap endpoint for application context. It uses `get_current_user`, so inactive users are rejected before a response is produced. It returns database-owned user profile fields plus active module memberships, excludes archived memberships, and returns an empty membership list for admins. Frontend session state must use this backend-confirmed app context rather than JWT claims for product role and module access.

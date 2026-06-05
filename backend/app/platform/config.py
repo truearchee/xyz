@@ -27,6 +27,10 @@ class Settings:
         return self._required("SUPABASE_URL")
 
     @property
+    def SUPABASE_PUBLIC_URL(self) -> str:
+        return os.environ.get("SUPABASE_PUBLIC_URL") or self.SUPABASE_URL
+
+    @property
     def SUPABASE_SECRET_KEY(self) -> str:
         return self._required("SUPABASE_SECRET_KEY")
 

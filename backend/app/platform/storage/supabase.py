@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import inspect
 from typing import Any, BinaryIO
+from urllib.parse import urlsplit, urlunsplit
 
 from app.platform.config import settings
 from app.platform.storage.base import (
@@ -117,10 +118,10 @@ class SupabaseStorageProvider:
         if isinstance(response, dict):
             signed_url = response.get("signedURL") or response.get("signed_url")
             if signed_url:
-                return str(signed_url)
+                return _rewrite_signed_url_origin(str(signed_url))
         signed_url = getattr(response, "signed_url", None) or getattr(response, "signedURL", None)
         if signed_url:
-            return str(signed_url)
+            return _rewrite_signed_url_origin(str(signed_url))
         raise StorageProviderError("Storage provider signed URL response was invalid")
 
 
@@ -151,6 +152,35 @@ def _storage_response_error(response: Any) -> str | None:
     if isinstance(status_code, int) and status_code >= 400:
         return str(getattr(response, "message", status_code))
     return None
+
+
+def _rewrite_signed_url_origin(signed_url: str) -> str:
+    internal_url = settings.SUPABASE_URL.rstrip("/")
+    public_url = settings.SUPABASE_PUBLIC_URL.rstrip("/")
+    if public_url == internal_url:
+        return signed_url
+
+    parsed_signed_url = urlsplit(signed_url)
+    parsed_internal_url = urlsplit(internal_url)
+    parsed_public_url = urlsplit(public_url)
+    if (
+        parsed_signed_url.scheme,
+        parsed_signed_url.netloc,
+    ) != (
+        parsed_internal_url.scheme,
+        parsed_internal_url.netloc,
+    ):
+        return signed_url
+
+    return urlunsplit(
+        (
+            parsed_public_url.scheme,
+            parsed_public_url.netloc,
+            parsed_signed_url.path,
+            parsed_signed_url.query,
+            parsed_signed_url.fragment,
+        )
+    )
 
 
 def _storage_response_bytes(response: Any) -> bytes:

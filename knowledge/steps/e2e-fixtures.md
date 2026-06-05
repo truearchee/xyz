@@ -1,0 +1,97 @@
+---
+type: fixture-report
+stage: 04
+session: "4.3.5a"
+slug: e2e-fixtures
+status: tracer-browser-proof-complete
+created: 2026-06-03
+updated: 2026-06-03 20:38
+spec: knowledge/specs/stage-04/4.3.5a-client-edge-tracer-bullet.md
+report: knowledge/steps/stage-04/4.3.5a-client-edge-tracer-bullet.md
+---
+
+# E2E Fixtures — Client Edge Tracer Bullet
+
+## Linked documents
+- Spec: [[specs/stage-04/4.3.5a-client-edge-tracer-bullet]]
+- Report: [[steps/stage-04/4.3.5a-client-edge-tracer-bullet]]
+- Decision: [[decisions/adr-022-supabase-public-url-for-signed-urls]]
+
+## Environment
+Checkpoint C uses local Supabase at `http://127.0.0.1:54321`.
+
+Browser and host-run fixture setup use:
+- `NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321`
+- `E2E_SUPABASE_ALLOWED_URL=http://127.0.0.1:54321`
+
+Dockerized backend services use:
+- `SUPABASE_URL=http://host.docker.internal:54321`
+- `SUPABASE_PUBLIC_URL=http://127.0.0.1:54321`
+- `SUPABASE_JWKS_URL=http://host.docker.internal:54321/auth/v1/.well-known/jwks.json`
+- `SUPABASE_JWT_ISSUER=http://127.0.0.1:54321/auth/v1`
+
+The issuer must stay at the token issuer. The JWKS URL only needs to be reachable from inside the backend container. Storage calls use the internal URL, but signed URLs returned to browsers use the public URL origin.
+
+## Seeded Auth and App Rows
+`tests/e2e/fixtures/seed.mjs` creates or resets:
+- `admin_e2e@example.test`
+- `lecturer_e2e@example.test`
+- `lecturer_unassigned_e2e@example.test`
+- `student_e2e@example.test`
+- `e2e_module`
+- `lecture_section` with `publish_status='draft'`
+- `published_section` with `publish_status='published'`
+
+The seed script was run twice and returned stable counts: four Auth users, four app users, one module, two active memberships, one draft section, and one published section.
+
+## Storage
+Required backend storage variables from current code:
+- `SUPABASE_URL`
+- `SUPABASE_PUBLIC_URL` (optional; defaults to `SUPABASE_URL`)
+- `SUPABASE_SECRET_KEY`
+- `SUPABASE_STORAGE_BUCKET`
+
+`SUPABASE_STORAGE_URL`, `STORAGE_PROVIDER`, `STORAGE_BUCKET`, and `STORAGE_URL` are not read by the current backend storage provider path.
+
+Local storage bucket:
+- Bucket name: `section-assets`
+- Public: `false`
+- Status: created during Checkpoint C.5 probe
+- Backend storage API URL: `http://host.docker.internal:54321/storage/v1`
+
+## Cleanup Rule
+Existing backend storage-key generation writes under `modules/{moduleId}/...`; it does not support run-scoped `e2e/{runId}/...` prefixes without a future backend/storage test-infrastructure change.
+
+Upload tests must record exact returned storage keys and clean only those exact keys. Do not delete broad prefixes.
+
+Checkpoint C.5 smoke object:
+- Uploaded exact key: `e2e-smoke/storage-readiness.txt`
+- Deleted exact key: `e2e-smoke/storage-readiness.txt`
+
+## Storage Readiness Result
+Checkpoint C.5 storage readiness is complete.
+
+The backend storage provider uses Docker-reachable `SUPABASE_URL=http://host.docker.internal:54321` for Supabase calls and rewrites signed URL origins to `SUPABASE_PUBLIC_URL=http://127.0.0.1:54321` before returning them.
+
+The C.5 smoke confirmed:
+- The private bucket exists.
+- The backend container can reach storage through the internal URL.
+- The signed URL returned by the backend storage provider has origin `http://127.0.0.1:54321`.
+- The host/browser side can open that signed URL and read the expected object bytes.
+- The exact smoke key was deleted.
+
+## Checkpoint E Browser Proof Result
+Checkpoint E exercised the full tracer flow through Playwright with no mocks.
+
+The run used:
+
+```bash
+docker compose --env-file .env.e2e -f docker-compose.yml -f docker-compose.e2e.yml up -d --build
+node tests/e2e/fixtures/seed.mjs
+node tests/e2e/fixtures/seed.mjs
+set -a; . ./.env.e2e; set +a; npx playwright test tests/e2e/4.3.5a-tracer.spec.ts
+```
+
+The Playwright test uploaded one lecturer PDF through the browser, recorded the exact returned `section_assets.storage_key`, consumed the signed URL from a separate student browser context without an Authorization header, then deleted only that exact storage key and the exact asset row.
+
+Post-run asset residue check returned zero `section_assets` rows.

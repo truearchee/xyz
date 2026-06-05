@@ -1,4 +1,5 @@
 .env
+.env.e2e
 .venv/
 __pycache__/
 *.py[cod]
@@ -11,6 +12,8 @@ node_modules/
 frontend/.next/
 frontend/node_modules/
 frontend/tsconfig.tsbuildinfo
+test-results/
+playwright-report/
 dist/
 build/
 .DS_Store
