@@ -1,11 +1,14 @@
 'use client';
 
-import { FormEvent, useState } from 'react';
+import { FormEvent, useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 
-import { ApiError } from '../../lib/api';
-import { api } from '../../lib/api/wrapper';
-import { useSession } from '../../lib/session/SessionProvider';
-import { getSupabaseBrowserClient } from '../../lib/supabase/client';
+import { ApiError } from '../../../lib/api';
+import { AccessDenied } from '../../../components/auth/AccessDenied';
+import { api } from '../../../lib/api/wrapper';
+import { roleHomePath } from '../../../lib/routing/ProtectedAppLayout';
+import { useSession } from '../../../lib/session/SessionProvider';
+import { getSupabaseBrowserClient } from '../../../lib/supabase/client';
 
 type RawResult =
   | { ok: true; data: unknown }
@@ -20,7 +23,8 @@ function formatResult(result: RawResult | null): string {
 }
 
 export default function LoginPage() {
-  const { session, status, error, refreshSession } = useSession();
+  const router = useRouter();
+  const { session, state, status, refreshSession } = useSession();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [message, setMessage] = useState<string | null>(null);
@@ -99,13 +103,26 @@ export default function LoginPage() {
     }
   }
 
+  useEffect(() => {
+    if (state.status === 'authenticated') {
+      router.replace(roleHomePath(state.user.role));
+    }
+  }, [router, state]);
+
+  if (state.status === 'loading' || state.status === 'authenticated') {
+    return <main>Loading...</main>;
+  }
+
+  if (state.status === 'forbidden') {
+    return <AccessDenied email={state.email} reason={state.reason} />;
+  }
+
   return (
     <main>
       <h1>Login</h1>
       <p>Session status: {status}</p>
       <p>Session email: {session?.user.email ?? 'none'}</p>
       <p>Access token present: {session?.access_token ? 'yes' : 'no'}</p>
-      {error ? <p>Session error: {error}</p> : null}
       {message ? <p>Message: {message}</p> : null}
 
       <form onSubmit={signIn}>

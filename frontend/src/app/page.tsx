@@ -1,49 +1,30 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 
-import { OpenAPI } from '../lib/api';
-import { DefaultService } from '../lib/api/services/DefaultService';
-
-OpenAPI.BASE =
-  process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:8000';
-
-const POLL_INTERVAL_MS = 2500;
-const REQUEST_TIMEOUT_MS = 5000;
-
-function timeoutAfter(ms: number): Promise<never> {
-  return new Promise((_, reject) => {
-    setTimeout(() => reject(new Error('Health request timed out')), ms);
-  });
-}
-
-async function checkBackendHealth(): Promise<string> {
-  const data = await Promise.race([
-    DefaultService.healthHealthGet(),
-    timeoutAfter(REQUEST_TIMEOUT_MS),
-  ]);
-  return data.status ?? 'unreachable';
-}
+import { AccessDenied } from '../components/auth/AccessDenied';
+import { roleHomePath } from '../lib/routing/ProtectedAppLayout';
+import { useSession } from '../lib/session/SessionProvider';
 
 export default function Home() {
-  const [status, setStatus] = useState<string>('checking...');
+  const router = useRouter();
+  const { state } = useSession();
 
   useEffect(() => {
-    const check = () => {
-      void checkBackendHealth()
-        .then(setStatus)
-        .catch(() => setStatus('unreachable'));
-    };
+    if (state.status === 'unauthenticated') {
+      router.replace('/login');
+      return;
+    }
 
-    check();
-    const id = setInterval(check, POLL_INTERVAL_MS);
-    return () => clearInterval(id);
-  }, []);
+    if (state.status === 'authenticated') {
+      router.replace(roleHomePath(state.user.role));
+    }
+  }, [router, state]);
 
-  return (
-    <main>
-      <h1>XYZ LMS</h1>
-      <p>Backend: {status}</p>
-    </main>
-  );
+  if (state.status === 'forbidden') {
+    return <AccessDenied email={state.email} reason={state.reason} />;
+  }
+
+  return <main>Loading...</main>;
 }

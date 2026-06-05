@@ -36,3 +36,4 @@ Format: `YYYY-MM-DD  [type]  summary  (#stage.session)` — type: spec | plan | 
 2026-06-03 20:00  [fix]  complete session 4.3.5a Checkpoint C.5 signed URL origin fix with SUPABASE_PUBLIC_URL and storage smoke proof  (#4.3.5a)
 2026-06-03 20:13  [report]  complete session 4.3.5a Checkpoint D; throwaway /tracer page compiles and static fetch scan passes  (#4.3.5a)
 2026-06-03 20:38  [report]  complete session 4.3.5a Checkpoint E; Playwright tracer passes all 15 browser/API/storage assertions  (#4.3.5a)
+2026-06-05 15:42  [report]  complete session 4.3.5b app shell and role routing; Playwright proved all 7 assertions, frontend checks passed, backend 144 passed  (#4.3.5b)

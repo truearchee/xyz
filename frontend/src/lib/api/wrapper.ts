@@ -1,12 +1,50 @@
 'use client';
 
-import { ContentService, MeService, ModulesService, OpenAPI } from './index';
+import {
+  AdminService,
+  ApiError,
+  ContentService,
+  MeService,
+  ModulesService,
+  OpenAPI,
+} from './index';
+import { consumeForcedBearerToken } from '../e2e/e2eAuthOverride';
 import { getSupabaseBrowserClient } from '../supabase/client';
 
 OpenAPI.BASE =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:8000';
 
+const E2E_TEST_HOOKS_ENABLED =
+  process.env.NEXT_PUBLIC_E2E_TEST_HOOKS === 'true';
+
+export class AuthRequiredError extends Error {
+  readonly status = 401;
+
+  constructor(message = 'Authentication required') {
+    super(message);
+    this.name = 'AuthRequiredError';
+  }
+}
+
+export class ForbiddenError extends Error {
+  readonly status = 403;
+  readonly body: unknown;
+
+  constructor(message = 'Forbidden', body?: unknown) {
+    super(message);
+    this.name = 'ForbiddenError';
+    this.body = body;
+  }
+}
+
 OpenAPI.TOKEN = async () => {
+  if (E2E_TEST_HOOKS_ENABLED) {
+    const forcedToken = consumeForcedBearerToken();
+    if (forcedToken) {
+      return forcedToken;
+    }
+  }
+
   const supabase = getSupabaseBrowserClient();
   const { data, error } = await supabase.auth.getSession();
   if (error) {
@@ -16,37 +54,76 @@ OpenAPI.TOKEN = async () => {
   return data.session?.access_token ?? '';
 };
 
+async function redirectToLogin() {
+  const supabase = getSupabaseBrowserClient();
+  await supabase.auth.signOut();
+
+  if (typeof window !== 'undefined') {
+    window.location.assign('/login');
+  }
+}
+
+async function withAuthRecovery<T>(request: () => Promise<T>): Promise<T> {
+  try {
+    return await request();
+  } catch (caught) {
+    if (caught instanceof ApiError && caught.status === 401) {
+      await redirectToLogin();
+      throw new AuthRequiredError(caught.message);
+    }
+
+    if (caught instanceof ApiError && caught.status === 403) {
+      throw new ForbiddenError(caught.message, caught.body);
+    }
+
+    throw caught;
+  }
+}
+
 export const api = {
+  admin: {
+    listUsers: () => withAuthRecovery(() => AdminService.listUsersAdminUsersGet()),
+  },
   content: {
     getAssetDownloadUrl: (moduleId: string, sectionId: string, assetId: string) =>
-      ContentService.getAssetDownloadUrlModulesModuleIdSectionsSectionIdAssetsAssetIdDownloadUrlGet(
-        moduleId,
-        sectionId,
-        assetId,
+      withAuthRecovery(() =>
+        ContentService.getAssetDownloadUrlModulesModuleIdSectionsSectionIdAssetsAssetIdDownloadUrlGet(
+          moduleId,
+          sectionId,
+          assetId,
+        ),
       ),
     getSection: (moduleId: string, sectionId: string) =>
-      ContentService.getSectionModulesModuleIdSectionsSectionIdGet(
-        moduleId,
-        sectionId,
+      withAuthRecovery(() =>
+        ContentService.getSectionModulesModuleIdSectionsSectionIdGet(
+          moduleId,
+          sectionId,
+        ),
       ),
     listSections: (moduleId: string) =>
-      ContentService.listSectionsModulesModuleIdSectionsGet(moduleId),
+      withAuthRecovery(() =>
+        ContentService.listSectionsModulesModuleIdSectionsGet(moduleId),
+      ),
     publishSection: (moduleId: string, sectionId: string) =>
-      ContentService.publishModulesModuleIdSectionsSectionIdPublishPost(
-        moduleId,
-        sectionId,
+      withAuthRecovery(() =>
+        ContentService.publishModulesModuleIdSectionsSectionIdPublishPost(
+          moduleId,
+          sectionId,
+        ),
       ),
     uploadAsset: (moduleId: string, sectionId: string, file: File) =>
-      ContentService.uploadAssetModulesModuleIdSectionsSectionIdAssetsPost(
-        moduleId,
-        sectionId,
-        { file },
+      withAuthRecovery(() =>
+        ContentService.uploadAssetModulesModuleIdSectionsSectionIdAssetsPost(
+          moduleId,
+          sectionId,
+          { file },
+        ),
       ),
   },
   me: {
-    get: () => MeService.getMeMeGet(),
+    get: () => withAuthRecovery(() => MeService.getMeMeGet()),
   },
   modules: {
-    list: () => ModulesService.listModulesModulesGet(),
+    list: () => withAuthRecovery(() => ModulesService.listModulesModulesGet()),
   },
 };
