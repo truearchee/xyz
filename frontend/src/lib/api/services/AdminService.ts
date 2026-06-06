@@ -6,6 +6,7 @@ import type { AssignMemberRequest } from '../models/AssignMemberRequest';
 import type { CreateModuleRequest } from '../models/CreateModuleRequest';
 import type { CreateUserRequest } from '../models/CreateUserRequest';
 import type { MembershipResponse } from '../models/MembershipResponse';
+import type { ModuleMemberResponse } from '../models/ModuleMemberResponse';
 import type { ModuleResponse } from '../models/ModuleResponse';
 import type { ResetPasswordRequest } from '../models/ResetPasswordRequest';
 import type { StatusResponse } from '../models/StatusResponse';
@@ -221,6 +222,31 @@ export class AdminService {
             },
             body: requestBody,
             mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * List Module Members
+     * @param moduleId
+     * @param authorization
+     * @returns ModuleMemberResponse Successful Response
+     * @throws ApiError
+     */
+    public static listModuleMembersAdminModulesModuleIdMembersGet(
+        moduleId: string,
+        authorization?: (string | null),
+    ): CancelablePromise<Array<ModuleMemberResponse>> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/admin/modules/{module_id}/members',
+            path: {
+                'module_id': moduleId,
+            },
+            headers: {
+                'Authorization': authorization,
+            },
             errors: {
                 422: `Validation Error`,
             },

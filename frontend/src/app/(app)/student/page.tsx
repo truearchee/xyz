@@ -1,8 +1,10 @@
+import { AssignedModulesList } from "../../../features/modules/AssignedModulesList";
+
 export default function StudentPage() {
   return (
-    <section>
+    <section style={{ display: "grid", gap: 16 }}>
       <h1>Student</h1>
-      <p>Student workspace placeholder.</p>
+      <AssignedModulesList />
     </section>
   );
 }

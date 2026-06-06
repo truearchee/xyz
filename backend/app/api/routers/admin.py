@@ -10,6 +10,7 @@ from app.domains.admin.schemas import (
     CreateModuleRequest,
     CreateUserRequest,
     MembershipResponse,
+    ModuleMemberResponse,
     ModuleResponse,
     ResetPasswordRequest,
     StatusResponse,
@@ -124,6 +125,15 @@ async def assign_to_module(
     membership = await service.assign_to_module(db, module_id, payload, current_user)
     await db.commit()
     return membership
+
+
+@router.get("/modules/{module_id}/members", response_model=list[ModuleMemberResponse])
+async def list_module_members(
+    module_id: UUID,
+    db: DbSession,
+    current_user: AdminUser,
+):
+    return await service.list_module_members(db, module_id)
 
 
 @router.delete("/modules/{module_id}/members/{user_id}", response_model=StatusResponse)

@@ -3,10 +3,14 @@
 import {
   AdminService,
   ApiError,
+  type AssignMemberRequest,
   ContentService,
+  type CreateModuleRequest,
+  type CreateUserRequest,
   MeService,
   ModulesService,
   OpenAPI,
+  type ResetPasswordRequest,
 } from './index';
 import { consumeForcedBearerToken } from '../e2e/e2eAuthOverride';
 import { getSupabaseBrowserClient } from '../supabase/client';
@@ -82,7 +86,44 @@ async function withAuthRecovery<T>(request: () => Promise<T>): Promise<T> {
 
 export const api = {
   admin: {
+    assignMember: (moduleId: string, requestBody: AssignMemberRequest) =>
+      withAuthRecovery(() =>
+        AdminService.assignToModuleAdminModulesModuleIdMembersPost(
+          moduleId,
+          requestBody,
+        ),
+      ),
+    createModule: (requestBody: CreateModuleRequest) =>
+      withAuthRecovery(() =>
+        AdminService.createModuleAdminModulesPost(requestBody),
+      ),
+    createUser: (requestBody: CreateUserRequest) =>
+      withAuthRecovery(() => AdminService.createUserAdminUsersPost(requestBody)),
+    deactivateUser: (userId: string) =>
+      withAuthRecovery(() =>
+        AdminService.deactivateUserAdminUsersUserIdDeactivatePost(userId),
+      ),
+    listModuleMembers: (moduleId: string) =>
+      withAuthRecovery(() =>
+        AdminService.listModuleMembersAdminModulesModuleIdMembersGet(moduleId),
+      ),
+    listModules: () =>
+      withAuthRecovery(() => AdminService.listModulesAdminModulesGet()),
     listUsers: () => withAuthRecovery(() => AdminService.listUsersAdminUsersGet()),
+    removeMember: (moduleId: string, userId: string) =>
+      withAuthRecovery(() =>
+        AdminService.removeFromModuleAdminModulesModuleIdMembersUserIdDelete(
+          moduleId,
+          userId,
+        ),
+      ),
+    resetPassword: (userId: string, requestBody: ResetPasswordRequest) =>
+      withAuthRecovery(() =>
+        AdminService.resetPasswordAdminUsersUserIdResetPasswordPost(
+          userId,
+          requestBody,
+        ),
+      ),
   },
   content: {
     getAssetDownloadUrl: (moduleId: string, sectionId: string, assetId: string) =>

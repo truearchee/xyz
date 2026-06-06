@@ -12,7 +12,7 @@ related-session: knowledge/specs/stage-04/4.3.5a-client-edge-tracer-bullet.md
 ## Linked documents
 - Spec: [[specs/stage-04/4.3.5a-client-edge-tracer-bullet]]
 - Report: [[steps/stage-04/4.3.5a-client-edge-tracer-bullet]]
-- Fixture report: [[steps/e2e-fixtures]]
+- Fixture report: [[steps/stage-04/4.3.5a-e2e-fixtures]]
 
 ## Decision
 Backend services keep using `SUPABASE_URL` as the internal Supabase API base URL. Storage signed URLs returned to browsers may use an optional `SUPABASE_PUBLIC_URL` as their origin.

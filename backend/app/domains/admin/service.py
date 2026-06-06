@@ -14,6 +14,7 @@ from app.domains.admin.schemas import (
     AssignMemberRequest,
     CreateModuleRequest,
     CreateUserRequest,
+    ModuleMemberResponse,
 )
 from app.platform.auth.context import CurrentUserContext
 from app.platform.db.models import AppUser, CourseMembership, CourseModule
@@ -285,6 +286,39 @@ async def remove_from_module(
     membership.archived_at = now
     membership.updated_at = now
     await db.flush()
+
+
+async def list_module_members(
+    db: AsyncSession,
+    module_id: UUID,
+) -> list[ModuleMemberResponse]:
+    await get_module(db, module_id)
+
+    result = await db.execute(
+        select(CourseMembership, AppUser)
+        .join(AppUser, CourseMembership.user_id == AppUser.id)
+        .where(
+            CourseMembership.module_id == module_id,
+            CourseMembership.status == "active",
+            AppUser.role.in_(("lecturer", "student")),
+        )
+        .order_by(CourseMembership.role.asc(), AppUser.email.asc())
+    )
+
+    return [
+        ModuleMemberResponse(
+            membership_id=membership.id,
+            user_id=user.id,
+            module_id=membership.module_id,
+            email=user.email,
+            full_name=user.full_name,
+            role=membership.role,
+            membership_status=membership.status,
+            user_is_active=user.is_active,
+            created_at=membership.created_at,
+        )
+        for membership, user in result.all()
+    ]
 
 
 async def list_users(

@@ -2,8 +2,8 @@
 type: architecture
 stage: 04
 created: 2026-06-05
-updated: 2026-06-05 15:42
-related-session: knowledge/specs/stage-04/4.3.5b-app-shell-role-routing.md
+updated: 2026-06-05 21:24
+related-session: knowledge/specs/stage-04/4.3.5c-stage2-admin-ui-backfill.md
 ---
 
 # Frontend Architecture
@@ -12,6 +12,10 @@ related-session: knowledge/specs/stage-04/4.3.5b-app-shell-role-routing.md
 - Spec: [[specs/stage-04/4.3.5b-app-shell-role-routing]]
 - Plan: [[plans/stage-04/4.3.5b-app-shell-role-routing]]
 - Report: [[steps/stage-04/4.3.5b-app-shell-role-routing]]
+- Spec: [[specs/stage-04/4.3.5c-stage2-admin-ui-backfill]]
+- Plan: [[plans/stage-04/4.3.5c-stage2-admin-ui-backfill]]
+- Report: [[4.3.5c-stage2-admin-ui]]
+- ADR: [[decisions/adr-023-stage2-admin-module-membership-projection]]
 - Recovery plan: [[specs/recovery/client-edge-recovery-plan]]
 - Architecture: [[architecture/auth-current-user-context]]
 
@@ -34,6 +38,17 @@ Wrong-role navigation to `/admin`, `/lecturer`, or `/student` redirects to `/una
 The frontend wrapper keeps generated OpenAPI client traffic on the existing generated request path. `OpenAPI.TOKEN` remains an async resolver, so every protected call retrieves the current Supabase session token at request time instead of caching access tokens globally.
 
 `401` responses sign out through Supabase, redirect the browser to `/login`, and surface `AuthRequiredError`. `403` responses do not sign out and do not redirect; they surface `ForbiddenError` with status `403` for callers and E2E hooks.
+
+## Stage 2 product UI
+Session 4.3.5c replaced the Stage 2 placeholders with thin product surfaces:
+
+- `/admin` renders feature-level user and module management panels from `frontend/src/features/admin/users/` and `frontend/src/features/admin/modules/`.
+- Admin UI calls backend data only through `frontend/src/lib/api/wrapper.ts` and the generated OpenAPI client.
+- Admin user flows list users, create lecturer/student users, deactivate users, and reset passwords.
+- Admin module flows list modules, create modules with owner lecturers, assign lecturer/student users, list real module members through `GET /admin/modules/{module_id}/members`, and remove active memberships from that real member list.
+- Lecturer and student home pages render `frontend/src/features/modules/AssignedModulesList.tsx`, which calls `GET /modules` through the wrapper and remains read-only.
+
+Do not decode JWT claims for frontend role. Do not add direct `fetch()` calls outside the generated request/upload helpers or approved wrapper paths.
 
 ## E2E bridge and tracer
 `NEXT_PUBLIC_E2E_TEST_HOOKS=true` enables a browser-only `window.__xyzE2E` bridge for Playwright. It exposes Supabase session helpers, wrapper-backed `/me` and `/admin/users` calls with serializable result envelopes, and a single-use forced bearer-token override for deterministic 401 testing. The bridge is not registered unless the flag is exactly `true`.

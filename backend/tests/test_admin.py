@@ -127,6 +127,7 @@ def _admin_routes() -> list[tuple[str, str, dict | None]]:
             f"/admin/modules/{module_id}/members",
             {"userId": str(uuid4()), "role": "student"},
         ),
+        ("GET", f"/admin/modules/{module_id}/members", None),
         ("DELETE", f"/admin/modules/{module_id}/members/{user_id}", None),
     ]
 
@@ -401,6 +402,188 @@ async def test_assign_student_to_module(
     assert data["userId"] == str(student.id)
     assert data["moduleId"] == str(module.id)
     assert data["status"] == "active"
+
+
+@pytest.mark.anyio
+async def test_admin_lists_active_module_members_with_user_fields(
+    auth_client: AsyncClient,
+    db_session: AsyncSession,
+    jwt_factory,
+    mock_jwks_client,
+) -> None:
+    headers, _ = await _auth_headers(db_session, jwt_factory, role="admin")
+    owner = await _create_user(
+        db_session,
+        email="projection-owner@example.com",
+        role="lecturer",
+        full_name="Projection Owner",
+    )
+    student = await _create_user(
+        db_session,
+        email="projection-student@example.com",
+        role="student",
+        full_name="Projection Student",
+    )
+    module = await _create_module(db_session, owner_id=owner.id)
+    membership = await _create_membership(
+        db_session,
+        user_id=student.id,
+        module_id=module.id,
+        role="student",
+    )
+
+    response = await auth_client.get(
+        f"/admin/modules/{module.id}/members",
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    assert response.json() == [
+        {
+            "membershipId": str(membership.id),
+            "userId": str(student.id),
+            "moduleId": str(module.id),
+            "email": "projection-student@example.com",
+            "fullName": "Projection Student",
+            "role": "student",
+            "membershipStatus": "active",
+            "userIsActive": True,
+            "createdAt": membership.created_at.isoformat().replace("+00:00", "Z"),
+        }
+    ]
+
+
+@pytest.mark.anyio
+async def test_admin_list_module_members_unknown_module_returns_404(
+    auth_client: AsyncClient,
+    db_session: AsyncSession,
+    jwt_factory,
+    mock_jwks_client,
+) -> None:
+    headers, _ = await _auth_headers(db_session, jwt_factory, role="admin")
+
+    response = await auth_client.get(
+        f"/admin/modules/{uuid4()}/members",
+        headers=headers,
+    )
+
+    assert response.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_admin_list_module_members_filters_archived_and_admin_members(
+    auth_client: AsyncClient,
+    db_session: AsyncSession,
+    jwt_factory,
+    mock_jwks_client,
+) -> None:
+    headers, _ = await _auth_headers(db_session, jwt_factory, role="admin")
+    owner = await _create_user(db_session, email="filter-owner@example.com", role="lecturer")
+    active_student = await _create_user(db_session, email="filter-active@example.com")
+    archived_student = await _create_user(db_session, email="filter-archived@example.com")
+    admin_user = await _create_user(db_session, email="filter-admin@example.com", role="admin")
+    module = await _create_module(db_session, owner_id=owner.id)
+    await _create_membership(
+        db_session,
+        user_id=active_student.id,
+        module_id=module.id,
+        role="student",
+    )
+    await _create_membership(
+        db_session,
+        user_id=archived_student.id,
+        module_id=module.id,
+        role="student",
+        status="archived",
+    )
+    await _create_membership(
+        db_session,
+        user_id=admin_user.id,
+        module_id=module.id,
+        role="lecturer",
+    )
+
+    response = await auth_client.get(
+        f"/admin/modules/{module.id}/members",
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    emails = [member["email"] for member in response.json()]
+    assert emails == ["filter-active@example.com"]
+
+
+@pytest.mark.anyio
+async def test_admin_list_module_members_includes_inactive_active_member(
+    auth_client: AsyncClient,
+    db_session: AsyncSession,
+    jwt_factory,
+    mock_jwks_client,
+) -> None:
+    headers, _ = await _auth_headers(db_session, jwt_factory, role="admin")
+    owner = await _create_user(db_session, email="inactive-owner@example.com", role="lecturer")
+    inactive_student = await _create_user(
+        db_session,
+        email="inactive-active-member@example.com",
+        is_active=False,
+    )
+    module = await _create_module(db_session, owner_id=owner.id)
+    await _create_membership(
+        db_session,
+        user_id=inactive_student.id,
+        module_id=module.id,
+        role="student",
+    )
+
+    response = await auth_client.get(
+        f"/admin/modules/{module.id}/members",
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    assert response.json()[0]["email"] == "inactive-active-member@example.com"
+    assert response.json()[0]["userIsActive"] is False
+
+
+@pytest.mark.anyio
+async def test_admin_list_module_members_sorts_by_role_then_email(
+    auth_client: AsyncClient,
+    db_session: AsyncSession,
+    jwt_factory,
+    mock_jwks_client,
+) -> None:
+    headers, _ = await _auth_headers(db_session, jwt_factory, role="admin")
+    owner = await _create_user(db_session, email="sort-owner@example.com", role="lecturer")
+    student_b = await _create_user(db_session, email="z-student@example.com")
+    lecturer_b = await _create_user(db_session, email="b-lecturer@example.com", role="lecturer")
+    student_a = await _create_user(db_session, email="a-student@example.com")
+    lecturer_a = await _create_user(db_session, email="a-lecturer@example.com", role="lecturer")
+    module = await _create_module(db_session, owner_id=owner.id)
+    for user, role in (
+        (student_b, "student"),
+        (lecturer_b, "lecturer"),
+        (student_a, "student"),
+        (lecturer_a, "lecturer"),
+    ):
+        await _create_membership(
+            db_session,
+            user_id=user.id,
+            module_id=module.id,
+            role=role,
+        )
+
+    response = await auth_client.get(
+        f"/admin/modules/{module.id}/members",
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    assert [(member["role"], member["email"]) for member in response.json()] == [
+        ("lecturer", "a-lecturer@example.com"),
+        ("lecturer", "b-lecturer@example.com"),
+        ("student", "a-student@example.com"),
+        ("student", "z-student@example.com"),
+    ]
 
 
 @pytest.mark.anyio

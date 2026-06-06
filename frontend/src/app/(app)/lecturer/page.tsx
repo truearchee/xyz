@@ -1,8 +1,10 @@
+import { AssignedModulesList } from "../../../features/modules/AssignedModulesList";
+
 export default function LecturerPage() {
   return (
-    <section>
+    <section style={{ display: "grid", gap: 16 }}>
       <h1>Lecturer</h1>
-      <p>Lecturer workspace placeholder.</p>
+      <AssignedModulesList />
     </section>
   );
 }

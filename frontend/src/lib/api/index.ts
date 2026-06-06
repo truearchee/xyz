@@ -16,6 +16,7 @@ export { CurrentUserResponse } from './models/CurrentUserResponse';
 export type { HTTPValidationError } from './models/HTTPValidationError';
 export type { MembershipResponse } from './models/MembershipResponse';
 export type { ModuleDetail } from './models/ModuleDetail';
+export { ModuleMemberResponse } from './models/ModuleMemberResponse';
 export type { ModuleResponse } from './models/ModuleResponse';
 export type { ModuleSummary } from './models/ModuleSummary';
 export type { ResetPasswordRequest } from './models/ResetPasswordRequest';

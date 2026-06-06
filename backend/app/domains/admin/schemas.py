@@ -79,5 +79,17 @@ class MembershipResponse(CamelModel):
     created_at: datetime
 
 
+class ModuleMemberResponse(CamelModel):
+    membership_id: UUID
+    user_id: UUID
+    module_id: UUID
+    email: str
+    full_name: str
+    role: Literal["lecturer", "student"]
+    membership_status: Literal["active"]
+    user_is_active: bool
+    created_at: datetime
+
+
 class StatusResponse(CamelModel):
     status: str
