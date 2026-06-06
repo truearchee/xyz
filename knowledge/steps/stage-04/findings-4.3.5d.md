@@ -1,0 +1,164 @@
+---
+type: findings
+stage: "4.3.5"
+session: "4.3.5d"
+slug: stage3-content-ui-backfill
+status: blocked
+created: 2026-06-06
+updated: 2026-06-06 17:50
+spec: knowledge/specs/stage-04/4.3.5d-stage3-content-ui-backfill.md
+plan: knowledge/plans/stage-04/4.3.5d-stage3-content-ui-backfill-plan.md
+report: knowledge/steps/stage-04/4.3.5d-checkpoint-0-report.md
+---
+
+# Findings - 4.3.5d Stage 3 Content UI Backfill
+
+## Linked documents
+- Spec: [[specs/stage-04/4.3.5d-stage3-content-ui-backfill]]
+- Plan: [[plans/stage-04/4.3.5d-stage3-content-ui-backfill-plan]]
+- Report: [[4.3.5d-checkpoint-0-report]]
+- Findings: [[findings-4.3.5d]]
+- Recovery plan: [[specs/recovery/client-edge-recovery-plan]]
+- Architecture: [[architecture/frontend]]
+
+## Status
+BLOCKED at Checkpoint 0.
+
+Stage 3 remains UI PENDING.
+
+## Hard Blocker
+
+### F-4.3.5d-001 - Module creation does not auto-generate sections
+Status: unresolved
+
+Severity: hard blocker
+
+Resolution path: Session 4.3.5d-B1 - Stage 3 Module Section Auto-Generation Repair
+
+Evidence:
+- Source inspection: `POST /admin/modules` calls `service.create_module`; `create_module` creates `CourseModule` and owner `CourseMembership`, but no `ModuleSection` rows. See `backend/app/api/routers/admin.py:89` and `backend/app/domains/admin/service.py:171`.
+- Source inspection: `CreateModuleRequest` accepts `title`, `description`, `ownerId`, `timezone`, `startsOn`, and `endsOn`; it has no schedule fields that can drive lecture/lab/assignment/supplementary section generation. See `backend/app/domains/admin/schemas.py:31`.
+- Empirical proof:
+
+```text
+$ docker compose exec -T backend python - <<'PY'
+...
+created_module_id=019e9d32-4b6d-7925-a3ff-fbd7744285dc
+module_sections_count=0
+cleanup=rolled back transaction
+PY
+```
+
+- Existing E2E fixture inserts `module_sections` directly. See `tests/e2e/fixtures/seed.mjs:271`.
+
+Why this blocks:
+- Stage 3 product model requires lecturers to fill predefined sections.
+- Lecturers cannot create/delete/reorder sections in MVP.
+- Direct section seeding is not valid browser proof for 4.3.5d because it bypasses the product section-generation path.
+
+Required resolution:
+- Add a backend/product path that creates predefined `ModuleSection` records during module creation.
+- Resume 4.3.5d only after this is implemented and verified.
+
+## Prerequisite Blockers
+
+### F-4.3.5d-002 - Missing multipart upload helper
+Status: unresolved
+
+Severity: prerequisite blocker
+
+Evidence:
+
+```text
+$ test -f frontend/src/lib/api/upload.ts && echo upload:present || echo upload:missing
+upload:missing
+```
+
+Required resolution: restore/add the approved `frontend/src/lib/api/upload.ts` multipart helper before Checkpoint B.
+
+Checkpoint impact: because section auto-generation is already a hard blocker, no UI work was started.
+
+## Implementation Gaps After Blocker Resolution
+
+### F-4.3.5d-003 - Lecturer read projection may be too thin
+Status: deferred pending blocker resolution
+
+Severity: implementation prerequisite
+
+Evidence:
+- `GET /modules/{module_id}/sections` exists and role-splits lecturer/student responses through `list_module_sections`. See `backend/app/api/routers/content.py:75` and `backend/app/domains/content/service.py:163`.
+- Lecturer list rows include `id`, `title`, `type`, `orderIndex`, `hasAssets`, and `hasNotes`, but not `publishStatus` or asset `processingStatus`. See `backend/app/platform/query/content_read.py:167` and `frontend/src/lib/api/models/SectionListItem.ts:5`.
+- Lecturer detail includes `publishStatus` but not assets. See `frontend/src/lib/api/models/SectionDetail.ts:5`.
+- Asset list includes asset `processingStatus`, but requires a separate per-section asset-list call. See `frontend/src/lib/api/models/SectionAssetResponse.ts:5`.
+
+Required decision: approve a read-only projection or UI data-loading pattern before implementing the lecturer content UI. Any projection change must remain read-only and tech-lead-approved.
+
+### F-4.3.5d-004 - Frontend wrapper does not expose full Stage 3 content surface
+Status: deferred pending blocker resolution
+
+Severity: implementation prerequisite
+
+Evidence:
+- Generated `ContentService` exposes list sections, get section, list assets, upload, signed URL, replace, notes, publish, and unpublish. See `frontend/src/lib/api/services/ContentService.ts:23`, `:77`, `:106`, `:140`, `:172`, `:208`, `:239`, and `:267`.
+- `frontend/src/lib/api/wrapper.ts` currently exposes `getAssetDownloadUrl`, `getSection`, `listSections`, `publishSection`, and `uploadAsset`, but not list assets, replace asset, update notes, or unpublish. See `frontend/src/lib/api/wrapper.ts:128`.
+
+Required resolution: expose the missing wrapper methods before UI implementation. This is frontend wrapper work, not a backend write-path repair.
+
+## Contract Map
+
+### Stage 3 write-path surface
+Status: present in backend/generated client.
+
+Evidence:
+- Upload: `POST /modules/{module_id}/sections/{section_id}/assets`, generated method `uploadAssetModulesModuleIdSectionsSectionIdAssetsPost`.
+- Replace: `PUT /modules/{module_id}/sections/{section_id}/assets/{asset_id}`, generated method `replaceAssetModulesModuleIdSectionsSectionIdAssetsAssetIdPut`.
+- Notes: `PATCH /modules/{module_id}/sections/{section_id}/notes`, generated method `updateNotesModulesModuleIdSectionsSectionIdNotesPatch`.
+- Publish: `POST /modules/{module_id}/sections/{section_id}/publish`, generated method `publishModulesModuleIdSectionsSectionIdPublishPost`.
+- Unpublish: `POST /modules/{module_id}/sections/{section_id}/unpublish`, generated method `unpublishModulesModuleIdSectionsSectionIdUnpublishPost`.
+- List assets: `GET /modules/{module_id}/sections/{section_id}/assets`, generated method `listAssetsModulesModuleIdSectionsSectionIdAssetsGet`.
+
+### Lecturer and student read contracts
+Status: present, with lecturer projection caveat.
+
+Evidence:
+- Lecturer `GET /modules/{module_id}/sections` returns active sections for the module, including drafts/unpublished, because `list_lecturer_section_rows` filters `ModuleSection.status == "active"` and not `publish_status`. See `backend/app/platform/query/content_read.py:167`.
+- Student `GET /modules/{module_id}/sections` filters server-side to `ModuleSection.publish_status == "published"` and `status == "active"`. See `backend/app/platform/query/content_read.py:205`.
+- Student section detail returns lecturer notes and completed assets for a published section. See `backend/app/platform/query/content_read.py:286`.
+
+### Signed URL contract
+Status: present.
+
+Evidence:
+- Endpoint: `GET /modules/{module_id}/sections/{section_id}/assets/{asset_id}/download-url`.
+- Generated method: `getAssetDownloadUrlModulesModuleIdSectionsSectionIdAssetsAssetIdDownloadUrlGet`.
+- Service checks student access against section `published`, section `active`, and asset `completed`; lecturers are allowed for assigned, non-archived sections. See `backend/app/domains/content/service.py:209`.
+- Signed URL TTL comes from `SIGNED_READ_URL_TTL_SECONDS`, and the response gets `Cache-Control: no-store`. See `backend/app/domains/content/service.py:239` and `backend/app/api/routers/content.py:120`.
+
+### Two-status-field contract
+Status: separate fields confirmed.
+
+Evidence:
+- `SectionDetail.publishStatus` is generated from backend `SectionDetail.publish_status`.
+- `SectionAssetResponse.processingStatus` is generated from backend `SectionAssetResponse.processing_status`.
+- Upload and replace set `processing_status="completed"` immediately in the MVP. See `backend/app/domains/content/service.py:341` and `backend/app/domains/content/service.py:431`.
+
+## Required follow-up
+Session 4.3.5d-B1 - Stage 3 Module Section Auto-Generation Repair
+
+Expected scope:
+- Admin module creation must create predefined `ModuleSection` records through the product/backend path.
+- Lecturers still cannot create/delete/reorder sections.
+- The generated sections must include at least two sections in E2E so Stage 3 visibility can be proven non-trivially.
+- Section generation must be covered by backend tests.
+- OpenAPI client must be regenerated if admin module creation DTOs change.
+- Knowledge files must be updated in the same commit.
+
+Decision needed for 4.3.5d-B1: How should module creation know what sections to create?
+
+| Option | Description | Tradeoff |
+|---|---|---|
+| Schedule-driven | Admin supplies lecture/lab/assignment schedule fields; backend generates sections from schedule | Best product fit, more backend/API work |
+| Template-driven | Admin selects a predefined module template that creates sections | Clean and scalable, needs template model or seed |
+| Minimal MVP default | Backend creates a small default section set | Fastest, but less faithful to schedule-based spec |
+
+Recommendation: prefer schedule-driven if the current data model already has enough course date / lecture day / lab day fields. Use minimal MVP default only if explicitly recorded as temporary.
