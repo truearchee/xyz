@@ -13,7 +13,7 @@ related-session: knowledge/specs/stage-04/4.3.5c-stage2-admin-ui-backfill.md
 - Spec: [[specs/stage-04/4.3.5c-stage2-admin-ui-backfill]]
 - Plan: [[plans/stage-04/4.3.5c-stage2-admin-ui-backfill]]
 - Report: [[4.3.5c-stage2-admin-ui]]
-- Findings: [[steps/findings-4.3.5c]]
+- Findings: [[findings-4.3.5c]]
 - Recovery plan: [[specs/recovery/client-edge-recovery-plan]]
 
 ## Context
