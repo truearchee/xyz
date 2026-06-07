@@ -38,7 +38,7 @@ Status: fixed in 4.3.5d-B1
 
 Severity: resolved hard blocker
 
-Fixed by commit: pending final 4.3.5d-B1 commit
+Fixed by commit: 445ac7c
 
 Evidence:
 - Original Checkpoint 0 source inspection: `POST /admin/modules` previously created `CourseModule` and owner `CourseMembership`, but no `ModuleSection` rows.
