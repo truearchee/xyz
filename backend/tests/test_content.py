@@ -945,6 +945,97 @@ async def test_student_reads_only_published_sections_and_completed_assets(
 
 
 @pytest.mark.anyio
+async def test_generated_sections_use_existing_visibility_rules(
+    auth_client: AsyncClient,
+    db_session: AsyncSession,
+    jwt_factory,
+    mock_jwks_client,
+) -> None:
+    lecturer = await _create_user(
+        db_session,
+        email="generated-sections-lecturer@example.com",
+        role="lecturer",
+    )
+    student = await _create_user(db_session, email="generated-sections-student@example.com")
+    admin = await _create_user(
+        db_session,
+        email="generated-sections-admin@example.com",
+        role="admin",
+    )
+
+    create_response = await auth_client.post(
+        "/admin/modules",
+        headers=_headers(admin, jwt_factory),
+        json={"title": "Generated Visibility", "ownerId": str(lecturer.id)},
+    )
+    assert create_response.status_code == 201
+    module_id = UUID(create_response.json()["id"])
+    await _create_membership(
+        db_session,
+        user_id=student.id,
+        module_id=module_id,
+        role="student",
+    )
+
+    section_result = await db_session.execute(
+        select(
+            ModuleSection.id,
+            ModuleSection.title,
+            ModuleSection.type,
+            ModuleSection.publish_status,
+        )
+        .where(ModuleSection.course_module_id == module_id)
+        .order_by(ModuleSection.order_index.asc())
+    )
+    sections = section_result.all()
+    assert [(section.title, section.type, section.publish_status) for section in sections] == [
+        ("Lecture 1", "lecture", "draft"),
+        ("Lecture 2", "lecture", "draft"),
+        ("Lab 1", "lab", "draft"),
+        ("Assignment 1", "assignment", "draft"),
+    ]
+
+    lecturer_headers = _headers(lecturer, jwt_factory)
+    student_headers = _headers(student, jwt_factory)
+    lecturer_response = await auth_client.get(
+        f"/modules/{module_id}/sections",
+        headers=lecturer_headers,
+    )
+    draft_student_response = await auth_client.get(
+        f"/modules/{module_id}/sections",
+        headers=student_headers,
+    )
+    publish_response = await auth_client.post(
+        f"/modules/{module_id}/sections/{sections[0].id}/publish",
+        headers=lecturer_headers,
+    )
+    published_student_response = await auth_client.get(
+        f"/modules/{module_id}/sections",
+        headers=student_headers,
+    )
+
+    assert lecturer_response.status_code == 200
+    assert [row["id"] for row in lecturer_response.json()] == [
+        str(section.id) for section in sections
+    ]
+    assert draft_student_response.status_code == 200
+    assert draft_student_response.json() == []
+    assert publish_response.status_code == 200
+    assert publish_response.json()["publishStatus"] == "published"
+    assert published_student_response.status_code == 200
+    assert published_student_response.json() == [
+        {
+            "id": str(sections[0].id),
+            "title": "Lecture 1",
+            "type": "lecture",
+            "orderIndex": 1,
+            "hasAssets": False,
+            "hasNotes": False,
+        }
+    ]
+
+
+@pytest.mark.anyio
 async def test_signed_download_url_is_role_aware_and_revalidated_live(
     auth_client: AsyncClient,
     db_session: AsyncSession,

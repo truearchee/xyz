@@ -16,6 +16,7 @@ from app.domains.admin.schemas import (
     CreateUserRequest,
     ModuleMemberResponse,
 )
+from app.domains.admin.section_generation import generate_initial_sections
 from app.platform.auth.context import CurrentUserContext
 from app.platform.db.models import AppUser, CourseMembership, CourseModule
 from app.platform.supabase_client import get_supabase_admin_client
@@ -191,6 +192,7 @@ async def create_module(
     )
     db.add(module)
     await db.flush()
+    generate_initial_sections(db, module=module)
 
     active_membership = await db.scalar(
         select(CourseMembership).where(

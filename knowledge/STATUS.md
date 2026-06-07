@@ -1,6 +1,6 @@
 # Status
 
-_Last updated: 2026-06-06 17:50 - Session 4.3.5d blocked at Checkpoint 0_
+_Last updated: 2026-06-07 11:31 - Session 4.3.5d-B1 section generation repair complete_
 
 ## Current focus
 Stage 1 is FULLY VERIFIED. Session 1.1b satisfied the browser gate: the root page called `http://localhost:8000/health` directly through the generated client, CORS allowed `http://localhost:3000`, and the browser showed live backend state.
@@ -12,16 +12,17 @@ Session 4.3.5c completed the Stage 2 product UI backfill. Admin user/module mana
 Stage 3  Content + visibility / P1   UI PENDING
 
 ## Stage 3 recovery status - 4.3.5d
-4.3.5d is blocked at Checkpoint 0.
+4.3.5d-B1 fixed the Checkpoint 0 blocker: admin module creation now generates predefined module sections.
 
-Reason:
-- Admin module creation does not currently auto-generate predefined `module_sections`.
-- Existing E2E fixtures insert sections directly, which cannot satisfy the Stage 3 browser gate.
+Current state:
+- Admin module creation now creates four default `module_sections`: `Lecture 1`, `Lecture 2`, `Lab 1`, and `Assignment 1`.
+- Generated sections default to draft and remain hidden from students until published.
+- Existing E2E fixtures still insert sections directly for old setup paths; the resumed Stage 3 browser gate must prove the product path.
 - `frontend/src/lib/api/upload.ts` is missing and must be restored before multipart UI checkpoints.
-- Lecturer/student content UI implementation is paused until Session 4.3.5d-B1 adds the product section-generation path.
+- Stage 3 remains UI PENDING until the 4.3.5d Stage 3 browser gate passes.
 
 Required next:
-- 4.3.5d-B1 - Stage 3 Module Section Auto-Generation Repair.
+- Resume 4.3.5d at Checkpoint A.
 
 ## Stage 2 browser gate - 4.3.5c
 - Admin-created lecturer/student accounts through UI: PROVEN
@@ -45,6 +46,7 @@ Required next:
 - /tracer gated by NEXT_PUBLIC_TRACER_ENABLED: PROVEN
 
 ## Done recently
+- Session 4.3.5d-B1: admin module creation now generates four predefined draft sections in the backend product path. Targeted admin/content tests passed; full backend passed with `151 passed`; frontend type-check passed; generated client freshness passed with no diff; no frontend UI work was added; Stage 3 remains UI PENDING.
 - Session 4.3.5d Checkpoint 0: blocked before UI implementation. Generated client freshness passed with no diff; admin module creation source and empirical probe showed `module_sections_count=0`; existing E2E fixture directly inserts sections; product source was unchanged; Stage 3 remains UI PENDING.
 - Session 4.3.5c: Stage 2 Admin UI backfill completed. Backend projection tests passed (`30 passed`); full backend suite passed (`149 passed`); frontend type-check passed; direct fetch and JWT-role scans had no matches; Playwright `tests/e2e/4.3.5c-stage2-admin.spec.ts` passed `1 passed (9.4s)`; Stage 2 is FULLY VERIFIED.
 - Session 4.3.5b: app shell and role routing completed. Rebuilt E2E stack passed; fixture seed produced four Auth users, four app users, one module, two active memberships, and two sections; Playwright `tests/e2e/4.3.5b-shell-routing.spec.ts` passed `1 passed (13.7s)`; frontend type-check passed; static fetch/JWT scans returned no matches; full backend `pytest` passed with `144 passed, 71 warnings` - completed 2026-06-05 15:42.
@@ -55,12 +57,12 @@ Required next:
 - None.
 
 ## Next up
-- Session 4.3.5d-B1 - Stage 3 Module Section Auto-Generation Repair.
-- Resume Session 4.3.5d - Stage 3 Content UI backfill only after 4.3.5d-B1 is implemented and verified.
+- Resume Session 4.3.5d - Stage 3 Content UI backfill at Checkpoint A.
 - Session 4.3.5e - Stage 4.1-4.3 Transcript UI backfill and `/tracer` deletion.
 
 ## Known issues / blockers
-- Stage 3 product UI is blocked at 4.3.5d Checkpoint 0 because module creation does not auto-generate `module_sections`; 4.3.5d-B1 must repair this before Stage 3 browser proof can resume.
+- Stage 3 product UI remains pending until the resumed 4.3.5d browser gate proves lecturer upload -> publish -> student published-only access.
+- `frontend/src/lib/api/upload.ts` is still missing and must be restored before 4.3.5d multipart upload UI checkpoints.
 - Stage 4 product UI remains pending; 4.3.5e owns that surface after Stage 3 is genuinely FULLY VERIFIED.
 - Hosted Postgres extension bootstrap is not covered by the local Docker init script; handle `vector` and `pgcrypto` explicitly before first hosted deployment.
 - The backend test suite still reports the existing `httpx` ASGI shortcut deprecation warning.

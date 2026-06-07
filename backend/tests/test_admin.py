@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from httpx import AsyncClient
 import pytest
@@ -9,7 +9,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domains.admin import service as admin_service
-from app.platform.db.models import AppUser, CourseMembership, CourseModule
+from app.platform.db.models import AppUser, CourseMembership, CourseModule, ModuleSection
 
 
 async def _create_user(
@@ -325,6 +325,49 @@ async def test_create_module_with_lecturer_owner(
     assert data["title"] == "Physics"
     assert data["ownerId"] == str(lecturer.id)
     assert data["isActive"] is True
+
+
+@pytest.mark.anyio
+async def test_create_module_generates_default_sections(
+    auth_client: AsyncClient,
+    db_session: AsyncSession,
+    jwt_factory,
+    mock_jwks_client,
+) -> None:
+    headers, _ = await _auth_headers(db_session, jwt_factory, role="admin")
+    lecturer = await _create_user(
+        db_session,
+        email="module-sections-owner@example.com",
+        role="lecturer",
+    )
+
+    response = await auth_client.post(
+        "/admin/modules",
+        headers=headers,
+        json={"title": "Generated Sections", "ownerId": str(lecturer.id)},
+    )
+
+    assert response.status_code == 201
+    module_id = response.json()["id"]
+    result = await db_session.execute(
+        select(ModuleSection)
+        .where(ModuleSection.course_module_id == UUID(module_id))
+        .order_by(ModuleSection.order_index.asc())
+    )
+    sections = result.scalars().all()
+
+    assert [
+        (section.order_index, section.title, section.type)
+        for section in sections
+    ] == [
+        (1, "Lecture 1", "lecture"),
+        (2, "Lecture 2", "lecture"),
+        (3, "Lab 1", "lab"),
+        (4, "Assignment 1", "assignment"),
+    ]
+    assert [section.publish_status for section in sections] == ["draft"] * 4
+    assert [section.lecturer_notes for section in sections] == [None] * 4
+    assert [section.status for section in sections] == ["active"] * 4
 
 
 @pytest.mark.anyio

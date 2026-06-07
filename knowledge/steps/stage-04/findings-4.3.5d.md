@@ -3,9 +3,9 @@ type: findings
 stage: "4.3.5"
 session: "4.3.5d"
 slug: stage3-content-ui-backfill
-status: blocked
+status: open
 created: 2026-06-06
-updated: 2026-06-06 17:50
+updated: 2026-06-07 11:31
 spec: knowledge/specs/stage-04/4.3.5d-stage3-content-ui-backfill.md
 plan: knowledge/plans/stage-04/4.3.5d-stage3-content-ui-backfill-plan.md
 report: knowledge/steps/stage-04/4.3.5d-checkpoint-0-report.md
@@ -20,25 +20,37 @@ report: knowledge/steps/stage-04/4.3.5d-checkpoint-0-report.md
 - Findings: [[findings-4.3.5d]]
 - Recovery plan: [[specs/recovery/client-edge-recovery-plan]]
 - Architecture: [[architecture/frontend]]
+- Repair spec: [[specs/stage-04/4.3.5d-B1-stage3-module-section-auto-generation-repair]]
+- Repair plan: [[plans/stage-04/4.3.5d-B1-stage3-module-section-auto-generation-repair]]
+- Repair report: [[4.3.5d-B1-section-generation-repair]]
 
 ## Status
-BLOCKED at Checkpoint 0.
+F-4.3.5d-001 is fixed in 4.3.5d-B1.
 
 Stage 3 remains UI PENDING.
+
+4.3.5d may resume at Checkpoint A. F-4.3.5d-002 remains unresolved before Checkpoint B.
 
 ## Hard Blocker
 
 ### F-4.3.5d-001 - Module creation does not auto-generate sections
-Status: unresolved
+Status: fixed in 4.3.5d-B1
 
-Severity: hard blocker
+Severity: resolved hard blocker
 
-Resolution path: Session 4.3.5d-B1 - Stage 3 Module Section Auto-Generation Repair
+Fixed by commit: pending final 4.3.5d-B1 commit
 
 Evidence:
-- Source inspection: `POST /admin/modules` calls `service.create_module`; `create_module` creates `CourseModule` and owner `CourseMembership`, but no `ModuleSection` rows. See `backend/app/api/routers/admin.py:89` and `backend/app/domains/admin/service.py:171`.
-- Source inspection: `CreateModuleRequest` accepts `title`, `description`, `ownerId`, `timezone`, `startsOn`, and `endsOn`; it has no schedule fields that can drive lecture/lab/assignment/supplementary section generation. See `backend/app/domains/admin/schemas.py:31`.
-- Empirical proof:
+- Original Checkpoint 0 source inspection: `POST /admin/modules` previously created `CourseModule` and owner `CourseMembership`, but no `ModuleSection` rows.
+- 4.3.5d-B1 implementation: `backend/app/domains/admin/service.py` now calls `generate_initial_sections` after the new `CourseModule` has an id and before the route commit.
+- 4.3.5d-B1 implementation: `backend/app/domains/admin/section_generation.py` defines the temporary `mvp_default` policy and creates four sections: `Lecture 1`, `Lecture 2`, `Lab 1`, and `Assignment 1`.
+- Generated sections default to `publish_status="draft"`, `status="active"`, and `lecturer_notes=None`.
+- Backend test: `tests/test_admin.py::test_create_module_generates_default_sections`.
+- Backend test: `tests/test_content.py::test_generated_sections_use_existing_visibility_rules`.
+- Full backend verification: `151 passed, 78 warnings`.
+- Frontend/API contract verification: `docker compose exec frontend npx tsc --noEmit` exited 0, and `bash scripts/generate-api-client.sh && git diff --exit-code frontend/src/lib/api` produced no diff.
+
+Original empirical proof from Checkpoint 0:
 
 ```text
 $ docker compose exec -T backend python - <<'PY'
@@ -51,14 +63,14 @@ PY
 
 - Existing E2E fixture inserts `module_sections` directly. See `tests/e2e/fixtures/seed.mjs:271`.
 
-Why this blocks:
+Why this blocked:
 - Stage 3 product model requires lecturers to fill predefined sections.
 - Lecturers cannot create/delete/reorder sections in MVP.
 - Direct section seeding is not valid browser proof for 4.3.5d because it bypasses the product section-generation path.
 
-Required resolution:
-- Add a backend/product path that creates predefined `ModuleSection` records during module creation.
-- Resume 4.3.5d only after this is implemented and verified.
+Resolution:
+- Added a backend/product path that creates predefined `ModuleSection` records during admin module creation.
+- 4.3.5d may resume at Checkpoint A.
 
 ## Prerequisite Blockers
 
@@ -143,17 +155,11 @@ Evidence:
 - Upload and replace set `processing_status="completed"` immediately in the MVP. See `backend/app/domains/content/service.py:341` and `backend/app/domains/content/service.py:431`.
 
 ## Required follow-up
-Session 4.3.5d-B1 - Stage 3 Module Section Auto-Generation Repair
+Resume Session 4.3.5d at Checkpoint A.
 
-Expected scope:
-- Admin module creation must create predefined `ModuleSection` records through the product/backend path.
-- Lecturers still cannot create/delete/reorder sections.
-- The generated sections must include at least two sections in E2E so Stage 3 visibility can be proven non-trivially.
-- Section generation must be covered by backend tests.
-- OpenAPI client must be regenerated if admin module creation DTOs change.
-- Knowledge files must be updated in the same commit.
+Resolved backend repair: Session 4.3.5d-B1 - Stage 3 Module Section Auto-Generation Repair.
 
-Decision needed for 4.3.5d-B1: How should module creation know what sections to create?
+Future decision still open: how should module creation know what sections to create after the temporary MVP default is replaced?
 
 | Option | Description | Tradeoff |
 |---|---|---|

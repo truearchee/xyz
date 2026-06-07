@@ -2,7 +2,7 @@
 type: architecture
 stage: 02
 created: 2026-05-29
-updated: 2026-06-01 19:58
+updated: 2026-06-07 11:31
 related-session: knowledge/specs/stage-02/2.1-db-spine.md
 ---
 
@@ -16,6 +16,9 @@ related-session: knowledge/specs/stage-02/2.1-db-spine.md
 - Report: [[steps/stage-03/3.1-file-upload]]
 - Spec: [[specs/stage-03/3.2-publish-and-notes]]
 - Report: [[steps/stage-03/3.2-publish-and-notes]]
+- Spec: [[specs/stage-04/4.3.5d-B1-stage3-module-section-auto-generation-repair]]
+- Plan: [[plans/stage-04/4.3.5d-B1-stage3-module-section-auto-generation-repair]]
+- Report: [[steps/stage-04/4.3.5d-B1-section-generation-repair]]
 - Spec: [[specs/stage-04/4.1-transcript-upload]]
 - Plan: [[plans/stage-04/4.1-transcript-upload]]
 - Report: [[steps/stage-04/4.1-transcript-upload]]
@@ -60,6 +63,12 @@ The backend now has a SQLAlchemy declarative model package under `backend/app/pl
 - `module_sections.publish_status` is a service-managed visibility state with values `draft`, `published`, and `unpublished`; `draft` is initial-only.
 - `module_sections.lecturer_notes` stores shared plain-text lecturer notes for the section and uses `NULL` as the canonical empty value.
 - Session 3.2 implements behavior only; no schema change or `published_at` field was added.
+
+## Module section generation
+- Session 4.3.5d-B1 adds a backend/product section-generation path to admin module creation. `POST /admin/modules` now creates the `course_modules` row, owner membership, and four default `module_sections` in the same route transaction.
+- The temporary MVP default policy creates `Lecture 1`, `Lecture 2`, `Lab 1`, and `Assignment 1` with `order_index` values 1 through 4.
+- Generated sections use existing schema fields only: `publish_status='draft'`, `status='active'`, and `lecturer_notes=NULL`.
+- No section-template table, schedule builder, schema migration, or public admin DTO change was added in 4.3.5d-B1.
 
 ## Transcript schema notes
 - `transcripts.module_section_id` points at `module_sections(id)` and has a partial unique index, `uq_active_transcript_per_section`, for `is_active = true`.
