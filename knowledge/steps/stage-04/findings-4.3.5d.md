@@ -5,10 +5,11 @@ session: "4.3.5d"
 slug: stage3-content-ui-backfill
 status: open
 created: 2026-06-06
-updated: 2026-06-07 11:31
+updated: 2026-06-07 12:04
 spec: knowledge/specs/stage-04/4.3.5d-stage3-content-ui-backfill.md
 plan: knowledge/plans/stage-04/4.3.5d-stage3-content-ui-backfill-plan.md
 report: knowledge/steps/stage-04/4.3.5d-checkpoint-0-report.md
+checkpoint_a_report: knowledge/steps/stage-04/4.3.5d-checkpoint-A-report.md
 ---
 
 # Findings - 4.3.5d Stage 3 Content UI Backfill
@@ -23,13 +24,16 @@ report: knowledge/steps/stage-04/4.3.5d-checkpoint-0-report.md
 - Repair spec: [[specs/stage-04/4.3.5d-B1-stage3-module-section-auto-generation-repair]]
 - Repair plan: [[plans/stage-04/4.3.5d-B1-stage3-module-section-auto-generation-repair]]
 - Repair report: [[4.3.5d-B1-section-generation-repair]]
+- Checkpoint A spec: [[specs/stage-04/4.3.5d-checkpoint-A-lecturer-module-detail-notes]]
+- Checkpoint A plan: [[plans/stage-04/4.3.5d-checkpoint-A-lecturer-module-detail-notes-plan]]
+- Checkpoint A report: [[4.3.5d-checkpoint-A-report]]
 
 ## Status
-F-4.3.5d-001 is fixed in 4.3.5d-B1.
+F-4.3.5d-001 is fixed in 4.3.5d-B1. Checkpoint A passed.
 
 Stage 3 remains UI PENDING.
 
-4.3.5d may resume at Checkpoint A. F-4.3.5d-002 remains unresolved before Checkpoint B.
+F-4.3.5d-002 remains unresolved before Checkpoint B.
 
 ## Hard Blocker
 
@@ -93,7 +97,7 @@ Checkpoint impact: because section auto-generation is already a hard blocker, no
 ## Implementation Gaps After Blocker Resolution
 
 ### F-4.3.5d-003 - Lecturer read projection may be too thin
-Status: deferred pending blocker resolution
+Status: partially addressed in Checkpoint A; asset status still deferred
 
 Severity: implementation prerequisite
 
@@ -102,19 +106,21 @@ Evidence:
 - Lecturer list rows include `id`, `title`, `type`, `orderIndex`, `hasAssets`, and `hasNotes`, but not `publishStatus` or asset `processingStatus`. See `backend/app/platform/query/content_read.py:167` and `frontend/src/lib/api/models/SectionListItem.ts:5`.
 - Lecturer detail includes `publishStatus` but not assets. See `frontend/src/lib/api/models/SectionDetail.ts:5`.
 - Asset list includes asset `processingStatus`, but requires a separate per-section asset-list call. See `frontend/src/lib/api/models/SectionAssetResponse.ts:5`.
+- Checkpoint A avoided a backend projection change by loading lecturer section detail per section. This provides `publishStatus` and `lecturerNotes` for the notes UI.
 
-Required decision: approve a read-only projection or UI data-loading pattern before implementing the lecturer content UI. Any projection change must remain read-only and tech-lead-approved.
+Remaining decision: Checkpoint B or later must choose whether to use per-section asset-list calls or approve a read-only projection for asset `processingStatus`. Any projection change must remain read-only and tech-lead-approved.
 
 ### F-4.3.5d-004 - Frontend wrapper does not expose full Stage 3 content surface
-Status: deferred pending blocker resolution
+Status: partially addressed in Checkpoint A
 
 Severity: implementation prerequisite
 
 Evidence:
 - Generated `ContentService` exposes list sections, get section, list assets, upload, signed URL, replace, notes, publish, and unpublish. See `frontend/src/lib/api/services/ContentService.ts:23`, `:77`, `:106`, `:140`, `:172`, `:208`, `:239`, and `:267`.
-- `frontend/src/lib/api/wrapper.ts` currently exposes `getAssetDownloadUrl`, `getSection`, `listSections`, `publishSection`, and `uploadAsset`, but not list assets, replace asset, update notes, or unpublish. See `frontend/src/lib/api/wrapper.ts:128`.
+- Before Checkpoint A, `frontend/src/lib/api/wrapper.ts` exposed `getAssetDownloadUrl`, `getSection`, `listSections`, `publishSection`, and `uploadAsset`, but not list assets, replace asset, update notes, or unpublish.
+- Checkpoint A added `api.content.updateNotes` and `api.modules.get` to support lecturer module detail and notes editing.
 
-Required resolution: expose the missing wrapper methods before UI implementation. This is frontend wrapper work, not a backend write-path repair.
+Remaining resolution: expose list assets, replace asset, and unpublish wrapper methods before the checkpoints that require those behaviors. This is frontend wrapper work, not a backend write-path repair.
 
 ## Contract Map
 
@@ -155,9 +161,11 @@ Evidence:
 - Upload and replace set `processing_status="completed"` immediately in the MVP. See `backend/app/domains/content/service.py:341` and `backend/app/domains/content/service.py:431`.
 
 ## Required follow-up
-Resume Session 4.3.5d at Checkpoint A.
+Proceed to Checkpoint B only after resolving `frontend/src/lib/api/upload.ts`.
 
 Resolved backend repair: Session 4.3.5d-B1 - Stage 3 Module Section Auto-Generation Repair.
+
+Completed UI checkpoint: 4.3.5d Checkpoint A - Lecturer module detail + notes.
 
 Future decision still open: how should module creation know what sections to create after the temporary MVP default is replaced?
 

@@ -11,6 +11,7 @@ import {
   ModulesService,
   OpenAPI,
   type ResetPasswordRequest,
+  type UpdateSectionNotesRequest,
 } from './index';
 import { consumeForcedBearerToken } from '../e2e/e2eAuthOverride';
 import { getSupabaseBrowserClient } from '../supabase/client';
@@ -152,6 +153,18 @@ export const api = {
           sectionId,
         ),
       ),
+    updateNotes: (
+      moduleId: string,
+      sectionId: string,
+      requestBody: UpdateSectionNotesRequest,
+    ) =>
+      withAuthRecovery(() =>
+        ContentService.updateNotesModulesModuleIdSectionsSectionIdNotesPatch(
+          moduleId,
+          sectionId,
+          requestBody,
+        ),
+      ),
     uploadAsset: (moduleId: string, sectionId: string, file: File) =>
       withAuthRecovery(() =>
         ContentService.uploadAssetModulesModuleIdSectionsSectionIdAssetsPost(
@@ -165,6 +178,8 @@ export const api = {
     get: () => withAuthRecovery(() => MeService.getMeMeGet()),
   },
   modules: {
+    get: (moduleId: string) =>
+      withAuthRecovery(() => ModulesService.getModuleModulesModuleIdGet(moduleId)),
     list: () => withAuthRecovery(() => ModulesService.listModulesModulesGet()),
   },
 };

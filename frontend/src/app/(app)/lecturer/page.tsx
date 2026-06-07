@@ -4,7 +4,7 @@ export default function LecturerPage() {
   return (
     <section style={{ display: "grid", gap: 16 }}>
       <h1>Lecturer</h1>
-      <AssignedModulesList />
+      <AssignedModulesList moduleHrefPrefix="/lecturer/modules" />
     </section>
   );
 }

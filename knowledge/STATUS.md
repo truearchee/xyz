@@ -1,6 +1,6 @@
 # Status
 
-_Last updated: 2026-06-07 11:31 - Session 4.3.5d-B1 section generation repair complete_
+_Last updated: 2026-06-07 12:04 - Session 4.3.5d Checkpoint A complete_
 
 ## Current focus
 Stage 1 is FULLY VERIFIED. Session 1.1b satisfied the browser gate: the root page called `http://localhost:8000/health` directly through the generated client, CORS allowed `http://localhost:3000`, and the browser showed live backend state.
@@ -17,12 +17,13 @@ Stage 3  Content + visibility / P1   UI PENDING
 Current state:
 - Admin module creation now creates four default `module_sections`: `Lecture 1`, `Lecture 2`, `Lab 1`, and `Assignment 1`.
 - Generated sections default to draft and remain hidden from students until published.
+- Checkpoint A is complete: lecturers can open assigned module detail, see generated sections from the backend, edit lecturer notes, save through the wrapper/generated client, and re-fetch persisted notes.
 - Existing E2E fixtures still insert sections directly for old setup paths; the resumed Stage 3 browser gate must prove the product path.
 - `frontend/src/lib/api/upload.ts` is missing and must be restored before multipart UI checkpoints.
 - Stage 3 remains UI PENDING until the 4.3.5d Stage 3 browser gate passes.
 
 Required next:
-- Resume 4.3.5d at Checkpoint A.
+- Resolve `frontend/src/lib/api/upload.ts`, then proceed to Checkpoint B - PDF upload + replace.
 
 ## Stage 2 browser gate - 4.3.5c
 - Admin-created lecturer/student accounts through UI: PROVEN
@@ -46,6 +47,7 @@ Required next:
 - /tracer gated by NEXT_PUBLIC_TRACER_ENABLED: PROVEN
 
 ## Done recently
+- Session 4.3.5d Checkpoint A: lecturer module detail and notes UI completed. `/lecturer/modules/[moduleId]` renders generated backend sections, saves notes through wrapper/generated client, re-fetches after save, has no create/delete/reorder/upload/publish/student UI, frontend type-check and `next build` passed, direct fetch/JWT scans were clean, and no backend files changed.
 - Session 4.3.5d-B1: admin module creation now generates four predefined draft sections in the backend product path. Targeted admin/content tests passed; full backend passed with `151 passed`; frontend type-check passed; generated client freshness passed with no diff; no frontend UI work was added; Stage 3 remains UI PENDING.
 - Session 4.3.5d Checkpoint 0: blocked before UI implementation. Generated client freshness passed with no diff; admin module creation source and empirical probe showed `module_sections_count=0`; existing E2E fixture directly inserts sections; product source was unchanged; Stage 3 remains UI PENDING.
 - Session 4.3.5c: Stage 2 Admin UI backfill completed. Backend projection tests passed (`30 passed`); full backend suite passed (`149 passed`); frontend type-check passed; direct fetch and JWT-role scans had no matches; Playwright `tests/e2e/4.3.5c-stage2-admin.spec.ts` passed `1 passed (9.4s)`; Stage 2 is FULLY VERIFIED.
@@ -57,7 +59,8 @@ Required next:
 - None.
 
 ## Next up
-- Resume Session 4.3.5d - Stage 3 Content UI backfill at Checkpoint A.
+- Resolve `frontend/src/lib/api/upload.ts` before Session 4.3.5d Checkpoint B.
+- Resume Session 4.3.5d - Stage 3 Content UI backfill at Checkpoint B only after the upload helper prerequisite is clean.
 - Session 4.3.5e - Stage 4.1-4.3 Transcript UI backfill and `/tracer` deletion.
 
 ## Known issues / blockers

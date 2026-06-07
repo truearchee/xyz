@@ -2,7 +2,7 @@
 type: architecture
 stage: 04
 created: 2026-06-05
-updated: 2026-06-05 21:24
+updated: 2026-06-07 12:04
 related-session: knowledge/specs/stage-04/4.3.5c-stage2-admin-ui-backfill.md
 ---
 
@@ -15,6 +15,9 @@ related-session: knowledge/specs/stage-04/4.3.5c-stage2-admin-ui-backfill.md
 - Spec: [[specs/stage-04/4.3.5c-stage2-admin-ui-backfill]]
 - Plan: [[plans/stage-04/4.3.5c-stage2-admin-ui-backfill]]
 - Report: [[4.3.5c-stage2-admin-ui]]
+- Spec: [[specs/stage-04/4.3.5d-checkpoint-A-lecturer-module-detail-notes]]
+- Plan: [[plans/stage-04/4.3.5d-checkpoint-A-lecturer-module-detail-notes-plan]]
+- Report: [[4.3.5d-checkpoint-A-report]]
 - ADR: [[decisions/adr-023-stage2-admin-module-membership-projection]]
 - Recovery plan: [[specs/recovery/client-edge-recovery-plan]]
 - Architecture: [[architecture/auth-current-user-context]]
@@ -23,6 +26,8 @@ related-session: knowledge/specs/stage-04/4.3.5c-stage2-admin-ui-backfill.md
 The root `frontend/src/app/layout.tsx` owns global providers only. The public auth page lives under `(auth)/login` and renders without the AppShell. Protected app pages live under `(app)` and are wrapped by `ProtectedAppLayout` plus `AppShell`.
 
 Route groups do not change public URLs. Current public app routes are `/login`, `/admin`, `/lecturer`, `/student`, `/unauthorized`, and `/tracer`.
+
+Session 4.3.5d Checkpoint A adds the lecturer module detail route `/lecturer/modules/[moduleId]`. It is a protected lecturer route under `(app)` and renders `frontend/src/features/content/lecturer/LecturerModuleDetail.tsx`.
 
 ## Session state
 `SessionProvider` is the browser source for frontend auth state. It reads Supabase browser session state, calls backend `GET /me`, and exposes app context from the backend response. Role routing and guards use the `/me` role only; frontend code must not decode JWT claims or read Supabase metadata for product role.
@@ -49,6 +54,16 @@ Session 4.3.5c replaced the Stage 2 placeholders with thin product surfaces:
 - Lecturer and student home pages render `frontend/src/features/modules/AssignedModulesList.tsx`, which calls `GET /modules` through the wrapper and remains read-only.
 
 Do not decode JWT claims for frontend role. Do not add direct `fetch()` calls outside the generated request/upload helpers or approved wrapper paths.
+
+## Stage 3 lecturer Checkpoint A UI
+Session 4.3.5d Checkpoint A adds the first Stage 3 lecturer content UI slice:
+
+- `/lecturer` assigned-module cards link to `/lecturer/modules/{moduleId}`.
+- `frontend/src/features/content/lecturer/LecturerModuleDetail.tsx` loads module metadata through `api.modules.get`, section list rows through `api.content.listSections`, and per-section detail through `api.content.getSection`.
+- Per-section detail is used to render `publishStatus` and `lecturerNotes` without a backend projection change.
+- `frontend/src/features/content/lecturer/SectionNotesEditor.tsx` edits lecturer notes and calls `api.content.updateNotes`.
+- Notes save re-fetches backend data before displaying persisted state, and save failures render `role="alert"`.
+- Checkpoint A intentionally does not add upload, replace, publish/unpublish controls, student content views, signed URL opening, section create/delete/reorder controls, or backend changes.
 
 ## E2E bridge and tracer
 `NEXT_PUBLIC_E2E_TEST_HOOKS=true` enables a browser-only `window.__xyzE2E` bridge for Playwright. It exposes Supabase session helpers, wrapper-backed `/me` and `/admin/users` calls with serializable result envelopes, and a single-use forced bearer-token override for deterministic 401 testing. The bridge is not registered unless the flag is exactly `true`.

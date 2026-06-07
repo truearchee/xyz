@@ -6,7 +6,11 @@ import type { ModuleSummary } from "../../lib/api";
 import { api } from "../../lib/api/wrapper";
 import { ModuleListView } from "./ModuleListView";
 
-export function AssignedModulesList() {
+type AssignedModulesListProps = {
+  moduleHrefPrefix?: string;
+};
+
+export function AssignedModulesList({ moduleHrefPrefix }: AssignedModulesListProps) {
   const [modules, setModules] = useState<ModuleSummary[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -29,7 +33,11 @@ export function AssignedModulesList() {
   return (
     <ModuleListView
       errorMessage={errorMessage}
-      getModuleHref={() => "#"}
+      getModuleHref={
+        moduleHrefPrefix
+          ? (module) => `${moduleHrefPrefix}/${module.id}`
+          : () => "#"
+      }
       isLoading={isLoading}
       modules={modules}
     />
