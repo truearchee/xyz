@@ -164,6 +164,13 @@ export const api = {
           sectionId,
         ),
       ),
+    unpublishSection: (moduleId: string, sectionId: string) =>
+      withAuthRecovery(() =>
+        ContentService.unpublishModulesModuleIdSectionsSectionIdUnpublishPost(
+          moduleId,
+          sectionId,
+        ),
+      ),
     updateNotes: (
       moduleId: string,
       sectionId: string,

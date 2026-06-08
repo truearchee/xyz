@@ -2,7 +2,7 @@
 type: architecture
 stage: 04
 created: 2026-06-05
-updated: 2026-06-08 11:37
+updated: 2026-06-08 12:10
 related-session: knowledge/specs/stage-04/4.3.5c-stage2-admin-ui-backfill.md
 ---
 
@@ -24,6 +24,9 @@ related-session: knowledge/specs/stage-04/4.3.5c-stage2-admin-ui-backfill.md
 - Spec: [[specs/stage-04/4.3.5d-checkpoint-B-lecturer-pdf-upload-and-asset-replace-ui]]
 - Plan: [[plans/stage-04/4.3.5d-checkpoint-B-lecturer-pdf-upload-and-asset-replace-ui-plan]]
 - Report: [[4.3.5d-checkpoint-B-report]]
+- Spec: [[specs/stage-04/4.3.5d-checkpoint-C-publish-unpublish-controls-and-status-separation]]
+- Plan: [[plans/stage-04/4.3.5d-checkpoint-C-publish-unpublish-controls-and-status-separation-plan]]
+- Report: [[4.3.5d-checkpoint-C-report]]
 - ADR: [[decisions/adr-023-stage2-admin-module-membership-projection]]
 - Recovery plan: [[specs/recovery/client-edge-recovery-plan]]
 - Architecture: [[architecture/auth-current-user-context]]
@@ -89,6 +92,16 @@ Session 4.3.5d Checkpoint B extends `/lecturer/modules/{moduleId}` with section 
 - Upload and replace failures render `role="alert"`.
 
 The section `publishStatus` badge remains on the section header. Asset `processingStatus` remains on each asset row and uses asset-id-specific test IDs. Checkpoint B intentionally does not add publish/unpublish controls, student module pages, signed URL opening, or backend changes.
+
+## Stage 3 lecturer Checkpoint C UI
+Session 4.3.5d Checkpoint C adds section visibility controls to `/lecturer/modules/{moduleId}`:
+
+- `SectionPublishControl.tsx` renders visible section `publishStatus` text and a section-title-labeled publish/unpublish button.
+- `LecturerModuleDetail.tsx` calls `api.content.publishSection` or `api.content.unpublishSection`, then re-fetches module, section, and asset data before rendering the new status.
+- `frontend/src/lib/api/wrapper.ts` exposes `api.content.unpublishSection`; `api.content.publishSection` already existed.
+- Publish/unpublish mutation failures render `role="alert"` in the section control.
+
+Status ownership remains split: `SectionPublishControl` renders section visibility state with `data-testid="section-publish-status-{sectionKey}"`, while `SectionAssetRow` renders each asset processing state with `data-testid="section-asset-processing-status-{assetId}"`. Checkpoint C intentionally does not add student pages, signed URL opening, backend changes, or section create/delete/reorder controls.
 
 ## E2E bridge and tracer
 `NEXT_PUBLIC_E2E_TEST_HOOKS=true` enables a browser-only `window.__xyzE2E` bridge for Playwright. It exposes Supabase session helpers, wrapper-backed `/me` and `/admin/users` calls with serializable result envelopes, and a single-use forced bearer-token override for deterministic 401 testing. The bridge is not registered unless the flag is exactly `true`.

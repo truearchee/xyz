@@ -5,7 +5,7 @@ session: "4.3.5d"
 slug: stage3-content-ui-backfill
 status: open
 created: 2026-06-06
-updated: 2026-06-08 11:37
+updated: 2026-06-08 12:10
 spec: knowledge/specs/stage-04/4.3.5d-stage3-content-ui-backfill.md
 plan: knowledge/plans/stage-04/4.3.5d-stage3-content-ui-backfill-plan.md
 report: knowledge/steps/stage-04/4.3.5d-checkpoint-0-report.md
@@ -33,13 +33,16 @@ checkpoint_a_report: knowledge/steps/stage-04/4.3.5d-checkpoint-A-report.md
 - Checkpoint B spec: [[specs/stage-04/4.3.5d-checkpoint-B-lecturer-pdf-upload-and-asset-replace-ui]]
 - Checkpoint B plan: [[plans/stage-04/4.3.5d-checkpoint-B-lecturer-pdf-upload-and-asset-replace-ui-plan]]
 - Checkpoint B report: [[4.3.5d-checkpoint-B-report]]
+- Checkpoint C spec: [[specs/stage-04/4.3.5d-checkpoint-C-publish-unpublish-controls-and-status-separation]]
+- Checkpoint C plan: [[plans/stage-04/4.3.5d-checkpoint-C-publish-unpublish-controls-and-status-separation-plan]]
+- Checkpoint C report: [[4.3.5d-checkpoint-C-report]]
 
 ## Status
 F-4.3.5d-001 is fixed in 4.3.5d-B1. Checkpoint A passed.
 
 Stage 3 remains UI PENDING.
 
-F-4.3.5d-002 is fixed in 4.3.5d-B0. Checkpoint B passed.
+F-4.3.5d-002 is fixed in 4.3.5d-B0. Checkpoint B passed. Checkpoint C passed.
 
 ## Hard Blocker
 
@@ -126,9 +129,9 @@ Evidence:
 Resolution: Checkpoint B uses per-section asset-list calls. No read projection change was required.
 
 ### F-4.3.5d-004 - Frontend wrapper does not expose full Stage 3 content surface
-Status: partially addressed through Checkpoint B
+Status: addressed for lecturer Checkpoints A-C
 
-Severity: implementation prerequisite
+Severity: resolved implementation prerequisite for lecturer Checkpoints A-C
 
 Evidence:
 - Generated `ContentService` exposes list sections, get section, list assets, upload, signed URL, replace, notes, publish, and unpublish. See `frontend/src/lib/api/services/ContentService.ts:23`, `:77`, `:106`, `:140`, `:172`, `:208`, `:239`, and `:267`.
@@ -137,8 +140,10 @@ Evidence:
 - Checkpoint B added `api.content.listAssets` for backend re-fetch after upload/replace.
 - Checkpoint B uses `frontend/src/lib/api/upload.ts` for upload and asset-level replace instead of adding generated multipart methods to the wrapper.
 - Checkpoint B removed stale feature-level upload/replace exports from `frontend/src/features/content/api/assets.ts` so `frontend/src/lib/api/upload.ts` is the lecturer UI upload/replace helper surface.
+- Checkpoint C added `api.content.unpublishSection` and used existing `api.content.publishSection`.
+- Browser smoke proved publish and unpublish controls call the backend through the wrapper and re-fetch status from backend data.
 
-Remaining resolution: expose unpublish wrapper methods before the checkpoint that requires those behaviors.
+Resolution for current lecturer checkpoints: list sections, section detail, notes, list assets, upload, replace, publish, and unpublish are available through the approved wrapper/upload-helper surfaces.
 
 ## Contract Map
 
@@ -182,6 +187,8 @@ Evidence:
 Proceed to Checkpoint B - lecturer PDF upload + asset-level replace UI.
 
 Completed UI checkpoint: 4.3.5d Checkpoint B - Lecturer PDF upload + asset-level replace UI.
+
+Completed UI checkpoint: 4.3.5d Checkpoint C - Publish/unpublish controls and status separation.
 
 Resolved backend repair: Session 4.3.5d-B1 - Stage 3 Module Section Auto-Generation Repair.
 

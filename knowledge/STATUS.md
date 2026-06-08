@@ -1,6 +1,6 @@
 # Status
 
-_Last updated: 2026-06-08 11:37 - Session 4.3.5d Checkpoint B complete_
+_Last updated: 2026-06-08 12:10 - Session 4.3.5d Checkpoint C complete_
 
 ## Current focus
 Stage 1 is FULLY VERIFIED. Session 1.1b satisfied the browser gate: the root page called `http://localhost:8000/health` directly through the generated client, CORS allowed `http://localhost:3000`, and the browser showed live backend state.
@@ -22,10 +22,11 @@ Current state:
 - 4.3.5d-B0 added the approved multipart upload helper required for Checkpoint B.
 - `frontend/src/lib/api/upload.ts` supports section upload and asset replace through the existing backend content routes, with Supabase bearer auth and `FormData` field `file`.
 - Checkpoint B is complete: lecturers can upload a real PDF to a generated section, see the backend re-fetched asset row and asset `processingStatus`, replace that specific asset, and see backend non-PDF rejection as `role="alert"`.
+- Checkpoint C is complete: lecturers can publish and unpublish sections through wrapper/generated client calls, with backend re-fetch after each toggle and separate visible section `publishStatus` and asset `processingStatus`.
 - Stage 3 remains UI PENDING until the 4.3.5d Stage 3 browser gate passes.
 
 Required next:
-- Proceed to Checkpoint C - publish/unpublish controls and status separation.
+- Proceed to Checkpoint D - student published-only view + signed-URL open.
 
 ## Stage 2 browser gate - 4.3.5c
 - Admin-created lecturer/student accounts through UI: PROVEN
@@ -49,6 +50,7 @@ Required next:
 - /tracer gated by NEXT_PUBLIC_TRACER_ENABLED: PROVEN
 
 ## Done recently
+- Session 4.3.5d Checkpoint C: publish/unpublish controls and status separation completed. Browser smoke passed on fresh product-path module `019ea648-4a2e-750e-9563-7263fae4a0a4`; the UI showed section Draft plus asset `completed`, published the section to Published while asset status stayed `completed`, then unpublished to Unpublished while asset status stayed `completed`. Frontend type-check/build passed; direct fetch/JWT scans were clean; no backend changes; Stage 3 remains UI PENDING.
 - Session 4.3.5d Checkpoint B: lecturer PDF upload and asset-level replace UI completed. Browser smoke passed on fresh product-path module `019ea629-c5ae-70da-915b-c64b19ab7599`; the UI uploaded `checkpoint-b-upload.pdf`, re-fetched an asset row, rendered asset `processingStatus` separately from section Draft status, replaced the asset with `checkpoint-b-replacement.pdf`, and rendered backend non-PDF rejection as `role="alert"`. Frontend type-check/build passed; direct fetch/JWT scans were clean; no backend changes; Stage 3 remains UI PENDING.
 - Session 4.3.5d-B0: restored `frontend/src/lib/api/upload.ts` as the controlled multipart helper for section asset upload and asset-level replace. Frontend type-check and Next build passed; direct fetch/JWT scans were clean; generated client freshness passed; no backend or product UI files changed; Stage 3 remains UI PENDING.
 - Session 4.3.5d Checkpoint A: lecturer module detail and notes UI completed. `/lecturer/modules/[moduleId]` renders generated backend sections, saves notes through wrapper/generated client, re-fetches after save, has no create/delete/reorder/upload/publish/student UI, frontend type-check and `next build` passed, direct fetch/JWT scans were clean, and no backend files changed.
@@ -63,7 +65,7 @@ Required next:
 - None.
 
 ## Next up
-- Resume Session 4.3.5d - Stage 3 Content UI backfill at Checkpoint C - publish/unpublish controls and status separation.
+- Resume Session 4.3.5d - Stage 3 Content UI backfill at Checkpoint D - student published-only view + signed-URL open.
 - Session 4.3.5e - Stage 4.1-4.3 Transcript UI backfill and `/tracer` deletion.
 
 ## Known issues / blockers

@@ -16,6 +16,7 @@ import {
 import { ForbiddenError, api } from "../../../lib/api/wrapper";
 import { SectionAssetList } from "./SectionAssetList";
 import { SectionNotesEditor } from "./SectionNotesEditor";
+import { SectionPublishControl } from "./SectionPublishControl";
 import { SectionUploadControl } from "./SectionUploadControl";
 
 type LecturerModuleDetailProps = {
@@ -39,16 +40,6 @@ function isLecturerSectionDetail(section: unknown): section is SectionDetail {
 
 function formatSectionType(type: string): string {
   return type.replace(/_/g, " ");
-}
-
-function formatPublishStatus(status: string): string {
-  if (status === "published") {
-    return "Published";
-  }
-  if (status === "unpublished") {
-    return "Unpublished";
-  }
-  return "Draft";
 }
 
 function errorMessage(caught: unknown): string {
@@ -84,9 +75,11 @@ export function LecturerModuleDetail({ moduleId }: LecturerModuleDetailProps) {
   const [savingSectionId, setSavingSectionId] = useState<string | null>(null);
   const [uploadingSectionId, setUploadingSectionId] = useState<string | null>(null);
   const [replacingAssetId, setReplacingAssetId] = useState<string | null>(null);
+  const [publishingSectionId, setPublishingSectionId] = useState<string | null>(null);
   const [saveErrors, setSaveErrors] = useState<Record<string, string>>({});
   const [uploadErrors, setUploadErrors] = useState<Record<string, string>>({});
   const [replaceErrors, setReplaceErrors] = useState<Record<string, string>>({});
+  const [publishErrors, setPublishErrors] = useState<Record<string, string>>({});
 
   const sortedSections = useMemo(
     () =>
@@ -200,6 +193,31 @@ export function LecturerModuleDetail({ moduleId }: LecturerModuleDetailProps) {
     }
   }
 
+  async function togglePublishStatus(section: SectionDetail) {
+    setPublishingSectionId(section.id);
+    setPublishErrors((current) => {
+      const next = { ...current };
+      delete next[section.id];
+      return next;
+    });
+
+    try {
+      if (section.publishStatus === "published") {
+        await api.content.unpublishSection(moduleId, section.id);
+      } else {
+        await api.content.publishSection(moduleId, section.id);
+      }
+      await loadModule();
+    } catch (caught) {
+      setPublishErrors((current) => ({
+        ...current,
+        [section.id]: errorMessage(caught),
+      }));
+    } finally {
+      setPublishingSectionId(null);
+    }
+  }
+
   if (isLoading) {
     return (
       <section aria-busy="true" aria-label="Lecturer module detail" style={styles.statePanel}>
@@ -265,12 +283,14 @@ export function LecturerModuleDetail({ moduleId }: LecturerModuleDetailProps) {
                     </p>
                     <h2 style={styles.sectionTitle}>{detail.title}</h2>
                   </div>
-                  <span
-                    data-testid={`section-publish-status-${sectionKey}`}
-                    style={styles.statusBadge}
-                  >
-                    {formatPublishStatus(detail.publishStatus)}
-                  </span>
+                  <SectionPublishControl
+                    errorMessage={publishErrors[detail.id] ?? null}
+                    isSubmitting={publishingSectionId === detail.id}
+                    onToggle={() => togglePublishStatus(detail)}
+                    publishStatus={detail.publishStatus}
+                    sectionKey={sectionKey}
+                    sectionTitle={detail.title}
+                  />
                 </header>
                 <SectionNotesEditor
                   errorMessage={saveErrors[detail.id] ?? null}
@@ -283,7 +303,8 @@ export function LecturerModuleDetail({ moduleId }: LecturerModuleDetailProps) {
                   assets={assets}
                   disabled={
                     uploadingSectionId === detail.id ||
-                    savingSectionId === detail.id
+                    savingSectionId === detail.id ||
+                    publishingSectionId === detail.id
                   }
                   onReplace={(assetId, file) =>
                     replaceAsset(detail.id, assetId, file)
@@ -293,7 +314,10 @@ export function LecturerModuleDetail({ moduleId }: LecturerModuleDetailProps) {
                   sectionTitle={detail.title}
                 />
                 <SectionUploadControl
-                  disabled={savingSectionId === detail.id}
+                  disabled={
+                    savingSectionId === detail.id ||
+                    publishingSectionId === detail.id
+                  }
                   errorMessage={uploadErrors[detail.id] ?? null}
                   isUploading={uploadingSectionId === detail.id}
                   onUpload={(file) => uploadAsset(detail.id, file)}
@@ -383,12 +407,6 @@ const styles = {
     fontSize: 18,
     lineHeight: 1.25,
     margin: 0,
-  },
-  statusBadge: {
-    ...badgeBase,
-    background: "#eef2ff",
-    border: "1px solid #c7d2fe",
-    color: "#3730a3",
   },
   emptyPanel: {
     border: "1px solid #d7dde8",
