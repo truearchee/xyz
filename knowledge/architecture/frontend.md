@@ -2,7 +2,7 @@
 type: architecture
 stage: 04
 created: 2026-06-05
-updated: 2026-06-07 12:04
+updated: 2026-06-08 10:58
 related-session: knowledge/specs/stage-04/4.3.5c-stage2-admin-ui-backfill.md
 ---
 
@@ -18,6 +18,9 @@ related-session: knowledge/specs/stage-04/4.3.5c-stage2-admin-ui-backfill.md
 - Spec: [[specs/stage-04/4.3.5d-checkpoint-A-lecturer-module-detail-notes]]
 - Plan: [[plans/stage-04/4.3.5d-checkpoint-A-lecturer-module-detail-notes-plan]]
 - Report: [[4.3.5d-checkpoint-A-report]]
+- Spec: [[specs/stage-04/4.3.5d-B0-stage3-multipart-upload-helper]]
+- Plan: [[plans/stage-04/4.3.5d-B0-stage3-multipart-upload-helper-plan]]
+- Report: [[4.3.5d-B0-upload-helper]]
 - ADR: [[decisions/adr-023-stage2-admin-module-membership-projection]]
 - Recovery plan: [[specs/recovery/client-edge-recovery-plan]]
 - Architecture: [[architecture/auth-current-user-context]]
@@ -64,6 +67,13 @@ Session 4.3.5d Checkpoint A adds the first Stage 3 lecturer content UI slice:
 - `frontend/src/features/content/lecturer/SectionNotesEditor.tsx` edits lecturer notes and calls `api.content.updateNotes`.
 - Notes save re-fetches backend data before displaying persisted state, and save failures render `role="alert"`.
 - Checkpoint A intentionally does not add upload, replace, publish/unpublish controls, student content views, signed URL opening, section create/delete/reorder controls, or backend changes.
+
+## Stage 3 multipart upload helper
+Session 4.3.5d-B0 adds `frontend/src/lib/api/upload.ts` as the controlled direct-`fetch()` exception for browser multipart uploads. Product pages and components still must not call `fetch()` directly.
+
+The helper uses the same generated-client base URL and token resolver through `OpenAPI.BASE` and `OpenAPI.TOKEN`. It attaches `Authorization: Bearer <access_token>`, sends `FormData` field `file`, and intentionally does not set `Content-Type` so the browser supplies the multipart boundary.
+
+The helper exposes `uploadSectionAsset(...)` and `replaceSectionAsset(...)`, returning the generated `SectionAssetResponse`. It preserves wrapper-aligned auth behavior: `401` signs out and redirects to `/login`, while `403` surfaces `ForbiddenError` without clearing the Supabase session.
 
 ## E2E bridge and tracer
 `NEXT_PUBLIC_E2E_TEST_HOOKS=true` enables a browser-only `window.__xyzE2E` bridge for Playwright. It exposes Supabase session helpers, wrapper-backed `/me` and `/admin/users` calls with serializable result envelopes, and a single-use forced bearer-token override for deterministic 401 testing. The bridge is not registered unless the flag is exactly `true`.

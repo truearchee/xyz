@@ -5,7 +5,7 @@ session: "4.3.5d"
 slug: stage3-content-ui-backfill
 status: open
 created: 2026-06-06
-updated: 2026-06-07 12:04
+updated: 2026-06-08 10:58
 spec: knowledge/specs/stage-04/4.3.5d-stage3-content-ui-backfill.md
 plan: knowledge/plans/stage-04/4.3.5d-stage3-content-ui-backfill-plan.md
 report: knowledge/steps/stage-04/4.3.5d-checkpoint-0-report.md
@@ -27,13 +27,16 @@ checkpoint_a_report: knowledge/steps/stage-04/4.3.5d-checkpoint-A-report.md
 - Checkpoint A spec: [[specs/stage-04/4.3.5d-checkpoint-A-lecturer-module-detail-notes]]
 - Checkpoint A plan: [[plans/stage-04/4.3.5d-checkpoint-A-lecturer-module-detail-notes-plan]]
 - Checkpoint A report: [[4.3.5d-checkpoint-A-report]]
+- Upload helper spec: [[specs/stage-04/4.3.5d-B0-stage3-multipart-upload-helper]]
+- Upload helper plan: [[plans/stage-04/4.3.5d-B0-stage3-multipart-upload-helper-plan]]
+- Upload helper report: [[4.3.5d-B0-upload-helper]]
 
 ## Status
 F-4.3.5d-001 is fixed in 4.3.5d-B1. Checkpoint A passed.
 
 Stage 3 remains UI PENDING.
 
-F-4.3.5d-002 remains unresolved before Checkpoint B.
+F-4.3.5d-002 is fixed in 4.3.5d-B0. Checkpoint B may proceed.
 
 ## Hard Blocker
 
@@ -79,20 +82,27 @@ Resolution:
 ## Prerequisite Blockers
 
 ### F-4.3.5d-002 - Missing multipart upload helper
-Status: unresolved
+Status: fixed in 4.3.5d-B0
 
-Severity: prerequisite blocker
+Severity: resolved prerequisite blocker
+
+Fixed by commit: pending final 4.3.5d-B0 implementation commit
 
 Evidence:
+- `frontend/src/lib/api/upload.ts` exists.
+- `uploadSectionAsset(...)` supports `POST /modules/{module_id}/sections/{section_id}/assets`.
+- `replaceSectionAsset(...)` supports `PUT /modules/{module_id}/sections/{section_id}/assets/{asset_id}`.
+- The helper attaches the current Supabase bearer token via existing `OpenAPI.TOKEN` configuration.
+- The helper uses `FormData` field `file` and does not manually set multipart `Content-Type`.
+- The helper returns the generated `SectionAssetResponse` type.
+- 401 signs out and redirects to `/login`; 403 surfaces `ForbiddenError` without signing out.
+- Direct fetch scan allows only generated API core and `frontend/src/lib/api/upload.ts`.
+- Frontend verification passed: `docker compose exec frontend npx tsc --noEmit` and `docker compose exec frontend npx next build`.
+- Generated client freshness passed with no generated model/service/core/index drift.
 
-```text
-$ test -f frontend/src/lib/api/upload.ts && echo upload:present || echo upload:missing
-upload:missing
-```
+Resolution: the approved multipart helper has been restored for Checkpoint B upload/replace UI work.
 
-Required resolution: restore/add the approved `frontend/src/lib/api/upload.ts` multipart helper before Checkpoint B.
-
-Checkpoint impact: because section auto-generation is already a hard blocker, no UI work was started.
+Checkpoint impact: Checkpoint B is unblocked from the upload-helper prerequisite. Stage 3 remains UI PENDING until the full 4.3.5d browser gate passes.
 
 ## Implementation Gaps After Blocker Resolution
 
@@ -120,7 +130,7 @@ Evidence:
 - Before Checkpoint A, `frontend/src/lib/api/wrapper.ts` exposed `getAssetDownloadUrl`, `getSection`, `listSections`, `publishSection`, and `uploadAsset`, but not list assets, replace asset, update notes, or unpublish.
 - Checkpoint A added `api.content.updateNotes` and `api.modules.get` to support lecturer module detail and notes editing.
 
-Remaining resolution: expose list assets, replace asset, and unpublish wrapper methods before the checkpoints that require those behaviors. This is frontend wrapper work, not a backend write-path repair.
+Remaining resolution: expose list assets and unpublish wrapper methods before the checkpoints that require those behaviors. Asset upload/replace can use the B0-controlled `frontend/src/lib/api/upload.ts` multipart helper instead of the generated JSON wrapper path.
 
 ## Contract Map
 
@@ -161,7 +171,7 @@ Evidence:
 - Upload and replace set `processing_status="completed"` immediately in the MVP. See `backend/app/domains/content/service.py:341` and `backend/app/domains/content/service.py:431`.
 
 ## Required follow-up
-Proceed to Checkpoint B only after resolving `frontend/src/lib/api/upload.ts`.
+Proceed to Checkpoint B - lecturer PDF upload + asset-level replace UI.
 
 Resolved backend repair: Session 4.3.5d-B1 - Stage 3 Module Section Auto-Generation Repair.
 

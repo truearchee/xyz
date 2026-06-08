@@ -1,6 +1,6 @@
 # Status
 
-_Last updated: 2026-06-07 12:04 - Session 4.3.5d Checkpoint A complete_
+_Last updated: 2026-06-08 10:58 - Session 4.3.5d-B0 upload helper complete_
 
 ## Current focus
 Stage 1 is FULLY VERIFIED. Session 1.1b satisfied the browser gate: the root page called `http://localhost:8000/health` directly through the generated client, CORS allowed `http://localhost:3000`, and the browser showed live backend state.
@@ -19,11 +19,12 @@ Current state:
 - Generated sections default to draft and remain hidden from students until published.
 - Checkpoint A is complete: lecturers can open assigned module detail, see generated sections from the backend, edit lecturer notes, save through the wrapper/generated client, and re-fetch persisted notes.
 - Existing E2E fixtures still insert sections directly for old setup paths; the resumed Stage 3 browser gate must prove the product path.
-- `frontend/src/lib/api/upload.ts` is missing and must be restored before multipart UI checkpoints.
+- 4.3.5d-B0 added the approved multipart upload helper required for Checkpoint B.
+- `frontend/src/lib/api/upload.ts` supports section upload and asset replace through the existing backend content routes, with Supabase bearer auth and `FormData` field `file`.
 - Stage 3 remains UI PENDING until the 4.3.5d Stage 3 browser gate passes.
 
 Required next:
-- Resolve `frontend/src/lib/api/upload.ts`, then proceed to Checkpoint B - PDF upload + replace.
+- Proceed to Checkpoint B - PDF upload + replace UI.
 
 ## Stage 2 browser gate - 4.3.5c
 - Admin-created lecturer/student accounts through UI: PROVEN
@@ -47,6 +48,7 @@ Required next:
 - /tracer gated by NEXT_PUBLIC_TRACER_ENABLED: PROVEN
 
 ## Done recently
+- Session 4.3.5d-B0: restored `frontend/src/lib/api/upload.ts` as the controlled multipart helper for section asset upload and asset-level replace. Frontend type-check and Next build passed; direct fetch/JWT scans were clean; generated client freshness passed; no backend or product UI files changed; Stage 3 remains UI PENDING.
 - Session 4.3.5d Checkpoint A: lecturer module detail and notes UI completed. `/lecturer/modules/[moduleId]` renders generated backend sections, saves notes through wrapper/generated client, re-fetches after save, has no create/delete/reorder/upload/publish/student UI, frontend type-check and `next build` passed, direct fetch/JWT scans were clean, and no backend files changed.
 - Session 4.3.5d-B1: admin module creation now generates four predefined draft sections in the backend product path. Targeted admin/content tests passed; full backend passed with `151 passed`; frontend type-check passed; generated client freshness passed with no diff; no frontend UI work was added; Stage 3 remains UI PENDING.
 - Session 4.3.5d Checkpoint 0: blocked before UI implementation. Generated client freshness passed with no diff; admin module creation source and empirical probe showed `module_sections_count=0`; existing E2E fixture directly inserts sections; product source was unchanged; Stage 3 remains UI PENDING.
@@ -59,13 +61,11 @@ Required next:
 - None.
 
 ## Next up
-- Resolve `frontend/src/lib/api/upload.ts` before Session 4.3.5d Checkpoint B.
-- Resume Session 4.3.5d - Stage 3 Content UI backfill at Checkpoint B only after the upload helper prerequisite is clean.
+- Resume Session 4.3.5d - Stage 3 Content UI backfill at Checkpoint B - PDF upload + asset-level replace UI.
 - Session 4.3.5e - Stage 4.1-4.3 Transcript UI backfill and `/tracer` deletion.
 
 ## Known issues / blockers
 - Stage 3 product UI remains pending until the resumed 4.3.5d browser gate proves lecturer upload -> publish -> student published-only access.
-- `frontend/src/lib/api/upload.ts` is still missing and must be restored before 4.3.5d multipart upload UI checkpoints.
 - Stage 4 product UI remains pending; 4.3.5e owns that surface after Stage 3 is genuinely FULLY VERIFIED.
 - Hosted Postgres extension bootstrap is not covered by the local Docker init script; handle `vector` and `pgcrypto` explicitly before first hosted deployment.
 - The backend test suite still reports the existing `httpx` ASGI shortcut deprecation warning.
