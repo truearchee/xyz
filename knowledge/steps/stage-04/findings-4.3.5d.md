@@ -86,7 +86,7 @@ Status: fixed in 4.3.5d-B0
 
 Severity: resolved prerequisite blocker
 
-Fixed by commit: pending final 4.3.5d-B0 implementation commit
+Fixed by commit: 2f5ba50
 
 Evidence:
 - `frontend/src/lib/api/upload.ts` exists.
