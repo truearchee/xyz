@@ -48,3 +48,4 @@ Format: `YYYY-MM-DD  [type]  summary  (#stage.session)` — type: spec | plan | 
 2026-06-08 12:10  [report]  complete 4.3.5d Checkpoint C publish/unpublish controls; browser smoke passed, frontend checks passed, no backend changes, Stage 3 remains UI PENDING  (#4.3.5d)
 2026-06-08 12:44  [report]  complete 4.3.5d Checkpoint D student published-only view and signed URL open; browser smoke passed, frontend checks passed, no backend changes, Stage 3 remains UI PENDING  (#4.3.5d)
 2026-06-08 14:00  [report]  complete 4.3.5d Checkpoint E full Stage 3 browser gate; lecturer upload/replace/publish and student published-only/signed-url/403 proof passed; Stage 3 FULLY VERIFIED  (#4.3.5d)
+2026-06-08 15:59  [blocker]  4.3.5d-E2 signed URL revocation proof blocked; after unpublish student section response was empty but fresh signed URL returned 404 instead of required 403; Stage 3 moved back to UI PENDING  (#4.3.5d-E2)

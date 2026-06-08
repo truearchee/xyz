@@ -3,15 +3,16 @@ type: findings
 stage: "4.3.5"
 session: "4.3.5d"
 slug: stage3-content-ui-backfill
-status: closed
+status: open
 created: 2026-06-06
-updated: 2026-06-08 14:00
+updated: 2026-06-08 15:59
 spec: knowledge/specs/stage-04/4.3.5d-stage3-content-ui-backfill.md
 plan: knowledge/plans/stage-04/4.3.5d-stage3-content-ui-backfill-plan.md
 report: knowledge/steps/stage-04/4.3.5d-checkpoint-0-report.md
 checkpoint_a_report: knowledge/steps/stage-04/4.3.5d-checkpoint-A-report.md
 checkpoint_d_report: knowledge/steps/stage-04/4.3.5d-checkpoint-D-report.md
 checkpoint_e_report: knowledge/steps/stage-04/4.3.5d-checkpoint-E-report.md
+checkpoint_e2_report: knowledge/steps/stage-04/4.3.5d-checkpoint-E2-signed-url-revocation.md
 ---
 
 # Findings - 4.3.5d Stage 3 Content UI Backfill
@@ -44,17 +45,20 @@ checkpoint_e_report: knowledge/steps/stage-04/4.3.5d-checkpoint-E-report.md
 - Checkpoint E spec: [[specs/stage-04/4.3.5d-checkpoint-E-full-stage3-content-visibility-browser-gate]]
 - Checkpoint E plan: [[plans/stage-04/4.3.5d-checkpoint-E-full-stage3-content-visibility-browser-gate-plan]]
 - Checkpoint E report: [[4.3.5d-checkpoint-E-report]]
+- Checkpoint E2 spec: [[specs/stage-04/4.3.5d-E2-signed-url-revocation-proof-and-cleanup]]
+- Checkpoint E2 plan: [[plans/stage-04/4.3.5d-E2-signed-url-revocation-proof-and-cleanup-plan]]
+- Checkpoint E2 report: [[4.3.5d-checkpoint-E2-signed-url-revocation]]
 
 ## Status
-All Stage 3 4.3.5d findings are resolved or non-blocking.
-
-Stage 3 is FULLY VERIFIED after Checkpoint E passed the full browser gate.
+Stage 3 is UI PENDING after supplemental Checkpoint E2 failed the post-unpublish fresh signed URL denial status assertion.
 
 F-4.3.5d-001 is fixed in 4.3.5d-B1.
 
 F-4.3.5d-002 is fixed in 4.3.5d-B0.
 
 Checkpoints A, B, C, D, and E passed.
+
+F-4.3.5d-005 is unresolved and blocks Stage 3 FULLY VERIFIED.
 
 ## Hard Blocker
 
@@ -120,7 +124,7 @@ Evidence:
 
 Resolution: the approved multipart helper has been restored for Checkpoint B upload/replace UI work.
 
-Checkpoint impact: Checkpoint B was unblocked from the upload-helper prerequisite. Stage 3 moved to FULLY VERIFIED after Checkpoint E passed the full browser gate.
+Checkpoint impact: Checkpoint B was unblocked from the upload-helper prerequisite. Stage 3 was marked FULLY VERIFIED after Checkpoint E, then moved back to UI PENDING after E2 opened F-4.3.5d-005.
 
 ## Implementation Gaps After Blocker Resolution
 
@@ -156,6 +160,31 @@ Evidence:
 - Browser smoke proved publish and unpublish controls call the backend through the wrapper and re-fetch status from backend data.
 
 Resolution for current lecturer checkpoints: list sections, section detail, notes, list assets, upload, replace, publish, and unpublish are available through the approved wrapper/upload-helper surfaces.
+
+### F-4.3.5d-005 - Post-unpublish fresh signed URL denial returns 404 instead of required 403
+Status: unresolved
+
+Severity: hard blocker for Stage 3 FULLY VERIFIED
+
+Found in: 4.3.5d-E2
+
+Evidence:
+- Published access worked before unpublish: student saw `Lecture 1`, saw notes and `stage3-e2-replaced.pdf`, requested a backend signed URL, and the signed URL fetched with HTTP `200`.
+- Lecturer unpublished `Lecture 1`; lecturer UI re-fetched `Section visibility: Unpublished`.
+- After unpublish, authenticated student `GET /modules/019ea719-80ba-771c-bea7-716638033078/sections` returned `[]`, proving `Lecture 1` and draft `Lecture 2` were absent from the student server response.
+- Fresh authenticated student signed URL request to `GET /modules/019ea719-80ba-771c-bea7-716638033078/sections/019ea719-80bb-743d-aa16-843c1ffdfc8f/assets/019ea719-88f0-7b9b-b6b6-3f4b48b91728/download-url` returned `404 {"detail":"SECTION_NOT_FOUND"}`.
+- The same student token remained authenticated: `/me` returned role `student` before and after the failed signed URL request.
+
+Why this blocks:
+- 4.3.5d-E2 requires an authenticated `403` for a fresh post-unpublish signed URL request.
+- A `404 SECTION_NOT_FOUND` proves access is blocked, but it does not satisfy the required 401/403 split for authenticated-but-forbidden access.
+
+Required resolution:
+- Session 4.3.5d-E2-B1 - Post-Unpublish Signed URL Denial Status Repair.
+- Preserve server-side published-only section list behavior.
+- Preserve the rule that previously issued signed URLs may remain valid until expiry.
+- Ensure a fresh signed URL request by an authenticated student for an unpublished section asset returns `403`, not `401` and not `404`.
+- Rerun E2 and restore Stage 3 to FULLY VERIFIED only after E2 passes.
 
 ## Contract Map
 
@@ -197,7 +226,9 @@ Evidence:
 - Upload and replace set `processing_status="completed"` immediately in the MVP. See `backend/app/domains/content/service.py:341` and `backend/app/domains/content/service.py:431`.
 
 ## Required follow-up
-Proceed to 4.3.5e - Stage 4.1-4.3 Transcript UI Backfill.
+Session 4.3.5d-E2-B1 - Post-Unpublish Signed URL Denial Status Repair.
+
+Do not proceed to 4.3.5e while F-4.3.5d-005 is unresolved.
 
 Completed UI checkpoint: 4.3.5d Checkpoint B - Lecturer PDF upload + asset-level replace UI.
 
@@ -206,6 +237,8 @@ Completed UI checkpoint: 4.3.5d Checkpoint C - Publish/unpublish controls and st
 Completed UI checkpoint: 4.3.5d Checkpoint D - Student published-only view + signed URL open.
 
 Completed browser gate: 4.3.5d Checkpoint E - Full Stage 3 browser gate.
+
+Blocked supplemental gate: 4.3.5d-E2 - Signed URL Revocation Proof + E2E Cleanup.
 
 Resolved backend repair: Session 4.3.5d-B1 - Stage 3 Module Section Auto-Generation Repair.
 
