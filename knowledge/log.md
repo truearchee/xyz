@@ -42,3 +42,4 @@ Format: `YYYY-MM-DD  [type]  summary  (#stage.session)` — type: spec | plan | 
 2026-06-06 20:20  [note]  Checkpoint A implementation request reviewed; still blocked by unresolved section auto-generation finding, no product UI work started  (#4.3.5d)
 2026-06-07 11:31  [fix]  complete session 4.3.5d-B1 section generation repair; admin module creation now creates four draft sections, backend 151 passed, Stage 3 remains UI PENDING  (#4.3.5d-B1)
 2026-06-07 12:04  [report]  complete session 4.3.5d Checkpoint A lecturer module detail and notes; frontend type-check/build passed, no backend changes, Stage 3 remains UI PENDING  (#4.3.5d)
+2026-06-08 10:34  [report]  record 4.3.5d Checkpoint A browser smoke PASS after Supabase env fix and B1 section generation; Stage 3 remains UI PENDING  (#4.3.5d)
