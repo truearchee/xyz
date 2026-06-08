@@ -160,7 +160,7 @@ async def _persist_chunks(
                 for draft in result.chunks
             ]
         )
-        transcript.status = "chunking"
+        transcript.status = "completed"
         transcript.updated_at = now
         job.status = "completed"
         job.completed_at = now

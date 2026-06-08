@@ -46,7 +46,7 @@ Successful parse completion now creates a queued `chunk` ingestion job in the sa
 ## Chunk handler structure
 The chunk handler locks the `chunk` `ingestion_jobs` row, marks it running, then locks the owning `transcripts` row before replacing any chunk rows. It verifies that a completed parse job exists and uses the parse job's persisted `processor_version` in the chunk idempotency key.
 
-Chunk replacement is atomic: one transaction deletes old chunks, inserts the fresh chunk set, advances the transcript to `chunking`, and completes the job with `result_metadata.chunk_count` and `result_metadata.oversized_segment_count`. If insertion fails, that transaction rolls back and preserves the prior committed chunk set. A separate cleanup transaction then marks the job and transcript failed with a sanitized error.
+Chunk replacement is atomic: one transaction deletes old chunks, inserts the fresh chunk set, advances the transcript to `completed`, and completes the job with `result_metadata.chunk_count` and `result_metadata.oversized_segment_count`. If insertion fails, that transaction rolls back and preserves the prior committed chunk set. A separate cleanup transaction then marks the job and transcript failed with a sanitized error.
 
 ## Intentional gaps
 Session 4.3 does not implement retry, backoff, stale-running recovery, replacement, or supersession. A process death after parse commit can leave a queued chunk job that has not been enqueued to RQ; Session 4.6 owns recovery.

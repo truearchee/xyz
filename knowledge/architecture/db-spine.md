@@ -81,7 +81,7 @@ The backend now has a SQLAlchemy declarative model package under `backend/app/pl
 - `ingestion_jobs.idempotency_key` is unique. Parse uses `parse:{transcript_id}:{checksum}`; `processor_version` is stored as metadata and is not part of the key.
 - `transcript_chunks.chunk_index` is unique per transcript. The unique btree on `(transcript_id, chunk_index)` is the transcript lookup path; no separate `transcript_id` index is present.
 - `transcript_chunks.embedding` is nullable until Session 4.4. `embedding_generated_at` records embedding time, while `updated_at` records the row's latest mutation.
-- `transcripts.status='chunking'` means the transcript has reached the chunking stage. Completion is represented by the completed `chunk` row in `ingestion_jobs`; there is intentionally no `chunked` transcript status.
+- `transcripts.status='completed'` means the Stage 4.1-4.3 transcript pipeline has completed upload, parse, and chunk persistence. Successful chunk jobs set the transcript to `completed` while also completing the `chunk` row in `ingestion_jobs`; there is intentionally no `chunked` transcript status.
 
 ## ID strategy
 All primary keys are PostgreSQL `UUID` columns with no database-side default. Application models generate UUIDv7 values through `uuid6.uuid7`, keeping IDs time-ordered while avoiding `gen_random_uuid()` defaults.

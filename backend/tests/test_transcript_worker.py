@@ -211,16 +211,20 @@ async def test_chunk_transcript_persists_chunks_and_completion_metadata(
     )
     db_session.expire_all()
 
+    segments = await _segments(db_session, transcript_id)
     chunks = await _chunks(db_session, transcript_id)
     job = await _chunk_job(db_session, transcript_id)
     refreshed = await db_session.get(Transcript, transcript_id)
 
     assert refreshed is not None
-    assert refreshed.status == "chunking"
+    assert refreshed.status == "completed"
     assert job.status == "completed"
     assert job.result_metadata == {"chunk_count": 1, "oversized_segment_count": 0}
+    assert len(segments) > 0
+    assert len(chunks) > 0
     assert [chunk.chunk_index for chunk in chunks] == [0]
     assert chunks[0].text == "hello world next segment"
+    assert segments[0].text == "hello world"
     assert chunks[0].start_sequence_number == 0
     assert chunks[0].end_sequence_number == 2
     assert chunks[0].start_time == 0
@@ -249,8 +253,11 @@ async def test_chunk_transcript_idempotent_rerun_does_not_duplicate_chunks(
 
     chunks = await _chunks(db_session, transcript_id)
     job = await _chunk_job(db_session, transcript_id)
+    refreshed = await db_session.get(Transcript, transcript_id)
     assert len(chunks) == 1
     assert job.attempts == 1
+    assert refreshed is not None
+    assert refreshed.status == "completed"
 
 
 @pytest.mark.anyio
@@ -323,7 +330,7 @@ async def test_running_chunk_job_noops_without_replacing_existing_chunks(
     assert current_job.attempts == 1
     assert current_job.result_metadata == {"chunk_count": 1, "oversized_segment_count": 0}
     assert refreshed is not None
-    assert refreshed.status == "chunking"
+    assert refreshed.status == "completed"
 
 
 def test_chunk_replacement_locks_transcript_row_before_delete() -> None:
