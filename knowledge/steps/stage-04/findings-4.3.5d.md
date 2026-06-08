@@ -5,7 +5,7 @@ session: "4.3.5d"
 slug: stage3-content-ui-backfill
 status: open
 created: 2026-06-06
-updated: 2026-06-08 10:58
+updated: 2026-06-08 11:37
 spec: knowledge/specs/stage-04/4.3.5d-stage3-content-ui-backfill.md
 plan: knowledge/plans/stage-04/4.3.5d-stage3-content-ui-backfill-plan.md
 report: knowledge/steps/stage-04/4.3.5d-checkpoint-0-report.md
@@ -30,13 +30,16 @@ checkpoint_a_report: knowledge/steps/stage-04/4.3.5d-checkpoint-A-report.md
 - Upload helper spec: [[specs/stage-04/4.3.5d-B0-stage3-multipart-upload-helper]]
 - Upload helper plan: [[plans/stage-04/4.3.5d-B0-stage3-multipart-upload-helper-plan]]
 - Upload helper report: [[4.3.5d-B0-upload-helper]]
+- Checkpoint B spec: [[specs/stage-04/4.3.5d-checkpoint-B-lecturer-pdf-upload-and-asset-replace-ui]]
+- Checkpoint B plan: [[plans/stage-04/4.3.5d-checkpoint-B-lecturer-pdf-upload-and-asset-replace-ui-plan]]
+- Checkpoint B report: [[4.3.5d-checkpoint-B-report]]
 
 ## Status
 F-4.3.5d-001 is fixed in 4.3.5d-B1. Checkpoint A passed.
 
 Stage 3 remains UI PENDING.
 
-F-4.3.5d-002 is fixed in 4.3.5d-B0. Checkpoint B may proceed.
+F-4.3.5d-002 is fixed in 4.3.5d-B0. Checkpoint B passed.
 
 ## Hard Blocker
 
@@ -107,9 +110,9 @@ Checkpoint impact: Checkpoint B is unblocked from the upload-helper prerequisite
 ## Implementation Gaps After Blocker Resolution
 
 ### F-4.3.5d-003 - Lecturer read projection may be too thin
-Status: partially addressed in Checkpoint A; asset status still deferred
+Status: addressed for Checkpoint B without backend projection change
 
-Severity: implementation prerequisite
+Severity: resolved implementation prerequisite for Checkpoint B
 
 Evidence:
 - `GET /modules/{module_id}/sections` exists and role-splits lecturer/student responses through `list_module_sections`. See `backend/app/api/routers/content.py:75` and `backend/app/domains/content/service.py:163`.
@@ -117,11 +120,13 @@ Evidence:
 - Lecturer detail includes `publishStatus` but not assets. See `frontend/src/lib/api/models/SectionDetail.ts:5`.
 - Asset list includes asset `processingStatus`, but requires a separate per-section asset-list call. See `frontend/src/lib/api/models/SectionAssetResponse.ts:5`.
 - Checkpoint A avoided a backend projection change by loading lecturer section detail per section. This provides `publishStatus` and `lecturerNotes` for the notes UI.
+- Checkpoint B avoided a backend projection change by loading assets through the existing lecturer-only asset-list endpoint, `GET /modules/{module_id}/sections/{section_id}/assets`.
+- Browser smoke proved asset `processingStatus` rendered separately from section `publishStatus` on product-generated sections.
 
-Remaining decision: Checkpoint B or later must choose whether to use per-section asset-list calls or approve a read-only projection for asset `processingStatus`. Any projection change must remain read-only and tech-lead-approved.
+Resolution: Checkpoint B uses per-section asset-list calls. No read projection change was required.
 
 ### F-4.3.5d-004 - Frontend wrapper does not expose full Stage 3 content surface
-Status: partially addressed in Checkpoint A
+Status: partially addressed through Checkpoint B
 
 Severity: implementation prerequisite
 
@@ -129,8 +134,11 @@ Evidence:
 - Generated `ContentService` exposes list sections, get section, list assets, upload, signed URL, replace, notes, publish, and unpublish. See `frontend/src/lib/api/services/ContentService.ts:23`, `:77`, `:106`, `:140`, `:172`, `:208`, `:239`, and `:267`.
 - Before Checkpoint A, `frontend/src/lib/api/wrapper.ts` exposed `getAssetDownloadUrl`, `getSection`, `listSections`, `publishSection`, and `uploadAsset`, but not list assets, replace asset, update notes, or unpublish.
 - Checkpoint A added `api.content.updateNotes` and `api.modules.get` to support lecturer module detail and notes editing.
+- Checkpoint B added `api.content.listAssets` for backend re-fetch after upload/replace.
+- Checkpoint B uses `frontend/src/lib/api/upload.ts` for upload and asset-level replace instead of adding generated multipart methods to the wrapper.
+- Checkpoint B removed stale feature-level upload/replace exports from `frontend/src/features/content/api/assets.ts` so `frontend/src/lib/api/upload.ts` is the lecturer UI upload/replace helper surface.
 
-Remaining resolution: expose list assets and unpublish wrapper methods before the checkpoints that require those behaviors. Asset upload/replace can use the B0-controlled `frontend/src/lib/api/upload.ts` multipart helper instead of the generated JSON wrapper path.
+Remaining resolution: expose unpublish wrapper methods before the checkpoint that requires those behaviors.
 
 ## Contract Map
 
@@ -172,6 +180,8 @@ Evidence:
 
 ## Required follow-up
 Proceed to Checkpoint B - lecturer PDF upload + asset-level replace UI.
+
+Completed UI checkpoint: 4.3.5d Checkpoint B - Lecturer PDF upload + asset-level replace UI.
 
 Resolved backend repair: Session 4.3.5d-B1 - Stage 3 Module Section Auto-Generation Repair.
 

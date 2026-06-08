@@ -4,11 +4,7 @@ export { SectionAssetList } from "./SectionAssetList";
 export { StudentSectionList } from "./StudentSectionList";
 export { StudentSectionView } from "./StudentSectionView";
 export { UploadButton } from "./UploadButton";
-export {
-  listSectionAssets,
-  replaceSectionAsset,
-  uploadSectionAsset,
-} from "./api/assets";
+export { listSectionAssets } from "./api/assets";
 export {
   publishSection,
   unpublishSection,

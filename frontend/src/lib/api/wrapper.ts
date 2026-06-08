@@ -11,6 +11,7 @@ import {
   ModulesService,
   OpenAPI,
   type ResetPasswordRequest,
+  type SectionAssetListResponse,
   type UpdateSectionNotesRequest,
 } from './index';
 import { consumeForcedBearerToken } from '../e2e/e2eAuthOverride';
@@ -138,6 +139,16 @@ export const api = {
     getSection: (moduleId: string, sectionId: string) =>
       withAuthRecovery(() =>
         ContentService.getSectionModulesModuleIdSectionsSectionIdGet(
+          moduleId,
+          sectionId,
+        ),
+      ),
+    listAssets: (
+      moduleId: string,
+      sectionId: string,
+    ): Promise<SectionAssetListResponse> =>
+      withAuthRecovery(() =>
+        ContentService.listAssetsModulesModuleIdSectionsSectionIdAssetsGet(
           moduleId,
           sectionId,
         ),

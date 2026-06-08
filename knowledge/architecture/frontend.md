@@ -2,7 +2,7 @@
 type: architecture
 stage: 04
 created: 2026-06-05
-updated: 2026-06-08 10:58
+updated: 2026-06-08 11:37
 related-session: knowledge/specs/stage-04/4.3.5c-stage2-admin-ui-backfill.md
 ---
 
@@ -21,6 +21,9 @@ related-session: knowledge/specs/stage-04/4.3.5c-stage2-admin-ui-backfill.md
 - Spec: [[specs/stage-04/4.3.5d-B0-stage3-multipart-upload-helper]]
 - Plan: [[plans/stage-04/4.3.5d-B0-stage3-multipart-upload-helper-plan]]
 - Report: [[4.3.5d-B0-upload-helper]]
+- Spec: [[specs/stage-04/4.3.5d-checkpoint-B-lecturer-pdf-upload-and-asset-replace-ui]]
+- Plan: [[plans/stage-04/4.3.5d-checkpoint-B-lecturer-pdf-upload-and-asset-replace-ui-plan]]
+- Report: [[4.3.5d-checkpoint-B-report]]
 - ADR: [[decisions/adr-023-stage2-admin-module-membership-projection]]
 - Recovery plan: [[specs/recovery/client-edge-recovery-plan]]
 - Architecture: [[architecture/auth-current-user-context]]
@@ -74,6 +77,18 @@ Session 4.3.5d-B0 adds `frontend/src/lib/api/upload.ts` as the controlled direct
 The helper uses the same generated-client base URL and token resolver through `OpenAPI.BASE` and `OpenAPI.TOKEN`. It attaches `Authorization: Bearer <access_token>`, sends `FormData` field `file`, and intentionally does not set `Content-Type` so the browser supplies the multipart boundary.
 
 The helper exposes `uploadSectionAsset(...)` and `replaceSectionAsset(...)`, returning the generated `SectionAssetResponse`. It preserves wrapper-aligned auth behavior: `401` signs out and redirects to `/login`, while `403` surfaces `ForbiddenError` without clearing the Supabase session.
+
+## Stage 3 lecturer Checkpoint B UI
+Session 4.3.5d Checkpoint B extends `/lecturer/modules/{moduleId}` with section asset upload and replacement:
+
+- `LecturerModuleDetail.tsx` loads section assets through `api.content.listAssets` after section list/detail reads.
+- `SectionUploadControl.tsx` selects a file and calls the B0 `uploadSectionAsset(...)` helper.
+- `SectionAssetList.tsx` renders backend asset rows and the no-files state.
+- `SectionAssetRow.tsx` renders filename, file metadata, asset `processingStatus`, and an asset-id-scoped replace control that calls B0 `replaceSectionAsset(...)`.
+- Upload and replace success paths re-fetch backend module/section/asset data before rendering success.
+- Upload and replace failures render `role="alert"`.
+
+The section `publishStatus` badge remains on the section header. Asset `processingStatus` remains on each asset row and uses asset-id-specific test IDs. Checkpoint B intentionally does not add publish/unpublish controls, student module pages, signed URL opening, or backend changes.
 
 ## E2E bridge and tracer
 `NEXT_PUBLIC_E2E_TEST_HOOKS=true` enables a browser-only `window.__xyzE2E` bridge for Playwright. It exposes Supabase session helpers, wrapper-backed `/me` and `/admin/users` calls with serializable result envelopes, and a single-use forced bearer-token override for deterministic 401 testing. The bridge is not registered unless the flag is exactly `true`.

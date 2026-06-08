@@ -2,15 +2,28 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import type { ModuleDetail, SectionDetail, SectionListItem } from "../../../lib/api";
+import {
+  ApiError,
+  type ModuleDetail,
+  type SectionAssetResponse,
+  type SectionDetail,
+  type SectionListItem,
+} from "../../../lib/api";
+import {
+  replaceSectionAsset,
+  uploadSectionAsset,
+} from "../../../lib/api/upload";
 import { ForbiddenError, api } from "../../../lib/api/wrapper";
+import { SectionAssetList } from "./SectionAssetList";
 import { SectionNotesEditor } from "./SectionNotesEditor";
+import { SectionUploadControl } from "./SectionUploadControl";
 
 type LecturerModuleDetailProps = {
   moduleId: string;
 };
 
 type SectionRecord = {
+  assets: SectionAssetResponse[];
   detail: SectionDetail;
   listItem: SectionListItem;
 };
@@ -39,10 +52,27 @@ function formatPublishStatus(status: string): string {
 }
 
 function errorMessage(caught: unknown): string {
+  if (caught instanceof ApiError) {
+    return apiErrorMessage(caught);
+  }
   if (caught instanceof Error) {
     return caught.message;
   }
   return "Unexpected error";
+}
+
+function apiErrorMessage(error: ApiError): string {
+  const detail = error.body?.detail;
+  if (typeof detail === "string") {
+    return detail;
+  }
+  if (Array.isArray(detail) && detail.length > 0) {
+    const first = detail[0] as { msg?: unknown };
+    if (typeof first.msg === "string") {
+      return first.msg;
+    }
+  }
+  return error.message;
 }
 
 export function LecturerModuleDetail({ moduleId }: LecturerModuleDetailProps) {
@@ -52,7 +82,11 @@ export function LecturerModuleDetail({ moduleId }: LecturerModuleDetailProps) {
   const [isForbidden, setIsForbidden] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [savingSectionId, setSavingSectionId] = useState<string | null>(null);
+  const [uploadingSectionId, setUploadingSectionId] = useState<string | null>(null);
+  const [replacingAssetId, setReplacingAssetId] = useState<string | null>(null);
   const [saveErrors, setSaveErrors] = useState<Record<string, string>>({});
+  const [uploadErrors, setUploadErrors] = useState<Record<string, string>>({});
+  const [replaceErrors, setReplaceErrors] = useState<Record<string, string>>({});
 
   const sortedSections = useMemo(
     () =>
@@ -73,11 +107,14 @@ export function LecturerModuleDetail({ moduleId }: LecturerModuleDetailProps) {
       ]);
       const details = await Promise.all(
         sectionList.map(async (section) => {
-          const detail = await api.content.getSection(moduleId, section.id);
+          const [detail, assetList] = await Promise.all([
+            api.content.getSection(moduleId, section.id),
+            api.content.listAssets(moduleId, section.id),
+          ]);
           if (!isLecturerSectionDetail(detail)) {
             throw new Error("Lecturer section detail was not returned");
           }
-          return { detail, listItem: section };
+          return { assets: assetList.assets, detail, listItem: section };
         }),
       );
 
@@ -118,6 +155,48 @@ export function LecturerModuleDetail({ moduleId }: LecturerModuleDetailProps) {
       }));
     } finally {
       setSavingSectionId(null);
+    }
+  }
+
+  async function uploadAsset(sectionId: string, file: File) {
+    setUploadingSectionId(sectionId);
+    setUploadErrors((current) => {
+      const next = { ...current };
+      delete next[sectionId];
+      return next;
+    });
+
+    try {
+      await uploadSectionAsset({ file, moduleId, sectionId });
+      await loadModule();
+    } catch (caught) {
+      setUploadErrors((current) => ({
+        ...current,
+        [sectionId]: errorMessage(caught),
+      }));
+    } finally {
+      setUploadingSectionId(null);
+    }
+  }
+
+  async function replaceAsset(sectionId: string, assetId: string, file: File) {
+    setReplacingAssetId(assetId);
+    setReplaceErrors((current) => {
+      const next = { ...current };
+      delete next[assetId];
+      return next;
+    });
+
+    try {
+      await replaceSectionAsset({ assetId, file, moduleId, sectionId });
+      await loadModule();
+    } catch (caught) {
+      setReplaceErrors((current) => ({
+        ...current,
+        [assetId]: errorMessage(caught),
+      }));
+    } finally {
+      setReplacingAssetId(null);
     }
   }
 
@@ -170,7 +249,7 @@ export function LecturerModuleDetail({ moduleId }: LecturerModuleDetailProps) {
           data-testid="lecturer-section-list"
           style={styles.sectionList}
         >
-          {sortedSections.map(({ detail, listItem }) => {
+          {sortedSections.map(({ assets, detail, listItem }) => {
             const sectionKey = `${listItem.orderIndex}-${detail.id}`;
 
             return (
@@ -198,6 +277,27 @@ export function LecturerModuleDetail({ moduleId }: LecturerModuleDetailProps) {
                   initialNotes={detail.lecturerNotes}
                   isSaving={savingSectionId === detail.id}
                   onSave={(lecturerNotes) => saveNotes(detail.id, lecturerNotes)}
+                  sectionTitle={detail.title}
+                />
+                <SectionAssetList
+                  assets={assets}
+                  disabled={
+                    uploadingSectionId === detail.id ||
+                    savingSectionId === detail.id
+                  }
+                  onReplace={(assetId, file) =>
+                    replaceAsset(detail.id, assetId, file)
+                  }
+                  replaceErrors={replaceErrors}
+                  replacingAssetId={replacingAssetId}
+                  sectionTitle={detail.title}
+                />
+                <SectionUploadControl
+                  disabled={savingSectionId === detail.id}
+                  errorMessage={uploadErrors[detail.id] ?? null}
+                  isUploading={uploadingSectionId === detail.id}
+                  onUpload={(file) => uploadAsset(detail.id, file)}
+                  sectionKey={sectionKey}
                   sectionTitle={detail.title}
                 />
               </article>
