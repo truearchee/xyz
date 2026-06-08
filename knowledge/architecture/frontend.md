@@ -2,7 +2,7 @@
 type: architecture
 stage: 04
 created: 2026-06-05
-updated: 2026-06-08 12:10
+updated: 2026-06-08 12:44
 related-session: knowledge/specs/stage-04/4.3.5c-stage2-admin-ui-backfill.md
 ---
 
@@ -27,6 +27,9 @@ related-session: knowledge/specs/stage-04/4.3.5c-stage2-admin-ui-backfill.md
 - Spec: [[specs/stage-04/4.3.5d-checkpoint-C-publish-unpublish-controls-and-status-separation]]
 - Plan: [[plans/stage-04/4.3.5d-checkpoint-C-publish-unpublish-controls-and-status-separation-plan]]
 - Report: [[4.3.5d-checkpoint-C-report]]
+- Spec: [[specs/stage-04/4.3.5d-checkpoint-D-student-published-only-view-and-signed-url-open]]
+- Plan: [[plans/stage-04/4.3.5d-checkpoint-D-student-published-only-view-and-signed-url-open-plan]]
+- Report: [[4.3.5d-checkpoint-D-report]]
 - ADR: [[decisions/adr-023-stage2-admin-module-membership-projection]]
 - Recovery plan: [[specs/recovery/client-edge-recovery-plan]]
 - Architecture: [[architecture/auth-current-user-context]]
@@ -37,6 +40,8 @@ The root `frontend/src/app/layout.tsx` owns global providers only. The public au
 Route groups do not change public URLs. Current public app routes are `/login`, `/admin`, `/lecturer`, `/student`, `/unauthorized`, and `/tracer`.
 
 Session 4.3.5d Checkpoint A adds the lecturer module detail route `/lecturer/modules/[moduleId]`. It is a protected lecturer route under `(app)` and renders `frontend/src/features/content/lecturer/LecturerModuleDetail.tsx`.
+
+Session 4.3.5d Checkpoint D adds the student module detail route `/student/modules/[moduleId]`. It is a protected student route under `(app)` and renders `frontend/src/features/content/student/StudentModuleDetail.tsx`.
 
 ## Session state
 `SessionProvider` is the browser source for frontend auth state. It reads Supabase browser session state, calls backend `GET /me`, and exposes app context from the backend response. Role routing and guards use the `/me` role only; frontend code must not decode JWT claims or read Supabase metadata for product role.
@@ -102,6 +107,18 @@ Session 4.3.5d Checkpoint C adds section visibility controls to `/lecturer/modul
 - Publish/unpublish mutation failures render `role="alert"` in the section control.
 
 Status ownership remains split: `SectionPublishControl` renders section visibility state with `data-testid="section-publish-status-{sectionKey}"`, while `SectionAssetRow` renders each asset processing state with `data-testid="section-asset-processing-status-{assetId}"`. Checkpoint C intentionally does not add student pages, signed URL opening, backend changes, or section create/delete/reorder controls.
+
+## Stage 3 student Checkpoint D UI
+Session 4.3.5d Checkpoint D adds the student published-only module detail route:
+
+- `/student` assigned-module cards link to `/student/modules/{moduleId}`.
+- `frontend/src/features/content/student/StudentModuleDetail.tsx` loads module metadata through `api.modules.get`, then loads the backend student-visible section list through `api.content.listSections`.
+- Student section visibility is server-authoritative. The component does not fetch lecturer/all-section data and does not frontend-filter draft/unpublished sections as the authority.
+- For each returned section, `StudentModuleDetail.tsx` loads `StudentSectionDetail` through `api.content.getSection`.
+- `StudentSectionView.tsx` renders section order/type/title, lecturer notes, and published asset rows.
+- `StudentAssetRow.tsx` calls `api.content.getAssetDownloadUrl` and opens the returned signed URL. It does not construct storage URLs or expose raw storage keys.
+- Signed URL request failures render `role="alert"`.
+- Student pages intentionally do not render upload, replace, publish, unpublish, edit-notes, create, delete, or reorder controls.
 
 ## E2E bridge and tracer
 `NEXT_PUBLIC_E2E_TEST_HOOKS=true` enables a browser-only `window.__xyzE2E` bridge for Playwright. It exposes Supabase session helpers, wrapper-backed `/me` and `/admin/users` calls with serializable result envelopes, and a single-use forced bearer-token override for deterministic 401 testing. The bridge is not registered unless the flag is exactly `true`.

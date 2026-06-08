@@ -5,11 +5,12 @@ session: "4.3.5d"
 slug: stage3-content-ui-backfill
 status: open
 created: 2026-06-06
-updated: 2026-06-08 12:10
+updated: 2026-06-08 12:44
 spec: knowledge/specs/stage-04/4.3.5d-stage3-content-ui-backfill.md
 plan: knowledge/plans/stage-04/4.3.5d-stage3-content-ui-backfill-plan.md
 report: knowledge/steps/stage-04/4.3.5d-checkpoint-0-report.md
 checkpoint_a_report: knowledge/steps/stage-04/4.3.5d-checkpoint-A-report.md
+checkpoint_d_report: knowledge/steps/stage-04/4.3.5d-checkpoint-D-report.md
 ---
 
 # Findings - 4.3.5d Stage 3 Content UI Backfill
@@ -36,13 +37,16 @@ checkpoint_a_report: knowledge/steps/stage-04/4.3.5d-checkpoint-A-report.md
 - Checkpoint C spec: [[specs/stage-04/4.3.5d-checkpoint-C-publish-unpublish-controls-and-status-separation]]
 - Checkpoint C plan: [[plans/stage-04/4.3.5d-checkpoint-C-publish-unpublish-controls-and-status-separation-plan]]
 - Checkpoint C report: [[4.3.5d-checkpoint-C-report]]
+- Checkpoint D spec: [[specs/stage-04/4.3.5d-checkpoint-D-student-published-only-view-and-signed-url-open]]
+- Checkpoint D plan: [[plans/stage-04/4.3.5d-checkpoint-D-student-published-only-view-and-signed-url-open-plan]]
+- Checkpoint D report: [[4.3.5d-checkpoint-D-report]]
 
 ## Status
 F-4.3.5d-001 is fixed in 4.3.5d-B1. Checkpoint A passed.
 
 Stage 3 remains UI PENDING.
 
-F-4.3.5d-002 is fixed in 4.3.5d-B0. Checkpoint B passed. Checkpoint C passed.
+F-4.3.5d-002 is fixed in 4.3.5d-B0. Checkpoint B passed. Checkpoint C passed. Checkpoint D passed.
 
 ## Hard Blocker
 
@@ -174,6 +178,7 @@ Evidence:
 - Generated method: `getAssetDownloadUrlModulesModuleIdSectionsSectionIdAssetsAssetIdDownloadUrlGet`.
 - Service checks student access against section `published`, section `active`, and asset `completed`; lecturers are allowed for assigned, non-archived sections. See `backend/app/domains/content/service.py:209`.
 - Signed URL TTL comes from `SIGNED_READ_URL_TTL_SECONDS`, and the response gets `Cache-Control: no-store`. See `backend/app/domains/content/service.py:239` and `backend/app/api/routers/content.py:120`.
+- Checkpoint D browser smoke proved the student UI requested the signed URL through the backend endpoint for a published asset and the returned URL fetched with HTTP `200`.
 
 ### Two-status-field contract
 Status: separate fields confirmed.
@@ -184,11 +189,13 @@ Evidence:
 - Upload and replace set `processing_status="completed"` immediately in the MVP. See `backend/app/domains/content/service.py:341` and `backend/app/domains/content/service.py:431`.
 
 ## Required follow-up
-Proceed to Checkpoint B - lecturer PDF upload + asset-level replace UI.
+Proceed to Checkpoint E - full Stage 3 browser gate.
 
 Completed UI checkpoint: 4.3.5d Checkpoint B - Lecturer PDF upload + asset-level replace UI.
 
 Completed UI checkpoint: 4.3.5d Checkpoint C - Publish/unpublish controls and status separation.
+
+Completed UI checkpoint: 4.3.5d Checkpoint D - Student published-only view + signed URL open.
 
 Resolved backend repair: Session 4.3.5d-B1 - Stage 3 Module Section Auto-Generation Repair.
 

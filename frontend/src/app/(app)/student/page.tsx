@@ -4,7 +4,7 @@ export default function StudentPage() {
   return (
     <section style={{ display: "grid", gap: 16 }}>
       <h1>Student</h1>
-      <AssignedModulesList />
+      <AssignedModulesList moduleHrefPrefix="/student/modules" />
     </section>
   );
 }
