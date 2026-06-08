@@ -174,7 +174,7 @@ Severity: resolved hard blocker
 
 Found in: 4.3.5d-E2
 
-Fixed by commit: pending
+Fixed by commit: `8a4169c`
 
 Evidence:
 - Published access worked before unpublish: student saw `Lecture 1`, saw notes and `stage3-e2-replaced.pdf`, requested a backend signed URL, and the signed URL fetched with HTTP `200`.
