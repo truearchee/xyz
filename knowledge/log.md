@@ -51,3 +51,4 @@ Format: `YYYY-MM-DD  [type]  summary  (#stage.session)` — type: spec | plan | 
 2026-06-08 15:59  [blocker]  4.3.5d-E2 signed URL revocation proof blocked; after unpublish student section response was empty but fresh signed URL returned 404 instead of required 403; Stage 3 moved back to UI PENDING  (#4.3.5d-E2)
 2026-06-08 16:28  [fix]  complete 4.3.5d-E2-B1 signed URL denial status repair; backend returns 403 for authenticated student post-unpublish fresh signed URL requests, E2 rerun passed, Stage 3 FULLY VERIFIED  (#4.3.5d-E2-B1)
 2026-06-08 20:03  [fix]  complete 4.3.5e Part 2 prerequisite repair; spec/plan/ADR persisted, chunk success now sets transcript status completed, backend 151 passed, generated client fresh  (#4.3.5e)
+2026-06-08 20:47  [report]  complete 4.3.5e Part 3 Checkpoint A-B lecturer transcript upload UI and worker-driven status polling; frontend type-check/build and guardrails passed, Stage 4.1-4.3 remains browser-gate pending  (#4.3.5e)

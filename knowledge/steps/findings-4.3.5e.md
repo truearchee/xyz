@@ -5,7 +5,7 @@ session: "4.3.5e"
 slug: transcript-ui-backfill
 status: open
 created: 2026-06-08
-updated: 2026-06-08 20:05 +0400
+updated: 2026-06-08 20:47 +0400
 ---
 
 # Findings - 4.3.5e Transcript UI Backfill
@@ -17,6 +17,7 @@ updated: 2026-06-08 20:05 +0400
 - Spec: [[specs/stage-04/4.3.5e-stage4-transcript-ui-backfill]]
 - Plan: [[plans/stage-04/4.3.5e-stage4-transcript-ui-plan]]
 - Report: [[4.3.5e-part2-prerequisite-terminal-state-repair]]
+- Report: [[4.3.5e-part3-transcript-frontend-ui]]
 - ADR: [[decisions/adr-024-stage-4-3-post-chunk-terminal-status]]
 
 ## Checkpoint 0 surface map
@@ -76,7 +77,7 @@ updated: 2026-06-08 20:05 +0400
 | F-4.3.5e-001 | No current 4.3.5e session spec file was found under `knowledge/specs/stage-04/`, even though Checkpoint 0 referenced it. | blocker | fixed_in_current_block | Fixed by persisted spec `knowledge/specs/stage-04/4.3.5e-stage4-transcript-ui-backfill.md`, plan `knowledge/plans/stage-04/4.3.5e-stage4-transcript-ui-plan.md`, and Part 2 report. |
 | F-4.3.5e-002 | Successful parse+chunk leaves `transcripts.status = 'chunking'` after the chunk job completes and chunks persist. `chunking` is not terminal for the browser gate. | hard blocker | fixed_in_current_block | Fixed by `backend/app/domains/transcripts/chunk_service.py`; `tests/test_transcript_worker.py` now proves post-chunk `completed`. |
 | F-4.3.5e-003 | Product status endpoint exposes no segment/chunk counts. | medium | accepted_non_blocking_with_rationale | Use test-level DB reads for the Playwright gate; do not add product raw-text/count endpoints in Checkpoint 0. |
-| F-4.3.5e-004 | Existing transcript frontend code is unmounted and bypasses the wrapper/upload-helper auth-recovery pattern. | medium | deferred_to_named_future_session | Deferred to 4.3.5e Checkpoint A/B because wrapper/upload-helper transcript surfaces are frontend implementation work. |
+| F-4.3.5e-004 | Existing transcript frontend code is unmounted and bypasses the wrapper/upload-helper auth-recovery pattern. | medium | fixed_in_current_block | Fixed in Checkpoint A/B by `api.transcripts.getActive`, `uploadTranscript`, `SectionTranscriptControl`, `TranscriptStatusBadge`, lecture/lab-only mounting in `LecturerModuleDetail.tsx`, and removal of the old unmounted `frontend/src/features/transcripts/*` bypass; frontend type-check/build and guardrail scans passed. |
 | F-4.3.5e-005 | E2E has no reusable safe DB read helper/run manifest, and prior Stage 3 runs recorded teardown gaps for product-created rows/storage objects. | medium | deferred_to_named_future_session | Deferred to 4.3.5e Checkpoint D because run manifest and teardown utility are E2E tooling work. |
 
 ## Recommendation

@@ -4,6 +4,7 @@ import {
   ApiError,
   OpenAPI,
   type SectionAssetResponse,
+  type TranscriptMeta,
 } from './index';
 import type { ApiRequestOptions } from './core/ApiRequestOptions';
 import type { ApiResult } from './core/ApiResult';
@@ -20,6 +21,8 @@ type UploadSectionAssetInput = {
 type ReplaceSectionAssetInput = UploadSectionAssetInput & {
   assetId: string;
 };
+
+type UploadTranscriptInput = UploadSectionAssetInput;
 
 const FILE_FIELD_NAME = 'file';
 
@@ -63,6 +66,15 @@ function sectionAssetPath(input: {
   return `${base}/${encodeURIComponent(input.assetId)}`;
 }
 
+function sectionTranscriptPath(input: {
+  moduleId: string;
+  sectionId: string;
+}): string {
+  return `/modules/${encodeURIComponent(input.moduleId)}/sections/${encodeURIComponent(
+    input.sectionId,
+  )}/transcript`;
+}
+
 function uploadUrl(path: string): string {
   return `${OpenAPI.BASE}${path}`;
 }
@@ -103,7 +115,7 @@ async function uploadMultipart(
     file: File;
     signal?: AbortSignal;
   },
-): Promise<SectionAssetResponse> {
+): Promise<unknown> {
   const token = await getBearerToken(request);
   const formData = new FormData();
   formData.append(FILE_FIELD_NAME, input.file);
@@ -120,7 +132,7 @@ async function uploadMultipart(
   const body = await responseBody(response);
 
   if (response.ok) {
-    return body as SectionAssetResponse;
+    return body;
   }
 
   if (response.status === 401) {
@@ -135,6 +147,7 @@ async function uploadMultipart(
   const statusMessages: Record<number, string> = {
     400: 'Bad Request',
     404: 'Not Found',
+    409: 'Conflict',
     413: 'Payload Too Large',
     422: 'Validation Error',
     500: 'Internal Server Error',
@@ -164,7 +177,7 @@ export async function uploadSectionAsset({
       url: path,
     },
     { file, signal },
-  );
+  ) as Promise<SectionAssetResponse>;
 }
 
 export async function replaceSectionAsset({
@@ -182,5 +195,22 @@ export async function replaceSectionAsset({
       url: path,
     },
     { file, signal },
-  );
+  ) as Promise<SectionAssetResponse>;
+}
+
+export async function uploadTranscript({
+  moduleId,
+  sectionId,
+  file,
+  signal,
+}: UploadTranscriptInput): Promise<TranscriptMeta> {
+  const path = sectionTranscriptPath({ moduleId, sectionId });
+
+  return uploadMultipart(
+    {
+      method: 'POST',
+      url: path,
+    },
+    { file, signal },
+  ) as Promise<TranscriptMeta>;
 }

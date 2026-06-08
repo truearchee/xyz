@@ -2,7 +2,7 @@
 type: architecture
 stage: 04
 created: 2026-06-05
-updated: 2026-06-08 14:00
+updated: 2026-06-08 20:47
 related-session: knowledge/specs/stage-04/4.3.5c-stage2-admin-ui-backfill.md
 ---
 
@@ -34,6 +34,9 @@ related-session: knowledge/specs/stage-04/4.3.5c-stage2-admin-ui-backfill.md
 - Plan: [[plans/stage-04/4.3.5d-checkpoint-E-full-stage3-content-visibility-browser-gate-plan]]
 - Report: [[4.3.5d-checkpoint-E-report]]
 - ADR: [[decisions/adr-023-stage2-admin-module-membership-projection]]
+- Spec: [[specs/stage-04/4.3.5e-stage4-transcript-ui-backfill]]
+- Plan: [[plans/stage-04/4.3.5e-stage4-transcript-ui-plan]]
+- Report: [[4.3.5e-part3-transcript-frontend-ui]]
 - Recovery plan: [[specs/recovery/client-edge-recovery-plan]]
 - Architecture: [[architecture/auth-current-user-context]]
 
@@ -132,6 +135,20 @@ Session 4.3.5d Checkpoint E verified the complete Stage 3 UI path end to end wit
 - Student opens the PDF through `api.content.getAssetDownloadUrl`; the UI does not construct storage URLs.
 - Authenticated student upload to the content upload endpoint returns 403 and leaves the `/me` session active.
 - Stage 3 Content + Visibility is FULLY VERIFIED after this gate.
+
+## Stage 4 transcript Checkpoint A/B UI
+Session 4.3.5e Part 3 adds the thin lecturer transcript UI surface for Stage 4.1-4.3:
+
+- `frontend/src/lib/api/upload.ts` exposes `uploadTranscript(...)` as the transcript-specific multipart helper. It uses the same controlled direct-`fetch()` exception as PDF upload, sends multipart field `file`, and posts to `/modules/{moduleId}/sections/{sectionId}/transcript`.
+- `frontend/src/lib/api/wrapper.ts` exposes `api.transcripts.getActive(moduleId, sectionId)` through generated `TranscriptsService.getSectionTranscript` and existing auth recovery.
+- `frontend/src/features/content/lecturer/SectionTranscriptControl.tsx` loads the active transcript on mount, treats `404 TRANSCRIPT_NOT_FOUND` as the normal no-transcript state, uploads `.vtt` and `.txt` files, and handles `409 TRANSCRIPT_ALREADY_EXISTS` with a safe existing-transcript message.
+- `frontend/src/features/content/lecturer/TranscriptStatusBadge.tsx` renders transcript status with `role="status"` and polls the backend while status is non-terminal. Polling stops on `completed`, `failed`, timeout, or unmount.
+- `frontend/src/features/content/lecturer/LecturerModuleDetail.tsx` mounts `SectionTranscriptControl` only for `lecture` and `lab` sections. Assignment and supplementary sections render no transcript control.
+- The old unmounted `frontend/src/features/transcripts/*` bypass path was removed so transcript reads and uploads have one mounted frontend path with wrapper/upload-helper auth recovery.
+
+Transcript status remains separate from section visibility and asset processing status. Transcript selectors use `section-transcript-*`, section publish state uses `section-publish-status-*`, and asset processing state uses `section-asset-processing-status-*`.
+
+The transcript UI renders only `TranscriptMeta` metadata: original file name, MIME type, file size, and status. It does not render raw transcript text, parsed segments, chunks, storage keys, checksums, retry/replacement controls, or student transcript surfaces.
 
 ## E2E bridge and tracer
 `NEXT_PUBLIC_E2E_TEST_HOOKS=true` enables a browser-only `window.__xyzE2E` bridge for Playwright. It exposes Supabase session helpers, wrapper-backed `/me` and `/admin/users` calls with serializable result envelopes, and a single-use forced bearer-token override for deterministic 401 testing. The bridge is not registered unless the flag is exactly `true`.

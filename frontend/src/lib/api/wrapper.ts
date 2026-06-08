@@ -12,6 +12,8 @@ import {
   OpenAPI,
   type ResetPasswordRequest,
   type SectionAssetListResponse,
+  TranscriptsService,
+  type TranscriptMeta,
   type UpdateSectionNotesRequest,
 } from './index';
 import { consumeForcedBearerToken } from '../e2e/e2eAuthOverride';
@@ -199,5 +201,14 @@ export const api = {
     get: (moduleId: string) =>
       withAuthRecovery(() => ModulesService.getModuleModulesModuleIdGet(moduleId)),
     list: () => withAuthRecovery(() => ModulesService.listModulesModulesGet()),
+  },
+  transcripts: {
+    getActive: (
+      moduleId: string,
+      sectionId: string,
+    ): Promise<TranscriptMeta> =>
+      withAuthRecovery(() =>
+        TranscriptsService.getSectionTranscript(moduleId, sectionId),
+      ),
   },
 };

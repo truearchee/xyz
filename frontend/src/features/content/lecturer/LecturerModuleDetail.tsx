@@ -17,6 +17,7 @@ import { ForbiddenError, api } from "../../../lib/api/wrapper";
 import { SectionAssetList } from "./SectionAssetList";
 import { SectionNotesEditor } from "./SectionNotesEditor";
 import { SectionPublishControl } from "./SectionPublishControl";
+import { SectionTranscriptControl } from "./SectionTranscriptControl";
 import { SectionUploadControl } from "./SectionUploadControl";
 
 type LecturerModuleDetailProps = {
@@ -40,6 +41,23 @@ function isLecturerSectionDetail(section: unknown): section is SectionDetail {
 
 function formatSectionType(type: string): string {
   return type.replace(/_/g, " ");
+}
+
+function sectionKey(section: SectionDetail, orderIndex: number): string {
+  return `${orderIndex}-${slugify(section.title)}-${section.id.slice(0, 8)}`;
+}
+
+function slugify(value: string): string {
+  const slug = value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+
+  return slug || "section";
+}
+
+function supportsTranscript(type: string): boolean {
+  return type === "lecture" || type === "lab";
 }
 
 function errorMessage(caught: unknown): string {
@@ -268,11 +286,11 @@ export function LecturerModuleDetail({ moduleId }: LecturerModuleDetailProps) {
           style={styles.sectionList}
         >
           {sortedSections.map(({ assets, detail, listItem }) => {
-            const sectionKey = `${listItem.orderIndex}-${detail.id}`;
+            const key = sectionKey(detail, listItem.orderIndex);
 
             return (
               <article
-                data-testid={`lecturer-section-row-${sectionKey}`}
+                data-testid={`lecturer-section-row-${key}`}
                 key={detail.id}
                 style={styles.sectionCard}
               >
@@ -288,7 +306,7 @@ export function LecturerModuleDetail({ moduleId }: LecturerModuleDetailProps) {
                     isSubmitting={publishingSectionId === detail.id}
                     onToggle={() => togglePublishStatus(detail)}
                     publishStatus={detail.publishStatus}
-                    sectionKey={sectionKey}
+                    sectionKey={key}
                     sectionTitle={detail.title}
                   />
                 </header>
@@ -299,6 +317,18 @@ export function LecturerModuleDetail({ moduleId }: LecturerModuleDetailProps) {
                   onSave={(lecturerNotes) => saveNotes(detail.id, lecturerNotes)}
                   sectionTitle={detail.title}
                 />
+                {supportsTranscript(detail.type) ? (
+                  <SectionTranscriptControl
+                    disabled={
+                      savingSectionId === detail.id ||
+                      publishingSectionId === detail.id
+                    }
+                    moduleId={moduleId}
+                    sectionId={detail.id}
+                    sectionKey={key}
+                    sectionTitle={detail.title}
+                  />
+                ) : null}
                 <SectionAssetList
                   assets={assets}
                   disabled={
@@ -321,7 +351,7 @@ export function LecturerModuleDetail({ moduleId }: LecturerModuleDetailProps) {
                   errorMessage={uploadErrors[detail.id] ?? null}
                   isUploading={uploadingSectionId === detail.id}
                   onUpload={(file) => uploadAsset(detail.id, file)}
-                  sectionKey={sectionKey}
+                  sectionKey={key}
                   sectionTitle={detail.title}
                 />
               </article>
