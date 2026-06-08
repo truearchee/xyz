@@ -3,14 +3,15 @@ type: findings
 stage: "4.3.5"
 session: "4.3.5d"
 slug: stage3-content-ui-backfill
-status: open
+status: closed
 created: 2026-06-06
-updated: 2026-06-08 12:44
+updated: 2026-06-08 14:00
 spec: knowledge/specs/stage-04/4.3.5d-stage3-content-ui-backfill.md
 plan: knowledge/plans/stage-04/4.3.5d-stage3-content-ui-backfill-plan.md
 report: knowledge/steps/stage-04/4.3.5d-checkpoint-0-report.md
 checkpoint_a_report: knowledge/steps/stage-04/4.3.5d-checkpoint-A-report.md
 checkpoint_d_report: knowledge/steps/stage-04/4.3.5d-checkpoint-D-report.md
+checkpoint_e_report: knowledge/steps/stage-04/4.3.5d-checkpoint-E-report.md
 ---
 
 # Findings - 4.3.5d Stage 3 Content UI Backfill
@@ -40,13 +41,20 @@ checkpoint_d_report: knowledge/steps/stage-04/4.3.5d-checkpoint-D-report.md
 - Checkpoint D spec: [[specs/stage-04/4.3.5d-checkpoint-D-student-published-only-view-and-signed-url-open]]
 - Checkpoint D plan: [[plans/stage-04/4.3.5d-checkpoint-D-student-published-only-view-and-signed-url-open-plan]]
 - Checkpoint D report: [[4.3.5d-checkpoint-D-report]]
+- Checkpoint E spec: [[specs/stage-04/4.3.5d-checkpoint-E-full-stage3-content-visibility-browser-gate]]
+- Checkpoint E plan: [[plans/stage-04/4.3.5d-checkpoint-E-full-stage3-content-visibility-browser-gate-plan]]
+- Checkpoint E report: [[4.3.5d-checkpoint-E-report]]
 
 ## Status
-F-4.3.5d-001 is fixed in 4.3.5d-B1. Checkpoint A passed.
+All Stage 3 4.3.5d findings are resolved or non-blocking.
 
-Stage 3 remains UI PENDING.
+Stage 3 is FULLY VERIFIED after Checkpoint E passed the full browser gate.
 
-F-4.3.5d-002 is fixed in 4.3.5d-B0. Checkpoint B passed. Checkpoint C passed. Checkpoint D passed.
+F-4.3.5d-001 is fixed in 4.3.5d-B1.
+
+F-4.3.5d-002 is fixed in 4.3.5d-B0.
+
+Checkpoints A, B, C, D, and E passed.
 
 ## Hard Blocker
 
@@ -112,7 +120,7 @@ Evidence:
 
 Resolution: the approved multipart helper has been restored for Checkpoint B upload/replace UI work.
 
-Checkpoint impact: Checkpoint B is unblocked from the upload-helper prerequisite. Stage 3 remains UI PENDING until the full 4.3.5d browser gate passes.
+Checkpoint impact: Checkpoint B was unblocked from the upload-helper prerequisite. Stage 3 moved to FULLY VERIFIED after Checkpoint E passed the full browser gate.
 
 ## Implementation Gaps After Blocker Resolution
 
@@ -189,7 +197,7 @@ Evidence:
 - Upload and replace set `processing_status="completed"` immediately in the MVP. See `backend/app/domains/content/service.py:341` and `backend/app/domains/content/service.py:431`.
 
 ## Required follow-up
-Proceed to Checkpoint E - full Stage 3 browser gate.
+Proceed to 4.3.5e - Stage 4.1-4.3 Transcript UI Backfill.
 
 Completed UI checkpoint: 4.3.5d Checkpoint B - Lecturer PDF upload + asset-level replace UI.
 
@@ -197,11 +205,13 @@ Completed UI checkpoint: 4.3.5d Checkpoint C - Publish/unpublish controls and st
 
 Completed UI checkpoint: 4.3.5d Checkpoint D - Student published-only view + signed URL open.
 
+Completed browser gate: 4.3.5d Checkpoint E - Full Stage 3 browser gate.
+
 Resolved backend repair: Session 4.3.5d-B1 - Stage 3 Module Section Auto-Generation Repair.
 
 Completed UI checkpoint: 4.3.5d Checkpoint A - Lecturer module detail + notes.
 
-Future decision still open: how should module creation know what sections to create after the temporary MVP default is replaced?
+Future product decision, non-blocking for Stage 3 verification: how should module creation know what sections to create after the temporary MVP default is replaced?
 
 | Option | Description | Tradeoff |
 |---|---|---|

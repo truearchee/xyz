@@ -2,7 +2,7 @@
 type: architecture
 stage: 04
 created: 2026-06-05
-updated: 2026-06-08 12:44
+updated: 2026-06-08 14:00
 related-session: knowledge/specs/stage-04/4.3.5c-stage2-admin-ui-backfill.md
 ---
 
@@ -30,6 +30,9 @@ related-session: knowledge/specs/stage-04/4.3.5c-stage2-admin-ui-backfill.md
 - Spec: [[specs/stage-04/4.3.5d-checkpoint-D-student-published-only-view-and-signed-url-open]]
 - Plan: [[plans/stage-04/4.3.5d-checkpoint-D-student-published-only-view-and-signed-url-open-plan]]
 - Report: [[4.3.5d-checkpoint-D-report]]
+- Spec: [[specs/stage-04/4.3.5d-checkpoint-E-full-stage3-content-visibility-browser-gate]]
+- Plan: [[plans/stage-04/4.3.5d-checkpoint-E-full-stage3-content-visibility-browser-gate-plan]]
+- Report: [[4.3.5d-checkpoint-E-report]]
 - ADR: [[decisions/adr-023-stage2-admin-module-membership-projection]]
 - Recovery plan: [[specs/recovery/client-edge-recovery-plan]]
 - Architecture: [[architecture/auth-current-user-context]]
@@ -119,6 +122,16 @@ Session 4.3.5d Checkpoint D adds the student published-only module detail route:
 - `StudentAssetRow.tsx` calls `api.content.getAssetDownloadUrl` and opens the returned signed URL. It does not construct storage URLs or expose raw storage keys.
 - Signed URL request failures render `role="alert"`.
 - Student pages intentionally do not render upload, replace, publish, unpublish, edit-notes, create, delete, or reorder controls.
+
+## Stage 3 browser gate
+Session 4.3.5d Checkpoint E verified the complete Stage 3 UI path end to end with separate lecturer and student browser contexts:
+
+- Lecturer logs in, opens a product-created assigned module, and sees generated sections from backend section generation.
+- Lecturer notes, PDF upload, asset-level replace, invalid upload rejection, publish, and separate publish/processing status rendering all work through the current UI.
+- Student logs in separately, opens the same assigned module, and sees only the published section returned by the backend student response.
+- Student opens the PDF through `api.content.getAssetDownloadUrl`; the UI does not construct storage URLs.
+- Authenticated student upload to the content upload endpoint returns 403 and leaves the `/me` session active.
+- Stage 3 Content + Visibility is FULLY VERIFIED after this gate.
 
 ## E2E bridge and tracer
 `NEXT_PUBLIC_E2E_TEST_HOOKS=true` enables a browser-only `window.__xyzE2E` bridge for Playwright. It exposes Supabase session helpers, wrapper-backed `/me` and `/admin/users` calls with serializable result envelopes, and a single-use forced bearer-token override for deterministic 401 testing. The bridge is not registered unless the flag is exactly `true`.

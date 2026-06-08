@@ -1,6 +1,6 @@
 # Status
 
-_Last updated: 2026-06-08 12:44 - Session 4.3.5d Checkpoint D complete_
+_Last updated: 2026-06-08 14:00 - Session 4.3.5d Checkpoint E passed; Stage 3 FULLY VERIFIED_
 
 ## Current focus
 Stage 1 is FULLY VERIFIED. Session 1.1b satisfied the browser gate: the root page called `http://localhost:8000/health` directly through the generated client, CORS allowed `http://localhost:3000`, and the browser showed live backend state.
@@ -9,7 +9,7 @@ Stage 2  Identity + access / P0   FULLY VERIFIED  (browser gate: 4.3.5c)
 
 Session 4.3.5c completed the Stage 2 product UI backfill. Admin user/module management, lecturer assigned modules, and student assigned modules are wired to real backend data through the generated client wrapper. The approved Option A read-only admin module-membership projection is implemented and documented in ADR-023.
 
-Stage 3  Content + visibility / P1   UI PENDING
+Stage 3  Content + visibility / P1   FULLY VERIFIED  (browser gate: 4.3.5d Checkpoint E)
 
 ## Stage 3 recovery status - 4.3.5d
 4.3.5d-B1 fixed the Checkpoint 0 blocker: admin module creation now generates predefined module sections.
@@ -24,10 +24,11 @@ Current state:
 - Checkpoint B is complete: lecturers can upload a real PDF to a generated section, see the backend re-fetched asset row and asset `processingStatus`, replace that specific asset, and see backend non-PDF rejection as `role="alert"`.
 - Checkpoint C is complete: lecturers can publish and unpublish sections through wrapper/generated client calls, with backend re-fetch after each toggle and separate visible section `publishStatus` and asset `processingStatus`.
 - Checkpoint D is complete: students can open assigned module detail, see only published sections returned by the backend student response, see lecturer notes and published assets, and open/download a PDF through the backend signed URL endpoint.
-- Stage 3 remains UI PENDING until the 4.3.5d Stage 3 browser gate passes.
+- Checkpoint E passed the full Stage 3 browser gate: lecturer uploaded/replaced PDF, added notes, published one section, student saw only published content, opened the PDF via signed URL, and authenticated student upload was rejected with 403.
+- Stage 3 is FULLY VERIFIED.
 
 Required next:
-- Proceed to Checkpoint E - full Stage 3 browser gate.
+- Proceed to 4.3.5e - Stage 4.1-4.3 Transcript UI Backfill.
 
 ## Stage 2 browser gate - 4.3.5c
 - Admin-created lecturer/student accounts through UI: PROVEN
@@ -51,6 +52,7 @@ Required next:
 - /tracer gated by NEXT_PUBLIC_TRACER_ENABLED: PROVEN
 
 ## Done recently
+- Session 4.3.5d Checkpoint E: full Stage 3 browser gate passed on fresh product-path module `019ea6ac-9d6a-75bc-9219-1dfd6e7c87b6`. Lecturer and student used separate browser contexts; lecturer uploaded `stage3-gate-upload.pdf`, replaced it with `stage3-gate-replacement.pdf`, added notes, published `Lecture 1`, and left `Lecture 2` draft. Student server response contained only `Lecture 1`, signed URL returned HTTP 200, authenticated student upload returned 403, and `/me` still returned student. Frontend type-check/build passed; direct fetch/JWT scans were clean; generated client fresh; no backend changes. Stage 3 is FULLY VERIFIED.
 - Session 4.3.5d Checkpoint D: student published-only view and signed URL open completed. Browser smoke passed on fresh product-path module `019ea663-3999-7084-aa2b-a72e7b24c2e0`; the student server response contained only `Lecture 1`, excluded draft `Lecture 2`, rendered lecturer notes and `checkpoint-d-upload.pdf`, and signed URL fetch returned HTTP 200. Frontend type-check/build passed; direct fetch/JWT scans were clean; no backend changes; Stage 3 remains UI PENDING.
 - Session 4.3.5d Checkpoint C: publish/unpublish controls and status separation completed. Browser smoke passed on fresh product-path module `019ea648-4a2e-750e-9563-7263fae4a0a4`; the UI showed section Draft plus asset `completed`, published the section to Published while asset status stayed `completed`, then unpublished to Unpublished while asset status stayed `completed`. Frontend type-check/build passed; direct fetch/JWT scans were clean; no backend changes; Stage 3 remains UI PENDING.
 - Session 4.3.5d Checkpoint B: lecturer PDF upload and asset-level replace UI completed. Browser smoke passed on fresh product-path module `019ea629-c5ae-70da-915b-c64b19ab7599`; the UI uploaded `checkpoint-b-upload.pdf`, re-fetched an asset row, rendered asset `processingStatus` separately from section Draft status, replaced the asset with `checkpoint-b-replacement.pdf`, and rendered backend non-PDF rejection as `role="alert"`. Frontend type-check/build passed; direct fetch/JWT scans were clean; no backend changes; Stage 3 remains UI PENDING.
@@ -67,11 +69,9 @@ Required next:
 - None.
 
 ## Next up
-- Resume Session 4.3.5d - Stage 3 Content UI backfill at Checkpoint E - full Stage 3 browser gate.
 - Session 4.3.5e - Stage 4.1-4.3 Transcript UI backfill and `/tracer` deletion.
 
 ## Known issues / blockers
-- Stage 3 product UI remains pending until the resumed 4.3.5d browser gate proves lecturer upload -> publish -> student published-only access.
 - Stage 4 product UI remains pending; 4.3.5e owns that surface after Stage 3 is genuinely FULLY VERIFIED.
 - Hosted Postgres extension bootstrap is not covered by the local Docker init script; handle `vector` and `pgcrypto` explicitly before first hosted deployment.
 - The backend test suite still reports the existing `httpx` ASGI shortcut deprecation warning.
