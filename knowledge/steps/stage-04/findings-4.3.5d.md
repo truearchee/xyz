@@ -3,9 +3,9 @@ type: findings
 stage: "4.3.5"
 session: "4.3.5d"
 slug: stage3-content-ui-backfill
-status: open
+status: closed
 created: 2026-06-06
-updated: 2026-06-08 15:59
+updated: 2026-06-08 16:28
 spec: knowledge/specs/stage-04/4.3.5d-stage3-content-ui-backfill.md
 plan: knowledge/plans/stage-04/4.3.5d-stage3-content-ui-backfill-plan.md
 report: knowledge/steps/stage-04/4.3.5d-checkpoint-0-report.md
@@ -13,6 +13,7 @@ checkpoint_a_report: knowledge/steps/stage-04/4.3.5d-checkpoint-A-report.md
 checkpoint_d_report: knowledge/steps/stage-04/4.3.5d-checkpoint-D-report.md
 checkpoint_e_report: knowledge/steps/stage-04/4.3.5d-checkpoint-E-report.md
 checkpoint_e2_report: knowledge/steps/stage-04/4.3.5d-checkpoint-E2-signed-url-revocation.md
+checkpoint_e2_b1_report: knowledge/steps/stage-04/4.3.5d-E2-B1-post-unpublish-signed-url-denial-status-repair.md
 ---
 
 # Findings - 4.3.5d Stage 3 Content UI Backfill
@@ -48,9 +49,14 @@ checkpoint_e2_report: knowledge/steps/stage-04/4.3.5d-checkpoint-E2-signed-url-r
 - Checkpoint E2 spec: [[specs/stage-04/4.3.5d-E2-signed-url-revocation-proof-and-cleanup]]
 - Checkpoint E2 plan: [[plans/stage-04/4.3.5d-E2-signed-url-revocation-proof-and-cleanup-plan]]
 - Checkpoint E2 report: [[4.3.5d-checkpoint-E2-signed-url-revocation]]
+- Checkpoint E2-B1 spec: [[specs/stage-04/4.3.5d-E2-B1-post-unpublish-signed-url-denial-status-repair]]
+- Checkpoint E2-B1 plan: [[plans/stage-04/4.3.5d-E2-B1-post-unpublish-signed-url-denial-status-repair-plan]]
+- Checkpoint E2-B1 report: [[4.3.5d-E2-B1-post-unpublish-signed-url-denial-status-repair]]
 
 ## Status
-Stage 3 is UI PENDING after supplemental Checkpoint E2 failed the post-unpublish fresh signed URL denial status assertion.
+All Stage 3 4.3.5d findings are resolved or non-blocking.
+
+Stage 3 is FULLY VERIFIED after 4.3.5d-E2-B1 fixed the post-unpublish fresh signed URL denial status and E2 passed.
 
 F-4.3.5d-001 is fixed in 4.3.5d-B1.
 
@@ -58,7 +64,7 @@ F-4.3.5d-002 is fixed in 4.3.5d-B0.
 
 Checkpoints A, B, C, D, and E passed.
 
-F-4.3.5d-005 is unresolved and blocks Stage 3 FULLY VERIFIED.
+F-4.3.5d-005 is fixed in 4.3.5d-E2-B1.
 
 ## Hard Blocker
 
@@ -162,11 +168,13 @@ Evidence:
 Resolution for current lecturer checkpoints: list sections, section detail, notes, list assets, upload, replace, publish, and unpublish are available through the approved wrapper/upload-helper surfaces.
 
 ### F-4.3.5d-005 - Post-unpublish fresh signed URL denial returns 404 instead of required 403
-Status: unresolved
+Status: fixed in 4.3.5d-E2-B1
 
-Severity: hard blocker for Stage 3 FULLY VERIFIED
+Severity: resolved hard blocker
 
 Found in: 4.3.5d-E2
+
+Fixed by commit: pending
 
 Evidence:
 - Published access worked before unpublish: student saw `Lecture 1`, saw notes and `stage3-e2-replaced.pdf`, requested a backend signed URL, and the signed URL fetched with HTTP `200`.
@@ -174,17 +182,21 @@ Evidence:
 - After unpublish, authenticated student `GET /modules/019ea719-80ba-771c-bea7-716638033078/sections` returned `[]`, proving `Lecture 1` and draft `Lecture 2` were absent from the student server response.
 - Fresh authenticated student signed URL request to `GET /modules/019ea719-80ba-771c-bea7-716638033078/sections/019ea719-80bb-743d-aa16-843c1ffdfc8f/assets/019ea719-88f0-7b9b-b6b6-3f4b48b91728/download-url` returned `404 {"detail":"SECTION_NOT_FOUND"}`.
 - The same student token remained authenticated: `/me` returned role `student` before and after the failed signed URL request.
+- 4.3.5d-E2-B1 updated `backend/app/domains/content/service.py` to return `403 CONTENT_FORBIDDEN` when an authenticated student requests a fresh signed URL for an existing unpublished section asset.
+- Backend regression: `tests/test_content.py::test_signed_download_url_is_role_aware_and_revalidated_live`.
+- Targeted backend verification: `1 passed, 20 deselected, 1 warning`.
+- Full backend verification: `151 passed, 78 warnings`.
+- E2 rerun: module `019ea733-95e9-774f-9b78-26d30e385ece`; after unpublish, student response titles `[]`, fresh signed URL status `403`, response body `{"detail":"CONTENT_FORBIDDEN"}`, and `/me` still returned role `student`.
 
-Why this blocks:
+Why this blocked:
 - 4.3.5d-E2 requires an authenticated `403` for a fresh post-unpublish signed URL request.
 - A `404 SECTION_NOT_FOUND` proves access is blocked, but it does not satisfy the required 401/403 split for authenticated-but-forbidden access.
 
-Required resolution:
-- Session 4.3.5d-E2-B1 - Post-Unpublish Signed URL Denial Status Repair.
-- Preserve server-side published-only section list behavior.
-- Preserve the rule that previously issued signed URLs may remain valid until expiry.
-- Ensure a fresh signed URL request by an authenticated student for an unpublished section asset returns `403`, not `401` and not `404`.
-- Rerun E2 and restore Stage 3 to FULLY VERIFIED only after E2 passes.
+Resolution:
+- Session 4.3.5d-E2-B1 fixed the backend denial status and reran E2 successfully.
+- Server-side published-only section list behavior remains enforced.
+- Already-issued signed URLs remain valid until expiry; unpublish blocks future minting.
+- Stage 3 returned to FULLY VERIFIED.
 
 ## Contract Map
 
@@ -226,9 +238,7 @@ Evidence:
 - Upload and replace set `processing_status="completed"` immediately in the MVP. See `backend/app/domains/content/service.py:341` and `backend/app/domains/content/service.py:431`.
 
 ## Required follow-up
-Session 4.3.5d-E2-B1 - Post-Unpublish Signed URL Denial Status Repair.
-
-Do not proceed to 4.3.5e while F-4.3.5d-005 is unresolved.
+Proceed to 4.3.5e - Stage 4.1-4.3 Transcript UI Backfill.
 
 Completed UI checkpoint: 4.3.5d Checkpoint B - Lecturer PDF upload + asset-level replace UI.
 
@@ -238,7 +248,9 @@ Completed UI checkpoint: 4.3.5d Checkpoint D - Student published-only view + sig
 
 Completed browser gate: 4.3.5d Checkpoint E - Full Stage 3 browser gate.
 
-Blocked supplemental gate: 4.3.5d-E2 - Signed URL Revocation Proof + E2E Cleanup.
+Completed supplemental gate: 4.3.5d-E2 - Signed URL Revocation Proof + E2E Cleanup.
+
+Resolved repair: 4.3.5d-E2-B1 - Post-Unpublish Signed URL Denial Status Repair.
 
 Resolved backend repair: Session 4.3.5d-B1 - Stage 3 Module Section Auto-Generation Repair.
 

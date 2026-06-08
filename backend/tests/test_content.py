@@ -1131,7 +1131,8 @@ async def test_signed_download_url_is_role_aware_and_revalidated_live(
     )
 
     assert unpublish_response.status_code == 200
-    assert revalidated_response.status_code == 404
+    assert revalidated_response.status_code == 403
+    assert revalidated_response.json()["detail"] == "CONTENT_FORBIDDEN"
 
 
 @pytest.mark.anyio

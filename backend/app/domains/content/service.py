@@ -224,6 +224,8 @@ async def create_asset_download_url(
         raise _coded_error(status.HTTP_404_NOT_FOUND, SECTION_NOT_FOUND)
 
     if module_access.global_role == "student":
+        if download_ref.section_publish_status == "unpublished":
+            raise _coded_error(status.HTTP_403_FORBIDDEN, CONTENT_FORBIDDEN)
         if (
             download_ref.section_publish_status != "published"
             or download_ref.section_status != "active"
