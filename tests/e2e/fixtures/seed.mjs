@@ -4,6 +4,8 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
+import { createManifest, createRunId } from './run-manifest.mjs';
+
 const ENV_PATH = resolve(process.cwd(), '.env.e2e');
 const APP_DATABASE_SERVICE = 'db';
 const APP_DATABASE_NAME = 'xyz_lms';
@@ -430,9 +432,12 @@ async function main() {
   );
   const authUsersByEmail = new Map(authUsers.map((user) => [user.email, user]));
   const summary = runPsql(seedSql(authUsersByEmail));
+  const runId = process.env.E2E_RUN_ID || createRunId();
+  const { path: manifestPath } = createManifest(runId);
 
   console.log('Seeded Supabase Auth users:', authUsers.length);
   console.log('Seeded app DB fixture summary:', summary);
+  console.log('Created E2E run manifest:', manifestPath);
   console.log('Storage cleanup: no broad path deletion performed by seed.');
 }
 

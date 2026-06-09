@@ -2,7 +2,7 @@
 type: architecture
 stage: 04
 created: 2026-06-05
-updated: 2026-06-08 20:47
+updated: 2026-06-09 00:42
 related-session: knowledge/specs/stage-04/4.3.5c-stage2-admin-ui-backfill.md
 ---
 
@@ -37,13 +37,14 @@ related-session: knowledge/specs/stage-04/4.3.5c-stage2-admin-ui-backfill.md
 - Spec: [[specs/stage-04/4.3.5e-stage4-transcript-ui-backfill]]
 - Plan: [[plans/stage-04/4.3.5e-stage4-transcript-ui-plan]]
 - Report: [[4.3.5e-part3-transcript-frontend-ui]]
+- Report: [[4.3.5e-part4-tracer-teardown]]
 - Recovery plan: [[specs/recovery/client-edge-recovery-plan]]
 - Architecture: [[architecture/auth-current-user-context]]
 
 ## Route structure
 The root `frontend/src/app/layout.tsx` owns global providers only. The public auth page lives under `(auth)/login` and renders without the AppShell. Protected app pages live under `(app)` and are wrapped by `ProtectedAppLayout` plus `AppShell`.
 
-Route groups do not change public URLs. Current public app routes are `/login`, `/admin`, `/lecturer`, `/student`, `/unauthorized`, and `/tracer`.
+Route groups do not change public URLs. Current public app routes are `/login`, `/admin`, `/lecturer`, `/student`, and `/unauthorized`.
 
 Session 4.3.5d Checkpoint A adds the lecturer module detail route `/lecturer/modules/[moduleId]`. It is a protected lecturer route under `(app)` and renders `frontend/src/features/content/lecturer/LecturerModuleDetail.tsx`.
 
@@ -150,7 +151,15 @@ Transcript status remains separate from section visibility and asset processing 
 
 The transcript UI renders only `TranscriptMeta` metadata: original file name, MIME type, file size, and status. It does not render raw transcript text, parsed segments, chunks, storage keys, checksums, retry/replacement controls, or student transcript surfaces.
 
-## E2E bridge and tracer
+## E2E bridge and run teardown
 `NEXT_PUBLIC_E2E_TEST_HOOKS=true` enables a browser-only `window.__xyzE2E` bridge for Playwright. It exposes Supabase session helpers, wrapper-backed `/me` and `/admin/users` calls with serializable result envelopes, and a single-use forced bearer-token override for deterministic 401 testing. The bridge is not registered unless the flag is exactly `true`.
 
-`/tracer` is retained for recovery only. It is route-gated in `frontend/src/app/tracer/page.tsx`; when `NEXT_PUBLIC_TRACER_ENABLED !== "true"`, the route returns Next.js `notFound()` before rendering the client tracer component.
+Session 4.3.5e Part 4 removes the temporary `/tracer` recovery route and deletes `NEXT_PUBLIC_TRACER_ENABLED` from active source/runtime config. `NEXT_PUBLIC_E2E_TEST_HOOKS` and the E2E bridge remain for the Stage 4.1-4.3 browser gate.
+
+Run-scoped E2E cleanup is handled by:
+
+- `tests/e2e/fixtures/run-manifest.mjs` for `tests/e2e/.runs/{runId}.json` manifests and artifact-recording helpers.
+- `tests/e2e/fixtures/teardown.mjs` for manifest-only cleanup.
+- `tests/e2e/fixtures/seed.mjs` for static standing fixture setup plus empty run-manifest creation.
+
+Teardown refuses unsafe targets, deletes only manifest-recorded IDs and exact backend-shaped storage object keys, preserves standing seed actors unless manifest-owned, and is idempotent.

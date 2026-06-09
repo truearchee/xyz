@@ -201,17 +201,6 @@ test('4.3.5b app shell role routing and auth recovery proof', async ({ browser }
     await forbiddenContext.close();
   }
 
-  const tracerContext = await browser.newContext();
-  const tracerPage = await tracerContext.newPage();
-  try {
-    const response = await tracerPage.goto('/tracer');
-    expect(response?.status()).toBe(404);
-    await expect(tracerPage.getByRole('heading', { name: 'Tracer' })).toHaveCount(0);
-    await expect(tracerPage.getByRole('button', { name: 'GET /me' })).toHaveCount(0);
-  } finally {
-    await tracerContext.close();
-  }
-
   const logoutContext = await browser.newContext();
   const logoutPage = await logoutContext.newPage();
   try {

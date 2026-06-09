@@ -14,6 +14,7 @@ frontend/node_modules/
 frontend/tsconfig.tsbuildinfo
 test-results/
 playwright-report/
+tests/e2e/.runs/*.json
 dist/
 build/
 .DS_Store
