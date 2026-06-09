@@ -1,0 +1,6 @@
+Lab transcript notes for model evaluation.
+
+Students compare a single decision tree with a random forest and a boosted ensemble.
+They record validation accuracy, inspect confusion matrices, and discuss which errors matter most for the module scenario.
+
+The lab closes by asking each team to explain why an ensemble can improve generalization while still needing careful validation.

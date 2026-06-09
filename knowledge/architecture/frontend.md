@@ -2,7 +2,7 @@
 type: architecture
 stage: 04
 created: 2026-06-05
-updated: 2026-06-09 00:42
+updated: 2026-06-09 01:30
 related-session: knowledge/specs/stage-04/4.3.5c-stage2-admin-ui-backfill.md
 ---
 
@@ -38,6 +38,7 @@ related-session: knowledge/specs/stage-04/4.3.5c-stage2-admin-ui-backfill.md
 - Plan: [[plans/stage-04/4.3.5e-stage4-transcript-ui-plan]]
 - Report: [[4.3.5e-part3-transcript-frontend-ui]]
 - Report: [[4.3.5e-part4-tracer-teardown]]
+- Report: [[4.3.5e-part5-browser-gate]]
 - Recovery plan: [[specs/recovery/client-edge-recovery-plan]]
 - Architecture: [[architecture/auth-current-user-context]]
 
@@ -151,6 +152,20 @@ Transcript status remains separate from section visibility and asset processing 
 
 The transcript UI renders only `TranscriptMeta` metadata: original file name, MIME type, file size, and status. It does not render raw transcript text, parsed segments, chunks, storage keys, checksums, retry/replacement controls, or student transcript surfaces.
 
+## Stage 4 transcript browser gate
+Session 4.3.5e Part 5 verifies Stage 4.1-4.3 through Playwright:
+
+- A run-scoped module is created through the real admin module API, which triggers backend section generation for `Lecture 1`, `Lecture 2`, `Lab 1`, and `Assignment 1`.
+- Lecturer and student use separate browser contexts and Supabase sessions.
+- Lecturer uploads VTT through the lecture-section transcript control and TXT through the lab-section transcript control.
+- `TranscriptStatusBadge` reaches `Transcript processing completed` from backend status polling; the test also uses DB-only reads to prove parse and chunk jobs completed and segment/chunk counts are greater than zero.
+- Assignment sections render no transcript control; backend upload to assignment returns `422 SECTION_TYPE_UNSUPPORTED`.
+- A second upload to an active transcript section returns `409 TRANSCRIPT_ALREADY_EXISTS`.
+- Reloading the lecturer module page shows existing active transcript status without presenting replacement UI.
+- Student UI renders no transcript controls, student upload/status API calls return 403, the student session remains active, and no raw transcript text/segment/chunk fields are exposed.
+
+No product endpoint was added for segment/chunk counts. Count proof remains test-only.
+
 ## E2E bridge and run teardown
 `NEXT_PUBLIC_E2E_TEST_HOOKS=true` enables a browser-only `window.__xyzE2E` bridge for Playwright. It exposes Supabase session helpers, wrapper-backed `/me` and `/admin/users` calls with serializable result envelopes, and a single-use forced bearer-token override for deterministic 401 testing. The bridge is not registered unless the flag is exactly `true`.
 
@@ -162,4 +177,4 @@ Run-scoped E2E cleanup is handled by:
 - `tests/e2e/fixtures/teardown.mjs` for manifest-only cleanup.
 - `tests/e2e/fixtures/seed.mjs` for static standing fixture setup plus empty run-manifest creation.
 
-Teardown refuses unsafe targets, deletes only manifest-recorded IDs and exact backend-shaped storage object keys, preserves standing seed actors unless manifest-owned, and is idempotent.
+Teardown refuses unsafe targets, deletes only manifest-recorded IDs plus child rows derived from manifest-owned module/section IDs, deletes exact backend-shaped storage object keys, preserves standing seed actors unless manifest-owned, accepts app-created UUIDv7 IDs, and is idempotent.

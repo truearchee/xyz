@@ -1,6 +1,6 @@
 # XYZ LMS — Client Edge Recovery Plan
 
-**Status:** locked
+**Status:** complete through 4.3.5e
 **Sessions:** 4.3.5.0 → 4.3.5a → 4.3.5b → 4.3.5c → 4.3.5d → 4.3.5e
 **Slots between:** Stage 4.3 and Stage 4.4
 **Purpose:** Restore the walking skeleton by proving the browser → API → storage/DB/worker → browser path before backend AI work resumes.
@@ -20,11 +20,10 @@ Keepable:
 
 Throwaway:
 - /login layout
-- /tracer layout
 - styling/copy/polish
 - temporary tracer controls
 
-The tracer proves the spine, not every edge case.
+The tracer proved the early spine and was deleted in 4.3.5e after real product UI replaced it for the recovery gate.
 
 ## Backend changes allowed during recovery
 
@@ -185,9 +184,19 @@ Do not build:
 - AI status
 - retry UI unless already implemented
 
+Result:
+- 4.3.5e Part 5 Playwright gate passed.
+- Lecturer uploaded VTT/TXT through the real UI.
+- Worker-driven transcript status reached `completed`.
+- Test-level DB proof showed parse jobs completed, chunk jobs completed, transcript segments persisted, and transcript chunks persisted.
+- Assignment upload, duplicate active transcript upload, and student transcript upload/read were rejected by backend contract.
+- Student session remained active after 403.
+- No raw transcript text/segments/chunks were exposed through product UI or DTOs.
+- `/tracer` was deleted and `NEXT_PUBLIC_TRACER_ENABLED` removed.
+
 ## After recovery
 
-Stage 4.4 may resume only after 4.3.5e is green.
+Stage 4.4 may resume. Client Edge Recovery Block 4.3.5 is complete through Stage 4.1-4.3 browser verification.
 
 From Stage 4.4 onward:
 - every backend slice ships with a thin UI slice

@@ -3,9 +3,9 @@ type: findings
 stage: "4.3.5"
 session: "4.3.5e"
 slug: transcript-ui-backfill
-status: open
+status: closed
 created: 2026-06-08
-updated: 2026-06-09 00:42 +0400
+updated: 2026-06-09 01:30 +0400
 ---
 
 # Findings - 4.3.5e Transcript UI Backfill
@@ -19,6 +19,7 @@ updated: 2026-06-09 00:42 +0400
 - Report: [[4.3.5e-part2-prerequisite-terminal-state-repair]]
 - Report: [[4.3.5e-part3-transcript-frontend-ui]]
 - Report: [[4.3.5e-part4-tracer-teardown]]
+- Report: [[4.3.5e-part5-browser-gate]]
 - ADR: [[decisions/adr-024-stage-4-3-post-chunk-terminal-status]]
 
 ## Checkpoint 0 surface map
@@ -40,6 +41,7 @@ updated: 2026-06-09 00:42 +0400
 - Targeted worker tests passed after the repair: `19 passed`.
 - Full backend tests passed after the repair: `151 passed, 78 warnings`.
 - Generated API client freshness passed after the repair: `bash scripts/generate-api-client.sh && git diff --exit-code frontend/src/lib/api` exited 0 with no diff.
+- Part 5 browser gate proved worker-driven `completed` status through the real lecturer UI and DB worker evidence.
 
 ## Upload contract
 - Multipart field: exactly one file field named `file`.
@@ -54,6 +56,7 @@ updated: 2026-06-09 00:42 +0400
 - Endpoint returns `TranscriptMeta` only.
 - No raw transcript text, parsed segments, chunks, storage key, checksum, or counts are exposed through the product endpoint.
 - Counts are available only through DB/job tables and should be proven in E2E by test-level DB reads unless an approved backend projection is added later.
+- Part 5 used test-level DB reads for counts; no product count/raw-text endpoint was added.
 
 ## One-active behavior
 - A second upload to the same section with an active transcript returns `409 TRANSCRIPT_ALREADY_EXISTS`.
@@ -79,9 +82,7 @@ updated: 2026-06-09 00:42 +0400
 | F-4.3.5e-002 | Successful parse+chunk leaves `transcripts.status = 'chunking'` after the chunk job completes and chunks persist. `chunking` is not terminal for the browser gate. | hard blocker | fixed_in_current_block | Fixed by `backend/app/domains/transcripts/chunk_service.py`; `tests/test_transcript_worker.py` now proves post-chunk `completed`. |
 | F-4.3.5e-003 | Product status endpoint exposes no segment/chunk counts. | medium | accepted_non_blocking_with_rationale | Use test-level DB reads for the Playwright gate; do not add product raw-text/count endpoints in Checkpoint 0. |
 | F-4.3.5e-004 | Existing transcript frontend code is unmounted and bypasses the wrapper/upload-helper auth-recovery pattern. | medium | fixed_in_current_block | Fixed in Checkpoint A/B by `api.transcripts.getActive`, `uploadTranscript`, `SectionTranscriptControl`, `TranscriptStatusBadge`, lecture/lab-only mounting in `LecturerModuleDetail.tsx`, and removal of the old unmounted `frontend/src/features/transcripts/*` bypass; frontend type-check/build and guardrail scans passed. |
-| F-4.3.5e-005 | E2E has no reusable safe DB read helper/run manifest, and prior Stage 3 runs recorded teardown gaps for product-created rows/storage objects. | medium | fixed_in_current_block | Fixed in Checkpoint D by `run-manifest.mjs`, `teardown.mjs`, `seed.mjs` manifest creation, exact backend-shaped storage-key validation, idempotent teardown verification, and unsafe-target/invalid-manifest refusal checks. |
+| F-4.3.5e-005 | E2E has no reusable safe DB read helper/run manifest, and prior Stage 3 runs recorded teardown gaps for product-created rows/storage objects. | medium | fixed_in_current_block | Fixed in Checkpoint D by `run-manifest.mjs`, `teardown.mjs`, `seed.mjs` manifest creation, exact backend-shaped storage-key validation, idempotent teardown verification, and unsafe-target/invalid-manifest refusal checks; Part 5 added test-level DB proof and real-gate teardown of transcripts/jobs/segments/chunks/storage. |
 
 ## Recommendation
-Proceed to 4.3.5e Checkpoint E only after human approval.
-
-Do not mark Stage 4.1-4.3 FULLY VERIFIED until the Playwright browser gate passes.
+All 4.3.5e findings are resolved or accepted with rationale. Stage 4.1-4.3 are FULLY VERIFIED after the Part 5 browser gate.

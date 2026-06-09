@@ -1,6 +1,6 @@
 # Status
 
-_Last updated: 2026-06-08 16:28 - Session 4.3.5d-E2-B1 fixed signed URL denial status; Stage 3 FULLY VERIFIED_
+_Last updated: 2026-06-09 01:30 - Session 4.3.5e Part 5 transcript browser gate passed; Stage 4.1-4.3 FULLY VERIFIED; Client Edge Recovery Block COMPLETE_
 
 ## Current focus
 Stage 1 is FULLY VERIFIED. Session 1.1b satisfied the browser gate: the root page called `http://localhost:8000/health` directly through the generated client, CORS allowed `http://localhost:3000`, and the browser showed live backend state.
@@ -10,6 +10,26 @@ Stage 2  Identity + access / P0   FULLY VERIFIED  (browser gate: 4.3.5c)
 Session 4.3.5c completed the Stage 2 product UI backfill. Admin user/module management, lecturer assigned modules, and student assigned modules are wired to real backend data through the generated client wrapper. The approved Option A read-only admin module-membership projection is implemented and documented in ADR-023.
 
 Stage 3  Content + visibility / P1   FULLY VERIFIED  (browser gate: 4.3.5d Checkpoint E + E2-B1)
+
+Stage 4.1  Transcript upload            FULLY VERIFIED  (browser gate: 4.3.5e)
+Stage 4.2  Transcript parsing           FULLY VERIFIED  (browser gate: 4.3.5e)
+Stage 4.3  Transcript chunk persistence FULLY VERIFIED  (browser gate: 4.3.5e)
+
+Client Edge Recovery Block (4.3.5): COMPLETE
+  Stages 1, 2, 3, 4.1, 4.2, 4.3 all FULLY VERIFIED.
+  `/tracer` deleted; `NEXT_PUBLIC_TRACER_ENABLED` removed.
+  Forward roadmap resumes at Stage 4.4 (embeddings).
+
+## Stage 4.1-4.3 browser gate - 4.3.5e
+- Lecturer uploads VTT to lecture section; status appears: PROVEN
+- Status reaches worker-driven terminal state (`completed`): PROVEN
+- Segments and chunks persisted (counts > 0); no raw text exposed: PROVEN
+- TXT fallback reaches terminal: PROVEN
+- Transcript upload rejected on assignment section: PROVEN
+- One-active-transcript behavior (409 rejected): PROVEN
+- Existing active transcript loads after page refresh: PROVEN
+- Student transcript upload rejected 403, session kept: PROVEN
+- No student transcript text surface: PROVEN
 
 ## Stage 3 recovery status - 4.3.5d
 4.3.5d-B1 fixed the Checkpoint 0 blocker: admin module creation now generates predefined module sections.
@@ -51,9 +71,10 @@ Required next:
 - Client route guard cross-role (/unauthorized, session kept): PROVEN
 - Server-side 403 cross-role defense in depth (session kept): PROVEN
 - Logout from AppShell (session cleared + /login): PROVEN
-- /tracer gated by NEXT_PUBLIC_TRACER_ENABLED: PROVEN
+- /tracer deleted after real transcript UI replaced the temporary recovery route: PROVEN
 
 ## Done recently
+- Session 4.3.5e Part 5: final Stage 4.1-4.3 transcript browser gate passed on run `e2e-1780991715-rf0lu0d7`. Lecturer uploaded `ensemble-methods.vtt` through lecture UI and `lab-notes.txt` through lab UI; both reached `completed`; DB proof showed 4 ingestion jobs, 7 segments, and 2 chunks; assignment upload returned 422; duplicate upload returned 409; student upload/status returned 403 while `/me` stayed role `student`; teardown removed exact manifest-owned storage/transcript/job/segment/chunk/module artifacts and reran idempotently. Stage 4.1-4.3 are FULLY VERIFIED and Client Edge Recovery Block 4.3.5 is COMPLETE.
 - Session 4.3.5d-E2-B1: repaired post-unpublish fresh signed URL denial status. Backend now returns `403 CONTENT_FORBIDDEN` for authenticated assigned student access to an existing unpublished section asset; targeted content test passed (`1 passed`), full backend passed (`151 passed`), E2 rerun passed on module `019ea733-95e9-774f-9b78-26d30e385ece`, frontend type-check/build/scans passed, generated client fresh, and Stage 3 returned to FULLY VERIFIED.
 - Session 4.3.5d-E2: supplemental signed URL revocation proof blocked on fresh post-unpublish signed URL denial status. Browser/API proof used module `019ea719-80ba-771c-bea7-716638033078`; after unpublish, student `/modules/<moduleId>/sections` returned `[]`, but `GET /modules/<moduleId>/sections/<lecture1SectionId>/assets/<assetId>/download-url` returned `404 {"detail":"SECTION_NOT_FOUND"}` instead of required `403`. Student `/me` still returned role `student`. Product source unchanged; Stage 3 moved back to UI PENDING.
 - Session 4.3.5d Checkpoint E: full Stage 3 browser gate passed on fresh product-path module `019ea6ac-9d6a-75bc-9219-1dfd6e7c87b6`. Lecturer and student used separate browser contexts; lecturer uploaded `stage3-gate-upload.pdf`, replaced it with `stage3-gate-replacement.pdf`, added notes, published `Lecture 1`, and left `Lecture 2` draft. Student server response contained only `Lecture 1`, signed URL returned HTTP 200, authenticated student upload returned 403, and `/me` still returned student. Frontend type-check/build passed; direct fetch/JWT scans were clean; generated client fresh; no backend changes. Stage 3 was marked FULLY VERIFIED at that point, then superseded by the E2 blocker above.
@@ -73,14 +94,13 @@ Required next:
 - None.
 
 ## Next up
-- Session 4.3.5e - Stage 4.1-4.3 Transcript UI backfill and `/tracer` deletion.
+- Stage 4.4 - Embeddings.
 
 ## Known issues / blockers
-- Stage 4 product UI remains pending; 4.3.5e owns that surface after Stage 3 is genuinely FULLY VERIFIED.
 - Hosted Postgres extension bootstrap is not covered by the local Docker init script; handle `vector` and `pgcrypto` explicitly before first hosted deployment.
 - The backend test suite still reports the existing `httpx` ASGI shortcut deprecation warning.
 - `canPublish` is role-derived until a future membership capability column is introduced.
-- Transcript raw-object writes remain behind `StorageProvider` and are still not live-tested against Supabase.
+- Transcript raw-object writes are live-tested in the 4.3.5e browser gate; future storage changes must preserve exact-key teardown and private-object behavior.
 - Existing storage-key generation does not support run-scoped `e2e/{runId}` prefixes; E2E browser upload tests must clean exact returned keys only unless a future test-infrastructure change is approved.
 - Replace/upload cleanup failure can leave orphaned private objects until a future reconciliation job exists.
 - Already-issued signed read URLs remain usable until expiry; unpublish blocks future minting, not issued bearer URLs.

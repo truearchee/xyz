@@ -1,0 +1,206 @@
+import { execFileSync } from 'node:child_process';
+
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+export function assertUuid(value, label = 'uuid') {
+  if (!UUID_PATTERN.test(String(value))) {
+    throw new Error(`Invalid ${label}: ${value}`);
+  }
+}
+
+export function sqlLiteral(value) {
+  return `'${String(value).replaceAll("'", "''")}'`;
+}
+
+export function runPsqlRows(sql) {
+  const result = execFileSync(
+    'docker',
+    [
+      'compose',
+      'exec',
+      '-T',
+      'db',
+      'psql',
+      '-v',
+      'ON_ERROR_STOP=1',
+      '-U',
+      'postgres',
+      '-d',
+      'xyz_lms',
+      '-tA',
+    ],
+    { encoding: 'utf8', input: sql },
+  );
+
+  return result
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+export function runPsqlJson(sql) {
+  const rows = runPsqlRows(sql);
+  const value = rows.at(-1);
+  return value ? JSON.parse(value) : null;
+}
+
+export function getAppUserByEmail(email) {
+  return runPsqlJson(`
+SELECT json_build_object('id', id, 'email', email, 'role', role)::text
+FROM app_users
+WHERE email = ${sqlLiteral(email)}
+LIMIT 1;
+`);
+}
+
+export function getSectionsForModule(moduleId) {
+  assertUuid(moduleId, 'moduleId');
+  return runPsqlJson(`
+SELECT coalesce(json_agg(
+  json_build_object(
+    'id', id,
+    'title', title,
+    'type', type,
+    'orderIndex', order_index,
+    'publishStatus', publish_status
+  )
+  ORDER BY order_index
+), '[]'::json)::text
+FROM module_sections
+WHERE course_module_id = ${sqlLiteral(moduleId)}::uuid;
+`);
+}
+
+export function getMembershipsForModule(moduleId) {
+  assertUuid(moduleId, 'moduleId');
+  return runPsqlJson(`
+SELECT coalesce(json_agg(
+  json_build_object('id', id, 'userId', user_id, 'role', role, 'status', status)
+  ORDER BY created_at
+), '[]'::json)::text
+FROM course_memberships
+WHERE module_id = ${sqlLiteral(moduleId)}::uuid;
+`);
+}
+
+export function getActiveTranscriptForSection(sectionId) {
+  assertUuid(sectionId, 'sectionId');
+  return runPsqlJson(`
+SELECT json_build_object(
+  'id', id,
+  'moduleSectionId', module_section_id,
+  'status', status,
+  'storageKey', storage_key,
+  'originalFileName', original_file_name
+)::text
+FROM transcripts
+WHERE module_section_id = ${sqlLiteral(sectionId)}::uuid
+  AND is_active = true
+LIMIT 1;
+`);
+}
+
+export function getActiveTranscriptCountForSection(sectionId) {
+  assertUuid(sectionId, 'sectionId');
+  const rows = runPsqlRows(`
+SELECT count(*)::int
+FROM transcripts
+WHERE module_section_id = ${sqlLiteral(sectionId)}::uuid
+  AND is_active = true;
+`);
+  return Number(rows.at(-1) ?? 0);
+}
+
+export function getTranscriptById(transcriptId) {
+  assertUuid(transcriptId, 'transcriptId');
+  return runPsqlJson(`
+SELECT json_build_object(
+  'id', id,
+  'moduleSectionId', module_section_id,
+  'status', status,
+  'storageKey', storage_key,
+  'originalFileName', original_file_name
+)::text
+FROM transcripts
+WHERE id = ${sqlLiteral(transcriptId)}::uuid
+LIMIT 1;
+`);
+}
+
+export function getTranscriptCounts(transcriptId) {
+  assertUuid(transcriptId, 'transcriptId');
+  return runPsqlJson(`
+SELECT json_build_object(
+  'segmentCount', (SELECT count(*)::int FROM transcript_segments WHERE transcript_id = ${sqlLiteral(transcriptId)}::uuid),
+  'chunkCount', (SELECT count(*)::int FROM transcript_chunks WHERE transcript_id = ${sqlLiteral(transcriptId)}::uuid),
+  'segmentIds', coalesce((SELECT json_agg(id) FROM transcript_segments WHERE transcript_id = ${sqlLiteral(transcriptId)}::uuid), '[]'::json),
+  'chunkIds', coalesce((SELECT json_agg(id) FROM transcript_chunks WHERE transcript_id = ${sqlLiteral(transcriptId)}::uuid), '[]'::json)
+)::text;
+`);
+}
+
+export function getIngestionJobsForTranscript(transcriptId) {
+  assertUuid(transcriptId, 'transcriptId');
+  return runPsqlJson(`
+SELECT coalesce(json_agg(
+  json_build_object(
+    'id', id,
+    'jobType', job_type,
+    'status', status,
+    'resultMetadata', result_metadata,
+    'errorMessage', error_message
+  )
+  ORDER BY job_type, created_at
+), '[]'::json)::text
+FROM ingestion_jobs
+WHERE transcript_id = ${sqlLiteral(transcriptId)}::uuid;
+`);
+}
+
+export function getTranscriptArtifacts(transcriptId) {
+  const transcript = getTranscriptById(transcriptId);
+  const counts = getTranscriptCounts(transcriptId);
+  const jobs = getIngestionJobsForTranscript(transcriptId);
+  return { transcript, counts, jobs };
+}
+
+export async function waitForTranscriptCompleted(transcriptId, timeoutMs = 60_000) {
+  assertUuid(transcriptId, 'transcriptId');
+  const startedAt = Date.now();
+
+  while (Date.now() - startedAt < timeoutMs) {
+    const artifacts = getTranscriptArtifacts(transcriptId);
+    const parseJob = artifacts.jobs.find((job) => job.jobType === 'parse');
+    const chunkJob = artifacts.jobs.find((job) => job.jobType === 'chunk');
+
+    if (
+      artifacts.transcript?.status === 'completed' &&
+      parseJob?.status === 'completed' &&
+      chunkJob?.status === 'completed' &&
+      artifacts.counts.segmentCount > 0 &&
+      artifacts.counts.chunkCount > 0
+    ) {
+      return artifacts;
+    }
+
+    if (
+      artifacts.transcript?.status === 'failed' ||
+      parseJob?.status === 'failed' ||
+      chunkJob?.status === 'failed'
+    ) {
+      throw new Error(`Transcript worker failed: ${JSON.stringify({
+        transcriptStatus: artifacts.transcript?.status,
+        jobs: artifacts.jobs,
+      })}`);
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+  }
+
+  throw new Error(
+    `Timed out waiting for transcript ${transcriptId} to complete: ${JSON.stringify(
+      getTranscriptArtifacts(transcriptId),
+    )}`,
+  );
+}

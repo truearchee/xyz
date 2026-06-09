@@ -15,7 +15,7 @@ const APP_DATABASE_NAME = 'xyz_lms';
 const APP_DATABASE_USER = 'postgres';
 const E2E_ACTOR_DOMAIN = 'xyz-lms-e2e.dev';
 const UUID_PATTERN =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const ASSET_STORAGE_KEY_PATTERN =
   /^modules\/[0-9a-f-]{36}\/sections\/[0-9a-f-]{36}\/assets\/[0-9a-f-]{36}\/[^/]+\.pdf$/i;
 const TRANSCRIPT_STORAGE_KEY_PATTERN =
@@ -213,11 +213,31 @@ WHERE id IN (${uuidList(manifest.assetIds)});
     }
   }
 
+  if ((manifest.sectionIds ?? []).length > 0) {
+    for (const key of runPsql(`
+SELECT storage_key
+FROM section_assets
+WHERE module_section_id IN (${uuidList(manifest.sectionIds)});
+`)) {
+      keys.add(key);
+    }
+  }
+
   if ((manifest.transcriptIds ?? []).length > 0) {
     for (const key of runPsql(`
 SELECT storage_key
 FROM transcripts
 WHERE id IN (${uuidList(manifest.transcriptIds)});
+`)) {
+      keys.add(key);
+    }
+  }
+
+  if ((manifest.sectionIds ?? []).length > 0) {
+    for (const key of runPsql(`
+SELECT storage_key
+FROM transcripts
+WHERE module_section_id IN (${uuidList(manifest.sectionIds)});
 `)) {
       keys.add(key);
     }
@@ -326,6 +346,9 @@ async function teardown(identifier) {
       manifest.transcriptIds.length > 0
         ? `transcript_id IN (${uuidList(manifest.transcriptIds)})`
         : '',
+      manifest.sectionIds.length > 0
+        ? `transcript_id IN (SELECT id FROM transcripts WHERE module_section_id IN (${uuidList(manifest.sectionIds)}))`
+        : '',
     ]),
     ingestionJobs: deleteWhere('ingestion_jobs', [
       manifest.ingestionJobIds.length > 0
@@ -333,6 +356,9 @@ async function teardown(identifier) {
         : '',
       manifest.transcriptIds.length > 0
         ? `transcript_id IN (${uuidList(manifest.transcriptIds)})`
+        : '',
+      manifest.sectionIds.length > 0
+        ? `transcript_id IN (SELECT id FROM transcripts WHERE module_section_id IN (${uuidList(manifest.sectionIds)}))`
         : '',
     ]),
     transcriptSegments: deleteWhere('transcript_segments', [
@@ -342,20 +368,33 @@ async function teardown(identifier) {
       manifest.transcriptIds.length > 0
         ? `transcript_id IN (${uuidList(manifest.transcriptIds)})`
         : '',
+      manifest.sectionIds.length > 0
+        ? `transcript_id IN (SELECT id FROM transcripts WHERE module_section_id IN (${uuidList(manifest.sectionIds)}))`
+        : '',
     ]),
     transcripts: deleteWhere('transcripts', [
       manifest.transcriptIds.length > 0 ? `id IN (${uuidList(manifest.transcriptIds)})` : '',
+      manifest.sectionIds.length > 0
+        ? `module_section_id IN (${uuidList(manifest.sectionIds)})`
+        : '',
     ]),
     sectionAssets: deleteWhere('section_assets', [
       manifest.assetIds.length > 0 ? `id IN (${uuidList(manifest.assetIds)})` : '',
+      manifest.sectionIds.length > 0
+        ? `module_section_id IN (${uuidList(manifest.sectionIds)})`
+        : '',
     ]),
     moduleSections: deleteWhere('module_sections', [
       manifest.sectionIds.length > 0 ? `id IN (${uuidList(manifest.sectionIds)})` : '',
+      manifest.moduleIds.length > 0
+        ? `course_module_id IN (${uuidList(manifest.moduleIds)})`
+        : '',
     ]),
     courseMemberships: deleteWhere('course_memberships', [
       manifest.membershipIds.length > 0
         ? `id IN (${uuidList(manifest.membershipIds)})`
         : '',
+      manifest.moduleIds.length > 0 ? `module_id IN (${uuidList(manifest.moduleIds)})` : '',
     ]),
     courseModules: deleteWhere('course_modules', [
       manifest.moduleIds.length > 0 ? `id IN (${uuidList(manifest.moduleIds)})` : '',
