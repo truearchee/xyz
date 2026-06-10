@@ -1,6 +1,34 @@
 # Status
 
-_Last updated: 2026-06-10 15:20 - Stage 4.4 Embeddings FULLY VERIFIED; browser gate 4.4 and 4.3.5e projection regression reran green_
+_Last updated: 2026-06-10 - Stage 4.5a platform/llm foundation COMPLETE (deterministic provider; gate 2.A GREEN). Stage 4.5 IN PROGRESS, NOT FULLY VERIFIED (4.5b-d pending)._
+
+## Stage 4.5 — AI Infrastructure + Summary Generation (IN PROGRESS)
+Gate 2.A is GREEN: developer restored `knowledge/roadmap.md` v3 (sha256 `a677c580…`, recorded in
+[[steps/stage-04/4.5a]]); the master spec was filed with patches A/B and ADR refs remapped
+015..018 → adr-025..028.
+
+**4.5a (platform/llm foundation) — COMPLETE, verified in CI:**
+- Built `backend/app/platform/llm/` (gateway; transport-only provider protocol + K2Think stub +
+  DeterministicTestProvider with E2E-only fault injection; PromptRegistry flat-files + startup
+  validation + content hashing; Redis limiter with RPM/TPM/concurrency + TTL leases + headroom;
+  ContextBuilder; OutputValidator; gateway-attempt AIRequestLog helpers).
+- `AIRequestLog` + `GeneratedLectureSummary` models + migration `0008`; `IngestionJob.failure_category`
+  + summary one-active partial-unique index.
+- `ai` RQ queue + `ai_worker` container; after-embed enqueue of both summary jobs (queued rows +
+  after-commit enqueue; left queued on enqueue failure for the 4.6 sweeper).
+- Status projection gained `summary_brief`/`summary_detailed` steps + `summarizing`/`summarized`
+  states + per-step failure with category copy. Prompts at `backend/prompts/` + CI drift guard.
+- **No real K2Think call exists** (`K2ThinkProvider.send` raises NotImplemented; `backend/app/ai/` removed).
+- Verified: `alembic upgrade head` → `0008`; `pytest` → **236 passed** (43 new); drift guard OK;
+  limiter TTL-lease reclaim proven; `ai_worker` live-processed brief+detailed jobs; OpenAPI client
+  regenerated; `tsc --noEmit` exit 0. Report: [[steps/stage-04/4.5a]].
+
+**Remaining for Stage 4.5 FULLY VERIFIED:**
+- 4.5b — first REAL K2Think call (brief/Cerebras + brief→Nvidia fallback); requires gate 2.B (IFM API
+  key verified via curl — developer action). adr-025.
+- 4.5c — detailed generation (Think/Nvidia) + section validator. adr-027.
+- 4.5d — lecturer summary UI + status-badge rework + authz 404/403 matrix + browser gate +
+  real-provider smoke (gate 2.C).
 
 ## Current focus
 Stage 1 is FULLY VERIFIED. Session 1.1b satisfied the browser gate: the root page called `http://localhost:8000/health` directly through the generated client, CORS allowed `http://localhost:3000`, and the browser showed live backend state.
@@ -75,6 +103,8 @@ Required next:
 - /tracer deleted after real transcript UI replaced the temporary recovery route: PROVEN
 
 ## Done recently
+- 2026-06-10: Comprehensive knowledge base review completed; report at `KNOWLEDGE_REVIEW.md`. Every file in `knowledge/` was read. 27 specific anomalies identified across status values, log types, commit fields, stage number formatting, link paths, and stale architecture documentation. No source code changed.
+- 2026-06-10: Comprehensive codebase review completed; report at `knowledge/CODEBASE_REVIEW.md`. Verified live against the running Docker stack: backend `193 passed`, frontend `tsc --noEmit` exit 0, migrations at head `0007`, DB has 10 tables with `vector` 0.8.2 + `pgcrypto`, embedded chunks carry 384-dim L2 vectors with full provenance, direct-fetch/LLM/tracer scans clean. Playwright gates were NOT re-run this session (status inherited from prior reports). Key findings: no in-repo roadmap file; no `platform/llm`/`platform/events` (AI/event stages not started); no frontend unit tests. No source code changed.
 - Session 4.4: transcript chunk embeddings completed and fully verified. Final H rerun used the rebuilt `.env.e2e` stack with separate ingestion and embedding workers; 4.4 browser gate passed on run `e2e-1781089037-4-4-final`, 4.3.5e projection regression passed on run `e2e-1781089206-4-3-5e-regression`, backend passed `191 passed`, frontend type-check/build passed, direct-fetch/JWT scans were clean, and embedding DB proof showed one embedded chunk with 384-dimensional vector and complete provenance. Stage 4.4 is FULLY VERIFIED.
 - Session 4.3.5e Part 5: final Stage 4.1-4.3 transcript browser gate passed on run `e2e-1780991715-rf0lu0d7`. Lecturer uploaded `ensemble-methods.vtt` through lecture UI and `lab-notes.txt` through lab UI; both reached `completed`; DB proof showed 4 ingestion jobs, 7 segments, and 2 chunks; assignment upload returned 422; duplicate upload returned 409; student upload/status returned 403 while `/me` stayed role `student`; teardown removed exact manifest-owned storage/transcript/job/segment/chunk/module artifacts and reran idempotently. Stage 4.1-4.3 are FULLY VERIFIED and Client Edge Recovery Block 4.3.5 is COMPLETE.
 - Session 4.3.5d-E2-B1: repaired post-unpublish fresh signed URL denial status. Backend now returns `403 CONTENT_FORBIDDEN` for authenticated assigned student access to an existing unpublished section asset; targeted content test passed (`1 passed`), full backend passed (`151 passed`), E2 rerun passed on module `019ea733-95e9-774f-9b78-26d30e385ece`, frontend type-check/build/scans passed, generated client fresh, and Stage 3 returned to FULLY VERIFIED.

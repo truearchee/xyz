@@ -15,13 +15,34 @@ from app.platform.db.models import (
 )
 
 
-STEP_KEYS = ("upload", "parse", "chunk", "embed")
-JOB_STEP_KEYS = ("parse", "chunk", "embed")
+# Map an IngestionJob.job_type to the projection step key it drives.
+JOB_TYPE_TO_STEP = {
+    "parse": "parse",
+    "chunk": "chunk",
+    "embed": "embed",
+    "generate_brief_summary": "summary_brief",
+    "generate_detailed_summary": "summary_detailed",
+}
+JOB_STEP_KEYS = ("parse", "chunk", "embed", "summary_brief", "summary_detailed")
+STEP_KEYS = ("upload",) + JOB_STEP_KEYS
+SUMMARY_STEP_KEYS = ("summary_brief", "summary_detailed")
 SAFE_FAILURE_MESSAGES = {
     "upload": "Transcript upload failed.",
     "parse": "Transcript parsing failed.",
     "chunk": "Transcript chunking failed.",
     "embed": "Transcript embedding failed.",
+    "summary_brief": "Summary generation failed.",
+    "summary_detailed": "Summary generation failed.",
+}
+# Category-based copy for summary failures (spec §7.5).
+SUMMARY_FAILURE_MESSAGES_BY_CATEGORY = {
+    "invalid_input": (
+        "Transcript is too long for the summary model. Replace the transcript or contact support."
+    ),
+    "invalid_output": "Summary generation failed. Retry available.",
+    "provider_transient": "Summary generation failed. Retry available.",
+    "rate_limited": "Summary generation is busy and will retry automatically.",
+    "failed": "Summary generation failed.",
 }
 
 
@@ -119,8 +140,9 @@ async def _latest_jobs_by_type(
     ).scalars().all()
     latest: dict[str, IngestionJob] = {}
     for job in rows:
-        if job.job_type in JOB_STEP_KEYS and job.job_type not in latest:
-            latest[job.job_type] = job
+        step = JOB_TYPE_TO_STEP.get(job.job_type)
+        if step is not None and step not in latest:
+            latest[step] = job
     return latest
 
 
@@ -151,7 +173,7 @@ def _failed_step(
     transcript: Transcript,
     jobs: dict[str, IngestionJob],
 ) -> str | None:
-    for step_key in ("embed", "chunk", "parse"):
+    for step_key in ("summary_detailed", "summary_brief", "embed", "chunk", "parse"):
         job = jobs.get(step_key)
         if job is not None and job.status == "failed":
             return step_key
@@ -167,6 +189,12 @@ def _safe_failure_message(
 ) -> str | None:
     if failed_step is None:
         return None
+    if failed_step in SUMMARY_STEP_KEYS:
+        job = jobs.get(failed_step)
+        category = job.failure_category if job is not None else None
+        return SUMMARY_FAILURE_MESSAGES_BY_CATEGORY.get(
+            category or "failed", SAFE_FAILURE_MESSAGES[failed_step]
+        )
     return SAFE_FAILURE_MESSAGES.get(failed_step, "Transcript processing failed.")
 
 
@@ -187,6 +215,12 @@ def _overall_state(
         and chunk_count > 0
         and embedded_chunk_count == chunk_count
     ):
+        brief = steps["summary_brief"].status
+        detailed = steps["summary_detailed"].status
+        if brief == "completed" and detailed == "completed":
+            return "summarized"
+        if "running" in (brief, detailed) or "queued" in (brief, detailed):
+            return "summarizing"
         return "embedded"
     if steps["embed"].status in {"queued", "running"} or transcript.status == "embedding":
         return "embedding"

@@ -1,0 +1,25 @@
+name: brief_summary
+version: v1
+model: MBZUAI-IFM/K2-V2-Instruct
+backend: cerebras
+max_tokens: 600
+# reasoning_level intentionally omitted until confirmed real with IFM (spec D4 — never faked).
+content: |
+  You are writing a brief study summary of a single university lecture or lab session for a
+  student who wants a quick orientation before studying in depth.
+
+  The transcript is an automatic speech-to-text capture. IGNORE everything that is not subject
+  content: greetings, mic and camera checks, "can you hear me", background and small talk,
+  administrative announcements (deadlines, room changes, attendance), and closing remarks. Do not
+  mention that you ignored anything.
+
+  Write ONE short, self-contained paragraph of roughly 60-120 words that captures what the session
+  was about and its most important takeaways. Plain prose, no lists, no headings.
+
+  Return ONLY a JSON object of exactly this shape, with no markdown fences and no extra keys:
+  {"text": "<your paragraph>"}
+
+  Section type: {{section_type}}
+
+  Transcript:
+  {{transcript}}

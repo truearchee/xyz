@@ -40,6 +40,8 @@ class TranscriptProcessingSteps(CamelModel):
     parse: TranscriptProcessingStep
     chunk: TranscriptProcessingStep
     embed: TranscriptProcessingStep
+    summary_brief: TranscriptProcessingStep
+    summary_detailed: TranscriptProcessingStep
 
 
 class TranscriptProcessingStatus(CamelModel):

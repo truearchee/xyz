@@ -8,4 +8,6 @@ export type TranscriptProcessingSteps = {
     parse: TranscriptProcessingStep;
     chunk: TranscriptProcessingStep;
     embed: TranscriptProcessingStep;
+    summaryBrief: TranscriptProcessingStep;
+    summaryDetailed: TranscriptProcessingStep;
 };

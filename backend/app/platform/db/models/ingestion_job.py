@@ -23,6 +23,11 @@ class IngestionJob(Base):
             name="ck_ingestion_jobs_status",
         ),
         CheckConstraint("attempts >= 0", name="ck_ingestion_jobs_attempts"),
+        CheckConstraint(
+            "failure_category IS NULL OR failure_category IN "
+            "('provider_transient', 'rate_limited', 'invalid_output', 'invalid_input', 'failed')",
+            name="ck_ingestion_jobs_failure_category",
+        ),
         Index("uq_ingestion_jobs_idempotency_key", "idempotency_key", unique=True),
         Index("ix_ingestion_jobs_transcript_job_type", "transcript_id", "job_type"),
         Index(
@@ -32,6 +37,16 @@ class IngestionJob(Base):
             unique=True,
             postgresql_where=text(
                 "job_type = 'embed' AND status IN ('queued', 'running')"
+            ),
+        ),
+        Index(
+            "ingestion_jobs_one_active_summary_per_transcript",
+            "transcript_id",
+            "job_type",
+            unique=True,
+            postgresql_where=text(
+                "job_type IN ('generate_brief_summary', 'generate_detailed_summary') "
+                "AND status IN ('queued', 'running')"
             ),
         ),
     )
@@ -61,6 +76,7 @@ class IngestionJob(Base):
         server_default=text("0"),
     )
     error_message: Mapped[str | None] = mapped_column(Text)
+    failure_category: Mapped[str | None] = mapped_column(Text)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(

@@ -1,0 +1,34 @@
+name: detailed_summary
+version: v1
+model: MBZUAI-IFM/K2-Think-v0
+backend: nvidia
+max_tokens: 4000
+# reasoning_level intentionally omitted until confirmed real with IFM (spec D4 — never faked).
+content: |
+  You are producing a detailed, structured study summary of a single university lecture or lab
+  session, to help a student revise thoroughly.
+
+  The transcript is an automatic speech-to-text capture. IGNORE everything that is not subject
+  content: greetings, mic and camera checks, "can you hear me", background and small talk,
+  administrative announcements (deadlines, room changes, attendance), and closing remarks. Do not
+  mention that you ignored anything.
+
+  Return ONLY a single JSON object, with no markdown fences and no extra keys, of exactly this
+  shape (camelCase keys):
+  {
+    "overview": "<2-4 sentence overview of the session>",
+    "keyConcepts": ["<concept>", ...],
+    "importantDefinitions": [{"term": "<term>", "definition": "<definition>"}, ...],
+    "mainExplanations": ["<a key explanation in full sentences>", ...],
+    "examples": ["<a worked example or illustration used>", ...],
+    "examRelevantPoints": ["<a point likely to matter for assessment>", ...],
+    "labNotes": ["<a procedure/observation/safety note>", ...]
+  }
+
+  Every field except labNotes must be present and non-empty. Include "labNotes" ONLY when the
+  section type is "lab"; for non-lab sections omit it or set it to an empty list.
+
+  Section type: {{section_type}}
+
+  Transcript:
+  {{transcript}}

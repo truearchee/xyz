@@ -48,5 +48,23 @@ The chunk handler locks the `chunk` `ingestion_jobs` row, marks it running, then
 
 Chunk replacement is atomic: one transaction deletes old chunks, inserts the fresh chunk set, advances the transcript to `completed`, and completes the job with `result_metadata.chunk_count` and `result_metadata.oversized_segment_count`. If insertion fails, that transaction rolls back and preserves the prior committed chunk set. A separate cleanup transaction then marks the job and transcript failed with a sanitized error.
 
+## Embedding + AI queues (Stage 4.4 / 4.5)
+Worker isolation extends by queue: `python -m app.workers.worker <queue>` selects `ingestion`
+(default), `embedding`, or `ai`. Each runs as its own Docker service (`worker`, `embedding_worker`,
+`ai_worker`) on the shared `test2-backend` image. The `embedding` worker validates the pinned model
+snapshot at startup; the `ai` worker validates the PromptRegistry (a malformed/missing prompt is a
+boot failure) and the provider config.
+
+Successful embedding completion (Stage 4.5) creates two queued summary `ingestion_jobs`
+(`generate_brief_summary`, `generate_detailed_summary`) in the same transaction that marks embedding
+complete, then enqueues them onto the `ai` queue after commit. The summary handlers call
+`LLMGateway.complete` (see [[architecture/llm]]); on success they store a `GeneratedLectureSummary`
+with full provenance, on failure they set `IngestionJob.failure_category` and write no artifact — the
+transcript itself is not failed, so the status projection can show per-step failure.
+
 ## Intentional gaps
-Session 4.3 does not implement retry, backoff, stale-running recovery, replacement, or supersession. A process death after parse commit can leave a queued chunk job that has not been enqueued to RQ; Session 4.6 owns recovery.
+Session 4.3 does not implement retry, backoff, stale-running recovery, replacement, or supersession. A
+process death after parse commit can leave a queued chunk job that has not been enqueued to RQ; Session
+4.6 owns recovery. Stage 4.5 adds the same shape for summaries: if commit succeeds but the `ai`-queue
+enqueue fails, the summary rows stay `queued` for the Session 4.6 sweeper (the rows are inserted as
+`queued` precisely so that sweeper can act — no ad-hoc fix in 4.5).

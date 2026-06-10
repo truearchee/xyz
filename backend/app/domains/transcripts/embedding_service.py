@@ -161,7 +161,7 @@ async def embed_transcript_async(
                 vectors=vectors,
                 model_revision=revision,
             )
-        await _persist_success(
+        summary_jobs = await _persist_success(
             factory,
             ingestion_job_id=ingestion_job_id,
             transcript_id=transcript_id,
@@ -171,6 +171,25 @@ async def embed_transcript_async(
         await _persist_failure(factory, ingestion_job_id=ingestion_job_id, exc=exc)
         if raise_on_failure:
             raise TranscriptEmbeddingError(_sanitize_error(exc)) from None
+        return
+    # Stage 4.5: after the embed transaction commits, enqueue the summary jobs onto the ai queue.
+    if summary_jobs:
+        _enqueue_summary_jobs(summary_jobs)
+
+
+def _enqueue_summary_jobs(summary_jobs: list[tuple[str, UUID]]) -> None:
+    from app.workers.queues import enqueue_summary_job
+
+    for job_type, job_id in summary_jobs:
+        try:
+            enqueue_summary_job(job_type, job_id)
+        except Exception:
+            # Spec §8 resilience gap: leave the row 'queued' for the Stage 4.6 sweeper to
+            # re-enqueue. Do NOT mark it failed and do NOT add an ad-hoc fix here.
+            logger.warning(
+                "Failed to enqueue summary job; left queued for the Stage 4.6 sweeper",
+                extra={"ingestion_job_id": str(job_id), "job_type": job_type},
+            )
 
 
 async def mark_embed_enqueue_failed(
@@ -366,7 +385,7 @@ async def _persist_success(
                 )
             ).scalar_one_or_none()
             if job is None or job.status != "running":
-                return
+                return []
 
             transcript = (
                 await session.execute(
@@ -404,6 +423,13 @@ async def _persist_success(
                 "embedding_dimension": EMBEDDING_DIMENSION,
                 "embedding_normalization": EMBEDDING_NORMALIZATION,
             }
+
+            # Stage 4.5 (spec §8): queue both summary jobs in the SAME transaction that marks
+            # embedding complete. The caller enqueues them onto the ai queue after commit.
+            from app.domains.transcripts.summary_service import insert_summary_jobs
+
+            summary_jobs = await insert_summary_jobs(session, transcript=transcript)
+        return summary_jobs
 
 
 async def _persist_failure(
