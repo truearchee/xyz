@@ -12,7 +12,7 @@ related-session: knowledge/specs/stage-04/4.3.5e-stage4-transcript-ui-backfill.m
 ## Linked documents
 - Spec: [[specs/stage-04/4.3.5e-stage4-transcript-ui-backfill]]
 - Plan: [[plans/stage-04/4.3.5e-stage4-transcript-ui-plan]]
-- Findings: [[findings-4.3.5e]]
+- Canonical report: [[4.3.5e-transcript-ui-final-report]]
 - Recovery plan: [[specs/recovery/client-edge-recovery-plan]]
 
 ## Context

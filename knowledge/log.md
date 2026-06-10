@@ -54,3 +54,5 @@ Format: `YYYY-MM-DD  [type]  summary  (#stage.session)` — type: spec | plan | 
 2026-06-08 20:47  [report]  complete 4.3.5e Part 3 Checkpoint A-B lecturer transcript upload UI and worker-driven status polling; frontend type-check/build and guardrails passed, Stage 4.1-4.3 remains browser-gate pending  (#4.3.5e)
 2026-06-09 00:42  [report]  complete 4.3.5e Part 4 Checkpoint C-D tracer removal and run-scoped E2E teardown; frontend build passed without /tracer and teardown safety/idempotency checks passed  (#4.3.5e)
 2026-06-09 01:30  [report]  complete 4.3.5e Part 5 browser gate; transcript VTT/TXT UI upload, worker parse/chunk completion, DB counts, student denial, and teardown passed; Stage 4.1-4.3 FULLY VERIFIED and recovery block complete  (#4.3.5e)
+2026-06-09 14:48  [docs]  consolidate 4.3.5 recovery reports into final summaries and archive detailed checkpoint logs under knowledge/archive/stage-04  (#4.3.5)
+2026-06-09 15:02  [docs]  consolidate all 4.3.5e findings and part reports into one canonical transcript UI final report  (#4.3.5e)

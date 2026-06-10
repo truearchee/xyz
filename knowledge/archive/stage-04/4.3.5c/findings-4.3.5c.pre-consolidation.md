@@ -8,7 +8,7 @@ created: 2026-06-05
 updated: 2026-06-05 21:24
 spec: knowledge/specs/stage-04/4.3.5c-stage2-admin-ui-backfill.md
 plan: knowledge/plans/stage-04/4.3.5c-stage2-admin-ui-backfill.md
-report: knowledge/steps/4.3.5c-stage2-admin-ui.md
+report: knowledge/steps/stage-04/4.3.5c-admin-ui-final-report.md
 ---
 
 # Findings - Session 4.3.5c
@@ -16,7 +16,7 @@ report: knowledge/steps/4.3.5c-stage2-admin-ui.md
 ## Linked documents
 - Spec: [[specs/stage-04/4.3.5c-stage2-admin-ui-backfill]]
 - Plan: [[plans/stage-04/4.3.5c-stage2-admin-ui-backfill]]
-- Report: [[4.3.5c-stage2-admin-ui]]
+- Report: [[4.3.5c-admin-ui-final-report]]
 - ADR: [[decisions/adr-023-stage2-admin-module-membership-projection]]
 
 ## Pre-implementation evidence

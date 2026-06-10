@@ -8,12 +8,12 @@ created: 2026-06-06
 updated: 2026-06-08 16:28
 spec: knowledge/specs/stage-04/4.3.5d-stage3-content-ui-backfill.md
 plan: knowledge/plans/stage-04/4.3.5d-stage3-content-ui-backfill-plan.md
-report: knowledge/steps/stage-04/4.3.5d-checkpoint-0-report.md
-checkpoint_a_report: knowledge/steps/stage-04/4.3.5d-checkpoint-A-report.md
-checkpoint_d_report: knowledge/steps/stage-04/4.3.5d-checkpoint-D-report.md
-checkpoint_e_report: knowledge/steps/stage-04/4.3.5d-checkpoint-E-report.md
-checkpoint_e2_report: knowledge/steps/stage-04/4.3.5d-checkpoint-E2-signed-url-revocation.md
-checkpoint_e2_b1_report: knowledge/steps/stage-04/4.3.5d-E2-B1-post-unpublish-signed-url-denial-status-repair.md
+report: knowledge/archive/stage-04/4.3.5d/4.3.5d-checkpoint-0-report.md
+checkpoint_a_report: knowledge/archive/stage-04/4.3.5d/4.3.5d-checkpoint-A-report.md
+checkpoint_d_report: knowledge/archive/stage-04/4.3.5d/4.3.5d-checkpoint-D-report.md
+checkpoint_e_report: knowledge/archive/stage-04/4.3.5d/4.3.5d-checkpoint-E-report.md
+checkpoint_e2_report: knowledge/archive/stage-04/4.3.5d/4.3.5d-checkpoint-E2-signed-url-revocation.md
+checkpoint_e2_b1_report: knowledge/archive/stage-04/4.3.5d/4.3.5d-E2-B1-post-unpublish-signed-url-denial-status-repair.md
 ---
 
 # Findings - 4.3.5d Stage 3 Content UI Backfill
@@ -21,37 +21,38 @@ checkpoint_e2_b1_report: knowledge/steps/stage-04/4.3.5d-E2-B1-post-unpublish-si
 ## Linked documents
 - Spec: [[specs/stage-04/4.3.5d-stage3-content-ui-backfill]]
 - Plan: [[plans/stage-04/4.3.5d-stage3-content-ui-backfill-plan]]
-- Report: [[4.3.5d-checkpoint-0-report]]
-- Findings: [[findings-4.3.5d]]
+- Final report: [[4.3.5d-content-ui-final-report]]
+- Checkpoint 0 report: [[archive/stage-04/4.3.5d/4.3.5d-checkpoint-0-report]]
+- Findings: [[4.3.5d-content-ui-final-report]]
 - Recovery plan: [[specs/recovery/client-edge-recovery-plan]]
 - Architecture: [[architecture/frontend]]
 - Repair spec: [[specs/stage-04/4.3.5d-B1-stage3-module-section-auto-generation-repair]]
 - Repair plan: [[plans/stage-04/4.3.5d-B1-stage3-module-section-auto-generation-repair]]
-- Repair report: [[4.3.5d-B1-section-generation-repair]]
+- Repair report: [[archive/stage-04/4.3.5d/4.3.5d-B1-section-generation-repair]]
 - Checkpoint A spec: [[specs/stage-04/4.3.5d-checkpoint-A-lecturer-module-detail-notes]]
 - Checkpoint A plan: [[plans/stage-04/4.3.5d-checkpoint-A-lecturer-module-detail-notes-plan]]
-- Checkpoint A report: [[4.3.5d-checkpoint-A-report]]
+- Checkpoint A report: [[archive/stage-04/4.3.5d/4.3.5d-checkpoint-A-report]]
 - Upload helper spec: [[specs/stage-04/4.3.5d-B0-stage3-multipart-upload-helper]]
 - Upload helper plan: [[plans/stage-04/4.3.5d-B0-stage3-multipart-upload-helper-plan]]
-- Upload helper report: [[4.3.5d-B0-upload-helper]]
+- Upload helper report: [[archive/stage-04/4.3.5d/4.3.5d-B0-upload-helper]]
 - Checkpoint B spec: [[specs/stage-04/4.3.5d-checkpoint-B-lecturer-pdf-upload-and-asset-replace-ui]]
 - Checkpoint B plan: [[plans/stage-04/4.3.5d-checkpoint-B-lecturer-pdf-upload-and-asset-replace-ui-plan]]
-- Checkpoint B report: [[4.3.5d-checkpoint-B-report]]
+- Checkpoint B report: [[archive/stage-04/4.3.5d/4.3.5d-checkpoint-B-report]]
 - Checkpoint C spec: [[specs/stage-04/4.3.5d-checkpoint-C-publish-unpublish-controls-and-status-separation]]
 - Checkpoint C plan: [[plans/stage-04/4.3.5d-checkpoint-C-publish-unpublish-controls-and-status-separation-plan]]
-- Checkpoint C report: [[4.3.5d-checkpoint-C-report]]
+- Checkpoint C report: [[archive/stage-04/4.3.5d/4.3.5d-checkpoint-C-report]]
 - Checkpoint D spec: [[specs/stage-04/4.3.5d-checkpoint-D-student-published-only-view-and-signed-url-open]]
 - Checkpoint D plan: [[plans/stage-04/4.3.5d-checkpoint-D-student-published-only-view-and-signed-url-open-plan]]
-- Checkpoint D report: [[4.3.5d-checkpoint-D-report]]
+- Checkpoint D report: [[archive/stage-04/4.3.5d/4.3.5d-checkpoint-D-report]]
 - Checkpoint E spec: [[specs/stage-04/4.3.5d-checkpoint-E-full-stage3-content-visibility-browser-gate]]
 - Checkpoint E plan: [[plans/stage-04/4.3.5d-checkpoint-E-full-stage3-content-visibility-browser-gate-plan]]
-- Checkpoint E report: [[4.3.5d-checkpoint-E-report]]
+- Checkpoint E report: [[archive/stage-04/4.3.5d/4.3.5d-checkpoint-E-report]]
 - Checkpoint E2 spec: [[specs/stage-04/4.3.5d-E2-signed-url-revocation-proof-and-cleanup]]
 - Checkpoint E2 plan: [[plans/stage-04/4.3.5d-E2-signed-url-revocation-proof-and-cleanup-plan]]
-- Checkpoint E2 report: [[4.3.5d-checkpoint-E2-signed-url-revocation]]
+- Checkpoint E2 report: [[archive/stage-04/4.3.5d/4.3.5d-checkpoint-E2-signed-url-revocation]]
 - Checkpoint E2-B1 spec: [[specs/stage-04/4.3.5d-E2-B1-post-unpublish-signed-url-denial-status-repair]]
 - Checkpoint E2-B1 plan: [[plans/stage-04/4.3.5d-E2-B1-post-unpublish-signed-url-denial-status-repair-plan]]
-- Checkpoint E2-B1 report: [[4.3.5d-E2-B1-post-unpublish-signed-url-denial-status-repair]]
+- Checkpoint E2-B1 report: [[archive/stage-04/4.3.5d/4.3.5d-E2-B1-post-unpublish-signed-url-denial-status-repair]]
 
 ## Status
 All Stage 3 4.3.5d findings are resolved or non-blocking.

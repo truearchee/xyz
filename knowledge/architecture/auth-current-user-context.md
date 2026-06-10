@@ -20,7 +20,7 @@ related-session: knowledge/specs/stage-02/2.2-supabase-auth-current-user-context
 - Report: [[steps/stage-02/2.4-module-base-views]]
 - Spec: [[specs/stage-04/4.3.5a-client-edge-tracer-bullet]]
 - Plan: [[plans/stage-04/4.3.5a-client-edge-tracer-bullet]]
-- Report: [[steps/stage-04/4.3.5a-client-edge-tracer-bullet]]
+- Report: [[4.3.5a-client-edge-tracer-final-report]]
 - ADR: [[decisions/adr-003-module-authz-db-lookup]]
 - Architecture: [[architecture/db-spine]]
 

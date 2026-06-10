@@ -13,13 +13,14 @@ updated: 2026-06-09 01:30 +0400
 ## Linked documents
 - Recovery plan: [[specs/recovery/client-edge-recovery-plan]]
 - Architecture: [[architecture/frontend]]
-- Prior findings: [[findings-4.3.5d]]
+- Prior findings: [[4.3.5d-content-ui-final-report]]
 - Spec: [[specs/stage-04/4.3.5e-stage4-transcript-ui-backfill]]
 - Plan: [[plans/stage-04/4.3.5e-stage4-transcript-ui-plan]]
-- Report: [[4.3.5e-part2-prerequisite-terminal-state-repair]]
-- Report: [[4.3.5e-part3-transcript-frontend-ui]]
-- Report: [[4.3.5e-part4-tracer-teardown]]
-- Report: [[4.3.5e-part5-browser-gate]]
+- Final report: [[4.3.5e-transcript-ui-final-report]]
+- Part 2 report: [[archive/stage-04/4.3.5e/4.3.5e-part2-prerequisite-terminal-state-repair]]
+- Part 3 report: [[archive/stage-04/4.3.5e/4.3.5e-part3-transcript-frontend-ui]]
+- Part 4 report: [[archive/stage-04/4.3.5e/4.3.5e-part4-tracer-teardown]]
+- Part 5 report: [[archive/stage-04/4.3.5e/4.3.5e-part5-browser-gate]]
 - ADR: [[decisions/adr-024-stage-4-3-post-chunk-terminal-status]]
 
 ## Checkpoint 0 surface map

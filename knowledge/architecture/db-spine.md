@@ -18,7 +18,7 @@ related-session: knowledge/specs/stage-02/2.1-db-spine.md
 - Report: [[steps/stage-03/3.2-publish-and-notes]]
 - Spec: [[specs/stage-04/4.3.5d-B1-stage3-module-section-auto-generation-repair]]
 - Plan: [[plans/stage-04/4.3.5d-B1-stage3-module-section-auto-generation-repair]]
-- Report: [[steps/stage-04/4.3.5d-B1-section-generation-repair]]
+- Report: [[archive/stage-04/4.3.5d/4.3.5d-B1-section-generation-repair]]
 - Spec: [[specs/stage-04/4.1-transcript-upload]]
 - Plan: [[plans/stage-04/4.1-transcript-upload]]
 - Report: [[steps/stage-04/4.1-transcript-upload]]

@@ -12,8 +12,8 @@ related-session: knowledge/specs/stage-04/4.3.5c-stage2-admin-ui-backfill.md
 ## Linked documents
 - Spec: [[specs/stage-04/4.3.5c-stage2-admin-ui-backfill]]
 - Plan: [[plans/stage-04/4.3.5c-stage2-admin-ui-backfill]]
-- Report: [[4.3.5c-stage2-admin-ui]]
-- Findings: [[findings-4.3.5c]]
+- Report: [[4.3.5c-admin-ui-final-report]]
+- Findings: [[4.3.5c-admin-ui-final-report]]
 - Recovery plan: [[specs/recovery/client-edge-recovery-plan]]
 
 ## Context

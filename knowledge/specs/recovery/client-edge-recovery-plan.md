@@ -4,6 +4,7 @@
 **Sessions:** 4.3.5.0 → 4.3.5a → 4.3.5b → 4.3.5c → 4.3.5d → 4.3.5e
 **Slots between:** Stage 4.3 and Stage 4.4
 **Purpose:** Restore the walking skeleton by proving the browser → API → storage/DB/worker → browser path before backend AI work resumes.
+**Final report:** `knowledge/steps/stage-04/4.3.5-client-edge-recovery-final-report.md`
 
 ## Governing principle
 
