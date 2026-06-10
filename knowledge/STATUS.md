@@ -1,6 +1,6 @@
 # Status
 
-_Last updated: 2026-06-09 01:30 - Session 4.3.5e Part 5 transcript browser gate passed; Stage 4.1-4.3 FULLY VERIFIED; Client Edge Recovery Block COMPLETE_
+_Last updated: 2026-06-10 15:20 - Stage 4.4 Embeddings FULLY VERIFIED; browser gate 4.4 and 4.3.5e projection regression reran green_
 
 ## Current focus
 Stage 1 is FULLY VERIFIED. Session 1.1b satisfied the browser gate: the root page called `http://localhost:8000/health` directly through the generated client, CORS allowed `http://localhost:3000`, and the browser showed live backend state.
@@ -14,11 +14,12 @@ Stage 3  Content + visibility / P1   FULLY VERIFIED  (browser gate: 4.3.5d Check
 Stage 4.1  Transcript upload            FULLY VERIFIED  (browser gate: 4.3.5e)
 Stage 4.2  Transcript parsing           FULLY VERIFIED  (browser gate: 4.3.5e)
 Stage 4.3  Transcript chunk persistence FULLY VERIFIED  (browser gate: 4.3.5e)
+Stage 4.4  Embeddings                   FULLY VERIFIED  (browser gate: 4.4)
 
 Client Edge Recovery Block (4.3.5): COMPLETE
   Stages 1, 2, 3, 4.1, 4.2, 4.3 all FULLY VERIFIED.
   `/tracer` deleted; `NEXT_PUBLIC_TRACER_ENABLED` removed.
-  Forward roadmap resumes at Stage 4.4 (embeddings).
+  Stage 4.4 embeddings are fully verified.
 
 ## Stage 4.1-4.3 browser gate - 4.3.5e
 - Lecturer uploads VTT to lecture section; status appears: PROVEN
@@ -74,6 +75,7 @@ Required next:
 - /tracer deleted after real transcript UI replaced the temporary recovery route: PROVEN
 
 ## Done recently
+- Session 4.4: transcript chunk embeddings completed and fully verified. Final H rerun used the rebuilt `.env.e2e` stack with separate ingestion and embedding workers; 4.4 browser gate passed on run `e2e-1781089037-4-4-final`, 4.3.5e projection regression passed on run `e2e-1781089206-4-3-5e-regression`, backend passed `191 passed`, frontend type-check/build passed, direct-fetch/JWT scans were clean, and embedding DB proof showed one embedded chunk with 384-dimensional vector and complete provenance. Stage 4.4 is FULLY VERIFIED.
 - Session 4.3.5e Part 5: final Stage 4.1-4.3 transcript browser gate passed on run `e2e-1780991715-rf0lu0d7`. Lecturer uploaded `ensemble-methods.vtt` through lecture UI and `lab-notes.txt` through lab UI; both reached `completed`; DB proof showed 4 ingestion jobs, 7 segments, and 2 chunks; assignment upload returned 422; duplicate upload returned 409; student upload/status returned 403 while `/me` stayed role `student`; teardown removed exact manifest-owned storage/transcript/job/segment/chunk/module artifacts and reran idempotently. Stage 4.1-4.3 are FULLY VERIFIED and Client Edge Recovery Block 4.3.5 is COMPLETE.
 - Session 4.3.5d-E2-B1: repaired post-unpublish fresh signed URL denial status. Backend now returns `403 CONTENT_FORBIDDEN` for authenticated assigned student access to an existing unpublished section asset; targeted content test passed (`1 passed`), full backend passed (`151 passed`), E2 rerun passed on module `019ea733-95e9-774f-9b78-26d30e385ece`, frontend type-check/build/scans passed, generated client fresh, and Stage 3 returned to FULLY VERIFIED.
 - Session 4.3.5d-E2: supplemental signed URL revocation proof blocked on fresh post-unpublish signed URL denial status. Browser/API proof used module `019ea719-80ba-771c-bea7-716638033078`; after unpublish, student `/modules/<moduleId>/sections` returned `[]`, but `GET /modules/<moduleId>/sections/<lecture1SectionId>/assets/<assetId>/download-url` returned `404 {"detail":"SECTION_NOT_FOUND"}` instead of required `403`. Student `/me` still returned role `student`. Product source unchanged; Stage 3 moved back to UI PENDING.
@@ -94,7 +96,7 @@ Required next:
 - None.
 
 ## Next up
-- Stage 4.4 - Embeddings.
+- Stage 4.5 planning: AIRequestLog + summary generation.
 
 ## Known issues / blockers
 - Hosted Postgres extension bootstrap is not covered by the local Docker init script; handle `vector` and `pgcrypto` explicitly before first hosted deployment.

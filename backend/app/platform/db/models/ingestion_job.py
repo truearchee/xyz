@@ -25,6 +25,15 @@ class IngestionJob(Base):
         CheckConstraint("attempts >= 0", name="ck_ingestion_jobs_attempts"),
         Index("uq_ingestion_jobs_idempotency_key", "idempotency_key", unique=True),
         Index("ix_ingestion_jobs_transcript_job_type", "transcript_id", "job_type"),
+        Index(
+            "ingestion_jobs_one_active_embed_per_transcript",
+            "transcript_id",
+            "job_type",
+            unique=True,
+            postgresql_where=text(
+                "job_type = 'embed' AND status IN ('queued', 'running')"
+            ),
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(

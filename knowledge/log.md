@@ -56,3 +56,4 @@ Format: `YYYY-MM-DD  [type]  summary  (#stage.session)` — type: spec | plan | 
 2026-06-09 01:30  [report]  complete 4.3.5e Part 5 browser gate; transcript VTT/TXT UI upload, worker parse/chunk completion, DB counts, student denial, and teardown passed; Stage 4.1-4.3 FULLY VERIFIED and recovery block complete  (#4.3.5e)
 2026-06-09 14:48  [docs]  consolidate 4.3.5 recovery reports into final summaries and archive detailed checkpoint logs under knowledge/archive/stage-04  (#4.3.5)
 2026-06-09 15:02  [docs]  consolidate all 4.3.5e findings and part reports into one canonical transcript UI final report  (#4.3.5e)
+2026-06-10 15:20  [report]  complete Stage 4.4 embeddings; final browser gate, 4.3.5e projection regression, backend suite, frontend checks, guardrails, and provenance proof passed  (#4.4)

@@ -9,6 +9,7 @@ from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from uuid6 import uuid7
 
+from app.domains.transcripts.schemas import TranscriptProcessingStatus
 from app.domains.transcripts.validators import (
     InvalidTranscriptError,
     TranscriptUploadTooLargeError,
@@ -21,6 +22,7 @@ from app.platform.query.section_context import (
     AuthorizedSectionContext,
     get_authorized_lecturer_section_context,
 )
+from app.platform.query.transcript_status import get_transcript_processing_status_read
 from app.platform.storage.base import (
     StorageProvider,
     StorageProviderError,
@@ -248,6 +250,23 @@ async def get_active_transcript(
     if transcript is None:
         raise _coded_error(status.HTTP_404_NOT_FOUND, TRANSCRIPT_NOT_FOUND)
     return transcript
+
+
+async def get_transcript_processing_status(
+    db: AsyncSession,
+    *,
+    current_user: CurrentUserContext,
+    module_id: UUID,
+    section_id: UUID,
+) -> TranscriptProcessingStatus:
+    transcript = await get_active_transcript(
+        db,
+        current_user=current_user,
+        module_id=module_id,
+        section_id=section_id,
+    )
+    projection = await get_transcript_processing_status_read(db, transcript=transcript)
+    return TranscriptProcessingStatus.model_validate(projection)
 
 
 async def _enqueue_parse_job(db: AsyncSession, *, transcript_id: UUID) -> None:

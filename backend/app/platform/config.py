@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 
 
 class SettingsError(RuntimeError):
@@ -75,6 +76,51 @@ class Settings:
             raise SettingsError("SIGNED_READ_URL_TTL_SECONDS must be an integer") from exc
         if value <= 0:
             raise SettingsError("SIGNED_READ_URL_TTL_SECONDS must be greater than zero")
+        return value
+
+    @property
+    def EMBEDDING_MODEL_PATH(self) -> Path:
+        return Path(
+            os.environ.get(
+                "EMBEDDING_MODEL_PATH",
+                "/opt/models/sentence-transformers/all-MiniLM-L6-v2",
+            )
+        )
+
+    @property
+    def EMBEDDING_MODEL_REVISION(self) -> str:
+        return os.environ.get(
+            "EMBEDDING_MODEL_REVISION",
+            "1110a243fdf4706b3f48f1d95db1a4f5529b4d41",
+        )
+
+    @property
+    def EMBEDDING_BATCH_SIZE(self) -> int:
+        raw_value = os.environ.get("EMBEDDING_BATCH_SIZE", "16")
+        try:
+            value = int(raw_value)
+        except ValueError as exc:
+            raise SettingsError("EMBEDDING_BATCH_SIZE must be an integer") from exc
+        if value <= 0:
+            raise SettingsError("EMBEDDING_BATCH_SIZE must be greater than zero")
+        return value
+
+    @property
+    def EMBEDDING_WORKER_CONCURRENCY(self) -> int:
+        raw_value = os.environ.get("EMBEDDING_WORKER_CONCURRENCY", "1")
+        try:
+            value = int(raw_value)
+        except ValueError as exc:
+            raise SettingsError("EMBEDDING_WORKER_CONCURRENCY must be an integer") from exc
+        if value <= 0:
+            raise SettingsError("EMBEDDING_WORKER_CONCURRENCY must be greater than zero")
+        return value
+
+    @property
+    def EMBEDDING_DEVICE(self) -> str:
+        value = os.environ.get("EMBEDDING_DEVICE", "cpu").strip()
+        if value != "cpu":
+            raise SettingsError("EMBEDDING_DEVICE must be cpu")
         return value
 
     @property

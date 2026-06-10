@@ -17,8 +17,13 @@ from app.domains.transcripts.chunker import (
     ChunkDraft,
     chunk_segments,
 )
+from app.domains.transcripts.embedding_service import (
+    create_embed_job_for_chunk_success,
+    mark_embed_enqueue_failed,
+)
 from app.platform.db.models import IngestionJob, Transcript, TranscriptChunk, TranscriptSegment
 from app.platform.db.session import async_session
+from app.workers.queues import enqueue_embed_transcript
 
 
 logger = logging.getLogger(__name__)
@@ -80,7 +85,18 @@ async def chunk_transcript_async(
 
     try:
         async with factory() as session:
-            await _persist_chunks(session, ingestion_job_id=ingestion_job_id)
+            embed_job_id = await _persist_chunks(session, ingestion_job_id=ingestion_job_id)
+        if embed_job_id is not None:
+            try:
+                enqueue_embed_transcript(embed_job_id)
+            except Exception as enqueue_exc:
+                async with factory() as session:
+                    async with session.begin():
+                        await mark_embed_enqueue_failed(
+                            session,
+                            embed_job_id=embed_job_id,
+                            exc=enqueue_exc,
+                        )
     except Exception as exc:
         async with factory() as session:
             await _persist_failure(session, ingestion_job_id=ingestion_job_id, exc=exc)
@@ -90,11 +106,11 @@ async def _persist_chunks(
     session: AsyncSession,
     *,
     ingestion_job_id: UUID,
-) -> None:
+) -> UUID | None:
     async with session.begin():
         job = await _lock_chunk_job(session, ingestion_job_id=ingestion_job_id)
         if job is None:
-            return
+            return None
 
         completed_job = await _completed_chunk_job_for_key(
             session,
@@ -102,7 +118,7 @@ async def _persist_chunks(
             exclude_job_id=job.id,
         )
         if completed_job is not None:
-            return
+            return None
 
         now = _now()
         job.status = "running"
@@ -128,7 +144,7 @@ async def _persist_chunks(
             job.status = "failed"
             job.error_message = PRECONDITION_PARSE_NOT_COMPLETED
             job.updated_at = now
-            return
+            return None
 
         segments = (
             await session.execute(
@@ -170,6 +186,11 @@ async def _persist_chunks(
             "chunk_count": len(result.chunks),
             "oversized_segment_count": result.oversized_segment_count,
         }
+        return await create_embed_job_for_chunk_success(
+            session,
+            transcript=transcript,
+            chunk_job=job,
+        )
 
 
 async def _persist_failure(

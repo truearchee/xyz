@@ -9,6 +9,11 @@ services:
       - .env
       - .env.e2e
 
+  embedding_worker:
+    env_file:
+      - .env
+      - .env.e2e
+
   frontend:
     env_file:
       - .env

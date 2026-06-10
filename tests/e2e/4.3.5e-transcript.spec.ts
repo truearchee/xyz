@@ -58,6 +58,24 @@ type SectionRow = {
 
 type TranscriptArtifacts = Awaited<ReturnType<typeof waitForTranscriptCompleted>>;
 
+type TranscriptProcessingProjection = {
+  chunkCount: number;
+  segmentCount: number;
+  overallState: string;
+  safeFailureMessage: string | null;
+  steps: {
+    parse: {
+      status: string;
+    };
+    chunk: {
+      status: string;
+    };
+    embed: {
+      status: string;
+    };
+  };
+};
+
 type RunManifest = {
   [key: string]: string[] | string;
   runId: string;
@@ -336,18 +354,66 @@ function assertNoForbiddenTranscriptFields(value: unknown) {
   }
 }
 
+const CHUNK_COMPLETED_OVERALL_STATES = new Set(['chunked', 'embedding', 'embedded']);
+
+async function waitForChunkCompletionProjectionResponse(
+  page: Page,
+  moduleId: string,
+  sectionId: string,
+): Promise<TranscriptProcessingProjection> {
+  const response = await page.waitForResponse(async (candidate) => {
+    if (
+      candidate.request().method() !== 'GET' ||
+      candidate.status() !== 200 ||
+      new URL(candidate.url()).pathname !==
+        `/modules/${moduleId}/sections/${sectionId}/transcript-processing-status`
+    ) {
+      return false;
+    }
+
+    const body = (await candidate.json().catch(() => null)) as
+      | Partial<TranscriptProcessingProjection>
+      | null;
+    return (
+      typeof body?.overallState === 'string' &&
+      CHUNK_COMPLETED_OVERALL_STATES.has(body.overallState) &&
+      body.steps?.parse?.status === 'completed' &&
+      body.steps?.chunk?.status === 'completed' &&
+      typeof body.chunkCount === 'number' &&
+      body.chunkCount > 0 &&
+      typeof body.segmentCount === 'number' &&
+      body.segmentCount > 0 &&
+      body.safeFailureMessage === null
+    );
+  }, { timeout: 65_000 });
+  return response.json() as Promise<TranscriptProcessingProjection>;
+}
+
 async function expectCompletedProof(
   runId: string,
   page: Page,
+  moduleId: string,
   section: SectionRow,
   transcriptId: string,
 ) {
+  const chunkCompletionProjectionPromise = waitForChunkCompletionProjectionResponse(
+    page,
+    moduleId,
+    section.id,
+  );
   const artifacts = await waitForTranscriptCompleted(transcriptId, 60_000);
   await recordTranscriptArtifacts(runId, transcriptId, artifacts);
+  const projection = await chunkCompletionProjectionPromise;
 
   expect(artifacts.transcript.status).toBe('completed');
   expect(artifacts.counts.segmentCount).toBeGreaterThan(0);
   expect(artifacts.counts.chunkCount).toBeGreaterThan(0);
+  expect(CHUNK_COMPLETED_OVERALL_STATES.has(projection.overallState)).toBe(true);
+  expect(projection.steps.parse.status).toBe('completed');
+  expect(projection.steps.chunk.status).toBe('completed');
+  expect(projection.safeFailureMessage).toBeNull();
+  expect(projection.segmentCount).toBeGreaterThan(0);
+  expect(projection.chunkCount).toBeGreaterThan(0);
 
   const parseJob = artifacts.jobs.find((job) => job.jobType === 'parse');
   const chunkJob = artifacts.jobs.find((job) => job.jobType === 'chunk');
@@ -356,7 +422,7 @@ async function expectCompletedProof(
   expect(Number(chunkJob?.resultMetadata?.chunk_count ?? 0)).toBeGreaterThan(0);
 
   await expect(rowForSection(page, section).locator('[data-testid^="section-transcript-status-"]')).toContainText(
-    'Transcript processing completed',
+    /Chunked|Embedding|Embedded/,
     { timeout: 65_000 },
   );
   await expectNoRawMarkers(page);
@@ -409,16 +475,20 @@ test('4.3.5e Stage 4.1-4.3 transcript browser gate', async ({ browser }) => {
       setup.lecture,
       'ensemble-methods.vtt',
     );
-    const lectureArtifacts = await waitForTranscriptCompleted(lectureTranscriptId, 60_000);
-    await recordTranscriptArtifacts(runId, lectureTranscriptId, lectureArtifacts);
-    await expectCompletedProof(runId, lecturerPage, setup.lecture, lectureTranscriptId);
+    await expectCompletedProof(
+      runId,
+      lecturerPage,
+      setup.moduleId,
+      setup.lecture,
+      lectureTranscriptId,
+    );
 
     await lecturerPage.reload();
     await expect(lecturerPage.getByRole('heading', { name: setup.moduleTitle })).toBeVisible();
     const reloadedLectureRow = rowForSection(lecturerPage, setup.lecture);
     await expect(reloadedLectureRow.getByText('ensemble-methods.vtt')).toBeVisible();
     await expect(reloadedLectureRow.locator('[data-testid^="section-transcript-status-"]')).toContainText(
-      'Transcript processing completed',
+      /Chunked|Embedding|Embedded/,
     );
     await expect(reloadedLectureRow.locator('[data-testid^="section-transcript-upload-"]')).toHaveCount(0);
     await expectNoRawMarkers(lecturerPage);
@@ -439,7 +509,13 @@ test('4.3.5e Stage 4.1-4.3 transcript browser gate', async ({ browser }) => {
       setup.lab,
       'lab-notes.txt',
     );
-    await expectCompletedProof(runId, lecturerPage, setup.lab, labTranscriptId);
+    await expectCompletedProof(
+      runId,
+      lecturerPage,
+      setup.moduleId,
+      setup.lab,
+      labTranscriptId,
+    );
 
     const assignmentUpload = await apiMultipart(
       apiLecturer,

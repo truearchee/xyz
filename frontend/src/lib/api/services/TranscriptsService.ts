@@ -3,6 +3,7 @@
 /* tslint:disable */
 /* eslint-disable */
 import type { TranscriptMeta } from '../models/TranscriptMeta';
+import type { TranscriptProcessingStatus } from '../models/TranscriptProcessingStatus';
 import type { CancelablePromise } from '../core/CancelablePromise';
 import { OpenAPI } from '../core/OpenAPI';
 import { request as __request } from '../core/request';
@@ -57,6 +58,34 @@ export class TranscriptsService {
         return __request(OpenAPI, {
             method: 'GET',
             url: '/modules/{module_id}/sections/{section_id}/transcript',
+            path: {
+                'module_id': moduleId,
+                'section_id': sectionId,
+            },
+            headers: {
+                'Authorization': authorization,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Get Section Transcript Processing Status
+     * @param moduleId
+     * @param sectionId
+     * @param authorization
+     * @returns TranscriptProcessingStatus Successful Response
+     * @throws ApiError
+     */
+    public static getSectionTranscriptProcessingStatus(
+        moduleId: string,
+        sectionId: string,
+        authorization?: (string | null),
+    ): CancelablePromise<TranscriptProcessingStatus> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/modules/{module_id}/sections/{section_id}/transcript-processing-status',
             path: {
                 'module_id': moduleId,
                 'section_id': sectionId,

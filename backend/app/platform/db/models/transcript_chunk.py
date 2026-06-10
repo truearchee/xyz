@@ -3,23 +3,22 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import BigInteger, CheckConstraint, DateTime, ForeignKey, Integer, Text, UniqueConstraint, text as sa_text
+from pgvector.sqlalchemy import Vector
+from sqlalchemy import (
+    BigInteger,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Integer,
+    Text,
+    UniqueConstraint,
+    text as sa_text,
+)
 from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.orm import Mapped, mapped_column
-from sqlalchemy.types import UserDefinedType
 from uuid6 import uuid7
 
 from app.platform.db.models.base import Base
-
-
-class Vector(UserDefinedType):
-    cache_ok = True
-
-    def __init__(self, dimensions: int) -> None:
-        self.dimensions = dimensions
-
-    def get_col_spec(self, **kw) -> str:
-        return f"vector({self.dimensions})"
 
 
 class TranscriptChunk(Base):
@@ -36,6 +35,20 @@ class TranscriptChunk(Base):
         CheckConstraint(
             "end_sequence_number >= start_sequence_number",
             name="ck_transcript_chunks_sequence_range",
+        ),
+        CheckConstraint(
+            """
+            embedding IS NULL
+            OR (
+                embedding_model IS NOT NULL
+                AND embedding_model_revision IS NOT NULL
+                AND embedding_dimension = 384
+                AND embedding_normalization = 'l2'
+                AND embedding_version IS NOT NULL
+                AND embedding_input_hash IS NOT NULL
+            )
+            """,
+            name="ck_transcript_chunks_embedding_provenance",
         ),
     )
 
@@ -73,9 +86,13 @@ class TranscriptChunk(Base):
         nullable=False,
         server_default=sa_text("false"),
     )
-    embedding: Mapped[object | None] = mapped_column(Vector(384))
+    embedding: Mapped[list[float] | None] = mapped_column(Vector(384))
     embedding_model: Mapped[str | None] = mapped_column(Text)
+    embedding_model_revision: Mapped[str | None] = mapped_column(Text)
+    embedding_dimension: Mapped[int | None] = mapped_column(Integer)
+    embedding_normalization: Mapped[str | None] = mapped_column(Text)
     embedding_version: Mapped[str | None] = mapped_column(Text)
+    embedding_input_hash: Mapped[str | None] = mapped_column(Text)
     embedding_generated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

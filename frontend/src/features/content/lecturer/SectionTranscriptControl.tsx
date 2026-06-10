@@ -130,7 +130,6 @@ export function SectionTranscriptControl({
           </span>
           <TranscriptStatusBadge
             moduleId={moduleId}
-            onTranscriptChange={setTranscript}
             onTranscriptMissing={() => setTranscript(null)}
             sectionId={sectionId}
             sectionKey={sectionKey}

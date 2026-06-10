@@ -27,3 +27,30 @@ class TranscriptMeta(CamelModel):
     uploaded_by_user_id: UUID | None
     created_at: datetime
     updated_at: datetime
+
+
+class TranscriptProcessingStep(CamelModel):
+    status: str
+    started_at: datetime | None
+    completed_at: datetime | None
+
+
+class TranscriptProcessingSteps(CamelModel):
+    upload: TranscriptProcessingStep
+    parse: TranscriptProcessingStep
+    chunk: TranscriptProcessingStep
+    embed: TranscriptProcessingStep
+
+
+class TranscriptProcessingStatus(CamelModel):
+    active_transcript_id: UUID
+    transcript_status: str
+    overall_state: str
+    current_phase: str | None
+    failed_step: str | None
+    steps: TranscriptProcessingSteps
+    segment_count: int
+    chunk_count: int
+    embedded_chunk_count: int
+    safe_failure_message: str | None
+    updated_at: datetime

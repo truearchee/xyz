@@ -23,8 +23,11 @@ from app.platform.db.models import (
     AppUser,
     CourseMembership,
     CourseModule,
+    IngestionJob,
     ModuleSection,
     Transcript,
+    TranscriptChunk,
+    TranscriptSegment,
 )
 from app.platform.storage import get_storage_provider
 from app.platform.storage.base import (
@@ -121,6 +124,7 @@ async def _create_transcript(
     section_id: UUID,
     uploaded_by_user_id: UUID,
     is_active: bool = True,
+    status: str = "uploaded",
     storage_key: str | None = None,
 ) -> Transcript:
     transcript = Transcript(
@@ -131,13 +135,84 @@ async def _create_transcript(
         mime_type="text/vtt",
         file_size=len(VTT_BYTES),
         checksum=hashlib.sha256(VTT_BYTES).hexdigest(),
-        status="uploaded",
+        status=status,
         uploaded_by_user_id=uploaded_by_user_id,
         is_active=is_active,
     )
     session.add(transcript)
     await session.flush()
     return transcript
+
+
+async def _create_ingestion_job(
+    session: AsyncSession,
+    *,
+    transcript_id: UUID,
+    job_type: str,
+    status: str,
+    error_message: str | None = None,
+    result_metadata: dict | None = None,
+) -> IngestionJob:
+    job = IngestionJob(
+        transcript_id=transcript_id,
+        job_type=job_type,
+        status=status,
+        idempotency_key=f"{transcript_id}:{job_type}:{uuid4()}",
+        processor_version=f"{job_type}:test",
+        result_metadata=result_metadata,
+        error_message=error_message,
+        attempts=1,
+    )
+    session.add(job)
+    await session.flush()
+    return job
+
+
+async def _create_transcript_segment(
+    session: AsyncSession,
+    *,
+    transcript_id: UUID,
+    sequence_number: int = 0,
+    text: str = "Hello world",
+) -> TranscriptSegment:
+    segment = TranscriptSegment(
+        transcript_id=transcript_id,
+        sequence_number=sequence_number,
+        start_ms=sequence_number * 1000,
+        end_ms=(sequence_number + 1) * 1000,
+        text=text,
+    )
+    session.add(segment)
+    await session.flush()
+    return segment
+
+
+async def _create_transcript_chunk(
+    session: AsyncSession,
+    *,
+    transcript_id: UUID,
+    segment_id: UUID,
+    chunk_index: int = 0,
+    text: str = "Hello world",
+) -> TranscriptChunk:
+    chunk = TranscriptChunk(
+        transcript_id=transcript_id,
+        chunk_index=chunk_index,
+        start_segment_id=segment_id,
+        end_segment_id=segment_id,
+        start_sequence_number=chunk_index,
+        end_sequence_number=chunk_index,
+        start_time=chunk_index * 1000,
+        end_time=(chunk_index + 1) * 1000,
+        text=text,
+        token_count=len(text.split()),
+        token_count_method="words",
+        normalization_version="norm-v1-structural",
+        chunking_version="chunk-v1-no-overlap-180w",
+    )
+    session.add(chunk)
+    await session.flush()
+    return chunk
 
 
 def _headers(user: AppUser, jwt_factory) -> dict[str, str]:
@@ -710,6 +785,324 @@ async def test_get_active_transcript_is_lecturer_only(
     )
     assert none_response.status_code == 404
     assert student_response.status_code == 403
+
+
+@pytest.mark.anyio
+async def test_transcript_processing_status_projects_chunked_state(
+    auth_client: AsyncClient,
+    db_session: AsyncSession,
+    jwt_factory,
+    mock_jwks_client,
+) -> None:
+    lecturer = await _create_user(
+        db_session,
+        email="projection-lecturer@example.com",
+        role="lecturer",
+    )
+    module = await _create_module(db_session, owner_id=lecturer.id)
+    await _create_membership(
+        db_session,
+        user_id=lecturer.id,
+        module_id=module.id,
+        role="lecturer",
+    )
+    section = await _create_section(db_session, module_id=module.id)
+    transcript = await _create_transcript(
+        db_session,
+        section_id=section.id,
+        uploaded_by_user_id=lecturer.id,
+        status="completed",
+    )
+    await _create_ingestion_job(
+        db_session,
+        transcript_id=transcript.id,
+        job_type="parse",
+        status="completed",
+    )
+    segment = await _create_transcript_segment(db_session, transcript_id=transcript.id)
+    await _create_ingestion_job(
+        db_session,
+        transcript_id=transcript.id,
+        job_type="chunk",
+        status="completed",
+        result_metadata={"chunk_count": 1},
+    )
+    await _create_transcript_chunk(
+        db_session,
+        transcript_id=transcript.id,
+        segment_id=segment.id,
+    )
+
+    response = await auth_client.get(
+        f"/modules/{module.id}/sections/{section.id}/transcript-processing-status",
+        headers=_headers(lecturer, jwt_factory),
+    )
+    body = response.json()
+
+    assert response.status_code == 200
+    assert body["activeTranscriptId"] == str(transcript.id)
+    assert body["transcriptStatus"] == "completed"
+    assert body["overallState"] == "chunked"
+    assert body["currentPhase"] is None
+    assert body["failedStep"] is None
+    assert body["safeFailureMessage"] is None
+    assert body["steps"]["upload"]["status"] == "completed"
+    assert body["steps"]["parse"]["status"] == "completed"
+    assert body["steps"]["chunk"]["status"] == "completed"
+    assert body["steps"]["embed"]["status"] == "not_started"
+    assert body["segmentCount"] == 1
+    assert body["chunkCount"] == 1
+    assert body["embeddedChunkCount"] == 0
+    assert not {"storageKey", "checksum", "text", "chunks", "segments"} & set(body)
+
+
+@pytest.mark.anyio
+async def test_transcript_processing_status_projects_embedded_state(
+    auth_client: AsyncClient,
+    db_session: AsyncSession,
+    jwt_factory,
+    mock_jwks_client,
+) -> None:
+    lecturer = await _create_user(
+        db_session,
+        email="projection-embedded-lecturer@example.com",
+        role="lecturer",
+    )
+    module = await _create_module(db_session, owner_id=lecturer.id)
+    await _create_membership(
+        db_session,
+        user_id=lecturer.id,
+        module_id=module.id,
+        role="lecturer",
+    )
+    section = await _create_section(db_session, module_id=module.id)
+    transcript = await _create_transcript(
+        db_session,
+        section_id=section.id,
+        uploaded_by_user_id=lecturer.id,
+        status="completed",
+    )
+    await _create_ingestion_job(
+        db_session,
+        transcript_id=transcript.id,
+        job_type="parse",
+        status="completed",
+    )
+    segment = await _create_transcript_segment(db_session, transcript_id=transcript.id)
+    await _create_ingestion_job(
+        db_session,
+        transcript_id=transcript.id,
+        job_type="chunk",
+        status="completed",
+        result_metadata={"chunk_count": 1},
+    )
+    await _create_ingestion_job(
+        db_session,
+        transcript_id=transcript.id,
+        job_type="embed",
+        status="completed",
+        result_metadata={"chunk_count": 1, "embedded_chunk_count": 1},
+    )
+    chunk = await _create_transcript_chunk(
+        db_session,
+        transcript_id=transcript.id,
+        segment_id=segment.id,
+    )
+    chunk.embedding = [0.0] * 383 + [1.0]
+    chunk.embedding_model = "sentence-transformers/all-MiniLM-L6-v2"
+    chunk.embedding_model_revision = "1110a243fdf4706b3f48f1d95db1a4f5529b4d41"
+    chunk.embedding_dimension = 384
+    chunk.embedding_normalization = "l2"
+    chunk.embedding_version = "embedding-v1"
+    chunk.embedding_input_hash = "a" * 64
+    await db_session.flush()
+
+    response = await auth_client.get(
+        f"/modules/{module.id}/sections/{section.id}/transcript-processing-status",
+        headers=_headers(lecturer, jwt_factory),
+    )
+    body = response.json()
+
+    assert response.status_code == 200
+    assert body["overallState"] == "embedded"
+    assert body["currentPhase"] is None
+    assert body["failedStep"] is None
+    assert body["safeFailureMessage"] is None
+    assert body["steps"]["embed"]["status"] == "completed"
+    assert body["chunkCount"] == 1
+    assert body["embeddedChunkCount"] == 1
+    assert not {"storageKey", "checksum", "text", "chunks", "segments", "embedding"} & set(body)
+
+
+@pytest.mark.anyio
+async def test_transcript_processing_status_uses_existing_authz_convention(
+    auth_client: AsyncClient,
+    db_session: AsyncSession,
+    jwt_factory,
+    mock_jwks_client,
+) -> None:
+    lecturer = await _create_user(
+        db_session,
+        email="projection-auth-lecturer@example.com",
+        role="lecturer",
+    )
+    unassigned = await _create_user(
+        db_session,
+        email="projection-auth-unassigned@example.com",
+        role="lecturer",
+    )
+    student = await _create_user(db_session, email="projection-auth-student@example.com")
+    module = await _create_module(db_session, owner_id=lecturer.id)
+    await _create_membership(
+        db_session,
+        user_id=lecturer.id,
+        module_id=module.id,
+        role="lecturer",
+    )
+    await _create_membership(
+        db_session,
+        user_id=student.id,
+        module_id=module.id,
+        role="student",
+    )
+    section = await _create_section(db_session, module_id=module.id)
+    empty_section = await _create_section(db_session, module_id=module.id, order_index=1)
+    await _create_transcript(
+        db_session,
+        section_id=section.id,
+        uploaded_by_user_id=lecturer.id,
+    )
+    projection_url = (
+        f"/modules/{module.id}/sections/{section.id}/transcript-processing-status"
+    )
+
+    student_response = await auth_client.get(
+        projection_url,
+        headers=_headers(student, jwt_factory),
+    )
+    unassigned_response = await auth_client.get(
+        projection_url,
+        headers=_headers(unassigned, jwt_factory),
+    )
+    none_response = await auth_client.get(
+        f"/modules/{module.id}/sections/{empty_section.id}/transcript-processing-status",
+        headers=_headers(lecturer, jwt_factory),
+    )
+
+    assert student_response.status_code == 403
+    assert student_response.json()["detail"] == "TRANSCRIPT_FORBIDDEN"
+    assert unassigned_response.status_code == 404
+    assert unassigned_response.json()["detail"] == "SECTION_NOT_FOUND"
+    assert none_response.status_code == 404
+    assert none_response.json()["detail"] == "TRANSCRIPT_NOT_FOUND"
+
+
+@pytest.mark.anyio
+async def test_transcript_processing_status_projects_safe_failure(
+    auth_client: AsyncClient,
+    db_session: AsyncSession,
+    jwt_factory,
+    mock_jwks_client,
+) -> None:
+    lecturer = await _create_user(
+        db_session,
+        email="projection-failure-lecturer@example.com",
+        role="lecturer",
+    )
+    module = await _create_module(db_session, owner_id=lecturer.id)
+    await _create_membership(
+        db_session,
+        user_id=lecturer.id,
+        module_id=module.id,
+        role="lecturer",
+    )
+    section = await _create_section(db_session, module_id=module.id)
+    transcript = await _create_transcript(
+        db_session,
+        section_id=section.id,
+        uploaded_by_user_id=lecturer.id,
+        status="failed",
+    )
+    await _create_ingestion_job(
+        db_session,
+        transcript_id=transcript.id,
+        job_type="parse",
+        status="failed",
+        error_message="Transcript parse failed.",
+    )
+
+    response = await auth_client.get(
+        f"/modules/{module.id}/sections/{section.id}/transcript-processing-status",
+        headers=_headers(lecturer, jwt_factory),
+    )
+    body = response.json()
+
+    assert response.status_code == 200
+    assert body["overallState"] == "failed"
+    assert body["failedStep"] == "parse"
+    assert body["safeFailureMessage"] == "Transcript parsing failed."
+    assert body["steps"]["parse"]["status"] == "failed"
+
+
+@pytest.mark.anyio
+async def test_transcript_processing_status_projects_safe_embed_failure(
+    auth_client: AsyncClient,
+    db_session: AsyncSession,
+    jwt_factory,
+    mock_jwks_client,
+) -> None:
+    lecturer = await _create_user(
+        db_session,
+        email="projection-embed-failure-lecturer@example.com",
+        role="lecturer",
+    )
+    module = await _create_module(db_session, owner_id=lecturer.id)
+    await _create_membership(
+        db_session,
+        user_id=lecturer.id,
+        module_id=module.id,
+        role="lecturer",
+    )
+    section = await _create_section(db_session, module_id=module.id)
+    transcript = await _create_transcript(
+        db_session,
+        section_id=section.id,
+        uploaded_by_user_id=lecturer.id,
+        status="failed",
+    )
+    await _create_ingestion_job(
+        db_session,
+        transcript_id=transcript.id,
+        job_type="parse",
+        status="completed",
+    )
+    await _create_ingestion_job(
+        db_session,
+        transcript_id=transcript.id,
+        job_type="chunk",
+        status="completed",
+    )
+    await _create_ingestion_job(
+        db_session,
+        transcript_id=transcript.id,
+        job_type="embed",
+        status="failed",
+        error_message="raw stack trace with /opt/models and chunk text",
+    )
+
+    response = await auth_client.get(
+        f"/modules/{module.id}/sections/{section.id}/transcript-processing-status",
+        headers=_headers(lecturer, jwt_factory),
+    )
+    body = response.json()
+
+    assert response.status_code == 200
+    assert body["overallState"] == "failed"
+    assert body["failedStep"] == "embed"
+    assert body["safeFailureMessage"] == "Transcript embedding failed."
+    assert body["steps"]["embed"]["status"] == "failed"
+    assert "raw stack trace" not in str(body)
+    assert "/opt/models" not in str(body)
 
 
 @pytest.mark.anyio

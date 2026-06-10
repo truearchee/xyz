@@ -2,17 +2,20 @@
 
 import { useEffect, useState } from "react";
 
-import { ApiError, type TranscriptMeta } from "../../../lib/api";
+import {
+  ApiError,
+  type TranscriptMeta,
+  type TranscriptProcessingStatus,
+} from "../../../lib/api";
 import { api } from "../../../lib/api/wrapper";
 
-const TERMINAL_STATUSES = new Set(["completed", "failed"]);
+const TERMINAL_STATES = new Set(["embedded", "failed"]);
 const POLL_INTERVAL_MS = 2500;
 const POLL_TIMEOUT_MS = 60_000;
 
 type TranscriptStatusBadgeProps = {
   moduleId: string;
   onTranscriptMissing: () => void;
-  onTranscriptChange: (transcript: TranscriptMeta) => void;
   sectionId: string;
   sectionKey: string;
   transcript: TranscriptMeta;
@@ -21,57 +24,61 @@ type TranscriptStatusBadgeProps = {
 export function TranscriptStatusBadge({
   moduleId,
   onTranscriptMissing,
-  onTranscriptChange,
   sectionId,
   sectionKey,
   transcript,
 }: TranscriptStatusBadgeProps) {
   const [hasTimedOut, setHasTimedOut] = useState(false);
+  const [processingStatus, setProcessingStatus] =
+    useState<TranscriptProcessingStatus | null>(null);
 
   useEffect(() => {
     setHasTimedOut(false);
-
-    if (TERMINAL_STATUSES.has(transcript.status)) {
-      return;
-    }
+    setProcessingStatus(null);
 
     let isMounted = true;
     const startedAt = Date.now();
 
-    const intervalId = window.setInterval(() => {
+    const loadStatus = async (): Promise<boolean> => {
       if (Date.now() - startedAt >= POLL_TIMEOUT_MS) {
-        window.clearInterval(intervalId);
         if (isMounted) {
           setHasTimedOut(true);
         }
-        return;
+        return true;
       }
 
-      void api.transcripts
-        .getActive(moduleId, sectionId)
-        .then((updatedTranscript) => {
-          if (!isMounted) {
-            return;
-          }
-          onTranscriptChange(updatedTranscript);
-          if (TERMINAL_STATUSES.has(updatedTranscript.status)) {
-            window.clearInterval(intervalId);
-          }
-        })
-        .catch((caught) => {
-          if (isTranscriptNotFound(caught)) {
-            if (isMounted) {
-              onTranscriptMissing();
-            }
-            window.clearInterval(intervalId);
-            return;
-          }
-
+      try {
+        const updatedStatus = await api.transcripts.getProcessingStatus(
+          moduleId,
+          sectionId,
+        );
+        if (!isMounted) {
+          return true;
+        }
+        setProcessingStatus(updatedStatus);
+        return TERMINAL_STATES.has(updatedStatus.overallState);
+      } catch (caught) {
+        if (isTranscriptNotFound(caught)) {
           if (isMounted) {
-            setHasTimedOut(true);
+            onTranscriptMissing();
           }
+          return true;
+        }
+
+        if (isMounted) {
+          setHasTimedOut(true);
+        }
+        return true;
+      }
+    };
+
+    void loadStatus();
+    const intervalId = window.setInterval(() => {
+      void loadStatus().then((shouldStop) => {
+        if (shouldStop) {
           window.clearInterval(intervalId);
-        });
+        }
+      });
     }, POLL_INTERVAL_MS);
 
     return () => {
@@ -80,31 +87,26 @@ export function TranscriptStatusBadge({
     };
   }, [
     moduleId,
-    onTranscriptChange,
     onTranscriptMissing,
     sectionId,
     transcript.id,
-    transcript.status,
   ]);
 
   const text = hasTimedOut
     ? "Processing is taking longer than expected. Refresh to check again."
-    : statusText(transcript.status);
+    : statusText(processingStatus, transcript.status);
+  const statusKind = statusStyleKind(
+    hasTimedOut,
+    processingStatus,
+    transcript.status,
+  );
 
   return (
     <p
       aria-live="polite"
       data-testid={`section-transcript-status-${sectionKey}`}
       role="status"
-      style={
-        hasTimedOut
-          ? styles.timeout
-          : transcript.status === "completed"
-            ? styles.completed
-            : transcript.status === "failed"
-              ? styles.failed
-              : styles.processing
-      }
+      style={styles[statusKind]}
     >
       {text}
     </p>
@@ -119,14 +121,102 @@ function isTranscriptNotFound(caught: unknown): boolean {
   );
 }
 
-function statusText(status: string): string {
-  if (status === "completed") {
-    return "Transcript processing completed";
+function statusText(
+  processingStatus: TranscriptProcessingStatus | null,
+  fallbackTranscriptStatus: string,
+): string {
+  if (processingStatus === null) {
+    return transcriptStatusText(fallbackTranscriptStatus);
   }
+
+  if (processingStatus.overallState === "failed") {
+    return processingStatus.safeFailureMessage ?? "Failed";
+  }
+  if (isEmbedded(processingStatus)) {
+    return "Embedded";
+  }
+  if (
+    processingStatus.overallState === "embedding" ||
+    processingStatus.steps.embed.status === "running"
+  ) {
+    return "Embedding";
+  }
+  if (
+    processingStatus.overallState === "chunking" ||
+    processingStatus.steps.chunk.status === "running"
+  ) {
+    return "Chunking";
+  }
+  if (
+    processingStatus.overallState === "parsing" ||
+    processingStatus.steps.parse.status === "running"
+  ) {
+    return "Parsing";
+  }
+  if (processingStatus.overallState === "chunked") {
+    return "Chunked";
+  }
+  if (processingStatus.overallState === "parsed") {
+    return "Parsed";
+  }
+  if (processingStatus.overallState === "queued") {
+    return "Queued";
+  }
+  if (processingStatus.overallState === "uploaded") {
+    return "Uploaded";
+  }
+  if (processingStatus.currentPhase) {
+    return formatStatusLabel(processingStatus.currentPhase);
+  }
+  return formatStatusLabel(processingStatus.overallState);
+}
+
+function transcriptStatusText(status: string): string {
   if (status === "failed") {
-    return "Transcript processing failed";
+    return "Failed";
   }
-  return `Transcript status: ${status}`;
+  return formatStatusLabel(status);
+}
+
+function statusStyleKind(
+  hasTimedOut: boolean,
+  processingStatus: TranscriptProcessingStatus | null,
+  fallbackTranscriptStatus: string,
+): keyof typeof styles {
+  if (hasTimedOut) {
+    return "timeout";
+  }
+  if (processingStatus !== null && isEmbedded(processingStatus)) {
+    return "completed";
+  }
+  if (
+    processingStatus?.overallState === "failed" ||
+    fallbackTranscriptStatus === "failed"
+  ) {
+    return "failed";
+  }
+  if (processingStatus === null && fallbackTranscriptStatus === "completed") {
+    return "completed";
+  }
+  return "processing";
+}
+
+function isEmbedded(processingStatus: TranscriptProcessingStatus): boolean {
+  return (
+    processingStatus.overallState === "embedded" &&
+    processingStatus.steps.embed.status === "completed"
+  );
+}
+
+function formatStatusLabel(status: string): string {
+  if (status.length === 0) {
+    return "Queued";
+  }
+  return status
+    .split(/[-_\s]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
 }
 
 const statusBase = {

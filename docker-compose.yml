@@ -25,6 +25,7 @@ services:
       retries: 10
 
   backend:
+    image: test2-backend
     build: ./backend
     env_file: .env
     ports:
@@ -41,9 +42,21 @@ services:
       retries: 10
 
   worker:
+    image: test2-backend
     build: ./backend
     env_file: .env
     command: ["python", "-m", "app.workers.worker"]
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  embedding_worker:
+    image: test2-backend
+    build: ./backend
+    env_file: .env
+    command: ["python", "-m", "app.workers.worker", "embedding"]
     depends_on:
       db:
         condition: service_healthy

@@ -1,9 +1,11 @@
 import asyncio
+import inspect
 import os
 import subprocess
 from pathlib import Path
 
 import asyncpg
+from pgvector.sqlalchemy import Vector
 import pytest
 from sqlalchemy import text
 from sqlalchemy.engine import make_url
@@ -11,7 +13,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from uuid6 import uuid7
 
-from app.platform.db.models import AppUser
+import app.platform.db.models.transcript_chunk as transcript_chunk_model
+from app.platform.db.models import AppUser, TranscriptChunk
 
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
@@ -56,6 +59,7 @@ EXPECTED_CHECKS = {
     "ck_transcript_chunks_text_not_blank",
     "ck_transcript_chunks_chunk_index",
     "ck_transcript_chunks_sequence_range",
+    "ck_transcript_chunks_embedding_provenance",
 }
 EXPECTED_INDEXES = {
     "ix_course_memberships_active_user_module",
@@ -73,6 +77,7 @@ EXPECTED_INDEXES = {
     "uq_transcript_segments_transcript_sequence",
     "uq_transcript_chunks_transcript_chunk_index",
     "uq_transcripts_storage_key",
+    "ingestion_jobs_one_active_embed_per_transcript",
 }
 
 
@@ -182,6 +187,437 @@ async def _fetch_columns(table_name: str) -> dict[str, str]:
         await engine.dispose()
 
 
+async def _fetch_column_nullability(table_name: str) -> dict[str, str]:
+    engine = create_async_engine(_test_database_url())
+    try:
+        async with engine.connect() as connection:
+            result = await connection.execute(
+                text(
+                    """
+                    SELECT column_name, is_nullable
+                    FROM information_schema.columns
+                    WHERE table_schema = 'public'
+                      AND table_name = :table_name
+                    """
+                ),
+                {"table_name": table_name},
+            )
+            return dict(result.all())
+    finally:
+        await engine.dispose()
+
+
+async def _fetch_one(query: str, params: dict | None = None):
+    engine = create_async_engine(_test_database_url())
+    try:
+        async with engine.connect() as connection:
+            result = await connection.execute(text(query), params or {})
+            return result.one()
+    finally:
+        await engine.dispose()
+
+
+async def _insert_transcript_fixture(connection) -> dict[str, object]:
+    app_user_id = uuid7()
+    module_id = uuid7()
+    section_id = uuid7()
+    transcript_id = uuid7()
+    segment_id = uuid7()
+
+    await connection.execute(
+        text(
+            """
+            INSERT INTO app_users (
+                id,
+                auth_provider_id,
+                email,
+                full_name,
+                role
+            )
+            VALUES (
+                :app_user_id,
+                :auth_provider_id,
+                :email,
+                'Schema Test User',
+                'lecturer'
+            )
+            """
+        ),
+        {
+            "app_user_id": app_user_id,
+            "auth_provider_id": f"schema-auth-{app_user_id}",
+            "email": f"schema-{app_user_id}@example.com",
+        },
+    )
+    await connection.execute(
+        text(
+            """
+            INSERT INTO course_modules (id, title, owner_id)
+            VALUES (:module_id, 'Schema Test Module', :app_user_id)
+            """
+        ),
+        {"module_id": module_id, "app_user_id": app_user_id},
+    )
+    await connection.execute(
+        text(
+            """
+            INSERT INTO module_sections (
+                id,
+                course_module_id,
+                title,
+                type,
+                order_index
+            )
+            VALUES (
+                :section_id,
+                :module_id,
+                'Schema Test Section',
+                'lecture',
+                0
+            )
+            """
+        ),
+        {"section_id": section_id, "module_id": module_id},
+    )
+    await connection.execute(
+        text(
+            """
+            INSERT INTO transcripts (
+                id,
+                module_section_id,
+                original_file_name,
+                storage_key,
+                mime_type,
+                file_size,
+                checksum,
+                uploaded_by_user_id
+            )
+            VALUES (
+                :transcript_id,
+                :section_id,
+                'schema.vtt',
+                :storage_key,
+                'text/vtt',
+                10,
+                repeat('0', 64),
+                :app_user_id
+            )
+            """
+        ),
+        {
+            "transcript_id": transcript_id,
+            "section_id": section_id,
+            "storage_key": f"modules/schema/transcripts/{transcript_id}/schema.vtt",
+            "app_user_id": app_user_id,
+        },
+    )
+    await connection.execute(
+        text(
+            """
+            INSERT INTO transcript_segments (
+                id,
+                transcript_id,
+                sequence_number,
+                start_ms,
+                end_ms,
+                text
+            )
+            VALUES (
+                :segment_id,
+                :transcript_id,
+                0,
+                0,
+                1000,
+                'schema segment'
+            )
+            """
+        ),
+        {"segment_id": segment_id, "transcript_id": transcript_id},
+    )
+    return {
+        "segment_id": segment_id,
+        "transcript_id": transcript_id,
+    }
+
+
+async def _assert_vector_round_trip_and_provenance_constraint() -> None:
+    engine = create_async_engine(_test_database_url())
+    connection = await engine.connect()
+    transaction = await connection.begin()
+    try:
+        ids = await _insert_transcript_fixture(connection)
+        vector = "[" + ",".join(["0.0"] * 383 + ["1.0"]) + "]"
+
+        with pytest.raises(IntegrityError) as exc_info:
+            await connection.execute(
+                text(
+                    """
+                    INSERT INTO transcript_chunks (
+                        id,
+                        transcript_id,
+                        chunk_index,
+                        start_segment_id,
+                        end_segment_id,
+                        start_sequence_number,
+                        end_sequence_number,
+                        text,
+                        token_count,
+                        token_count_method,
+                        normalization_version,
+                        chunking_version,
+                        embedding
+                    )
+                    VALUES (
+                        :chunk_id,
+                        :transcript_id,
+                        0,
+                        :segment_id,
+                        :segment_id,
+                        0,
+                        0,
+                        'schema chunk',
+                        2,
+                        'words',
+                        'norm-v1-structural',
+                        'chunk-v1-no-overlap-180w',
+                        CAST(:embedding AS vector)
+                    )
+                    """
+                ),
+                {
+                    "chunk_id": uuid7(),
+                    "transcript_id": ids["transcript_id"],
+                    "segment_id": ids["segment_id"],
+                    "embedding": vector,
+                },
+            )
+        assert "ck_transcript_chunks_embedding_provenance" in str(exc_info.value)
+
+        await transaction.rollback()
+        transaction = await connection.begin()
+        ids = await _insert_transcript_fixture(connection)
+
+        await connection.execute(
+            text(
+                """
+                INSERT INTO transcript_chunks (
+                    id,
+                    transcript_id,
+                    chunk_index,
+                    start_segment_id,
+                    end_segment_id,
+                    start_sequence_number,
+                    end_sequence_number,
+                    text,
+                    token_count,
+                    token_count_method,
+                    normalization_version,
+                    chunking_version,
+                    embedding,
+                    embedding_model,
+                    embedding_model_revision,
+                    embedding_dimension,
+                    embedding_normalization,
+                    embedding_version,
+                    embedding_input_hash
+                )
+                VALUES (
+                    :chunk_id,
+                    :transcript_id,
+                    0,
+                    :segment_id,
+                    :segment_id,
+                    0,
+                    0,
+                    'schema chunk',
+                    2,
+                    'words',
+                    'norm-v1-structural',
+                    'chunk-v1-no-overlap-180w',
+                    CAST(:embedding AS vector),
+                    'sentence-transformers/all-MiniLM-L6-v2',
+                    '1110a243fdf4706b3f48f1d95db1a4f5529b4d41',
+                    384,
+                    'l2',
+                    'embedding-v1',
+                    repeat('a', 64)
+                )
+                """
+            ),
+            {
+                    "chunk_id": uuid7(),
+                    "transcript_id": ids["transcript_id"],
+                    "segment_id": ids["segment_id"],
+                    "embedding": vector,
+            },
+        )
+        dims = (
+            await connection.execute(
+                text(
+                    """
+                    SELECT vector_dims(embedding)
+                    FROM transcript_chunks
+                    WHERE transcript_id = :transcript_id
+                    """
+                ),
+                {"transcript_id": ids["transcript_id"]},
+            )
+        ).scalar_one()
+        assert dims == 384
+    finally:
+        if transaction.is_active:
+            await transaction.rollback()
+        await connection.close()
+        await engine.dispose()
+
+
+async def _insert_legacy_embedding_chunk_before_preflight() -> None:
+    engine = create_async_engine(_test_database_url())
+    try:
+        async with engine.begin() as connection:
+            ids = await _insert_transcript_fixture(connection)
+            vector = "[" + ",".join(["0.0"] * 383 + ["1.0"]) + "]"
+            await connection.execute(
+                text(
+                    """
+                    INSERT INTO transcript_chunks (
+                        id,
+                        transcript_id,
+                        chunk_index,
+                        start_segment_id,
+                        end_segment_id,
+                        start_sequence_number,
+                        end_sequence_number,
+                        text,
+                        token_count,
+                        token_count_method,
+                        normalization_version,
+                        chunking_version,
+                        embedding
+                    )
+                    VALUES (
+                        :chunk_id,
+                        :transcript_id,
+                        0,
+                        :segment_id,
+                        :segment_id,
+                        0,
+                        0,
+                        'legacy embedding chunk',
+                        3,
+                        'words',
+                        'norm-v1-structural',
+                        'chunk-v1-no-overlap-180w',
+                        CAST(:embedding AS vector)
+                    )
+                    """
+                ),
+                {
+                    "chunk_id": uuid7(),
+                    "transcript_id": ids["transcript_id"],
+                    "segment_id": ids["segment_id"],
+                    "embedding": vector,
+                },
+            )
+    finally:
+        await engine.dispose()
+
+
+async def _assert_active_embed_partial_unique_index() -> None:
+    engine = create_async_engine(_test_database_url())
+    connection = await engine.connect()
+    transaction = await connection.begin()
+    try:
+        ids = await _insert_transcript_fixture(connection)
+        await connection.execute(
+            text(
+                """
+                INSERT INTO ingestion_jobs (
+                    id,
+                    transcript_id,
+                    job_type,
+                    status,
+                    idempotency_key
+                )
+                VALUES (
+                    :id,
+                    :transcript_id,
+                    :job_type,
+                    :status,
+                    :idempotency_key
+                )
+                """
+            ),
+            {
+                "id": uuid7(),
+                "transcript_id": ids["transcript_id"],
+                "job_type": "embed",
+                "status": "queued",
+                "idempotency_key": f"{ids['transcript_id']}:embed:queued",
+            },
+        )
+        for job_type in ("parse", "chunk"):
+            await connection.execute(
+                text(
+                    """
+                    INSERT INTO ingestion_jobs (
+                        id,
+                        transcript_id,
+                        job_type,
+                        status,
+                        idempotency_key
+                    )
+                    VALUES (
+                        :id,
+                        :transcript_id,
+                        :job_type,
+                        'queued',
+                        :idempotency_key
+                    )
+                    """
+                ),
+                {
+                    "id": uuid7(),
+                    "transcript_id": ids["transcript_id"],
+                    "job_type": job_type,
+                    "idempotency_key": f"{ids['transcript_id']}:{job_type}:queued",
+                },
+            )
+
+        with pytest.raises(IntegrityError) as exc_info:
+            await connection.execute(
+                text(
+                    """
+                    INSERT INTO ingestion_jobs (
+                        id,
+                        transcript_id,
+                        job_type,
+                        status,
+                        idempotency_key
+                    )
+                    VALUES (
+                        :id,
+                        :transcript_id,
+                        'embed',
+                        'running',
+                        :idempotency_key
+                    )
+                    """
+                ),
+                {
+                    "id": uuid7(),
+                    "transcript_id": ids["transcript_id"],
+                    "idempotency_key": f"{ids['transcript_id']}:embed:running",
+                },
+            )
+        assert "ingestion_jobs_one_active_embed_per_transcript" in str(exc_info.value)
+    finally:
+        if transaction.is_active:
+            await transaction.rollback()
+        await connection.close()
+        await engine.dispose()
+
+
 async def _assert_app_user_constraint_and_uuid7_default() -> None:
     engine = create_async_engine(_test_database_url())
     session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
@@ -280,3 +716,79 @@ def test_expected_tables_exist_after_upgrade_head() -> None:
 def test_app_user_role_check_constraint_is_enforced() -> None:
     _assert_success(_run_alembic("upgrade", "head"))
     asyncio.run(_assert_app_user_constraint_and_uuid7_default())
+
+
+def test_embedding_schema_preflight_contract() -> None:
+    _assert_success(_run_alembic("upgrade", "head"))
+
+    extension = asyncio.run(
+        _fetch_one(
+            """
+            SELECT extname, extversion
+            FROM pg_extension
+            WHERE extname = 'vector'
+            """
+        )
+    )
+    embedding_column = asyncio.run(
+        _fetch_one(
+            """
+            SELECT atttypid::regtype::text AS type_name, atttypmod
+            FROM pg_attribute
+            WHERE attrelid = 'transcript_chunks'::regclass
+              AND attname = 'embedding'
+              AND NOT attisdropped
+            """
+        )
+    )
+    chunk_columns = asyncio.run(_fetch_columns("transcript_chunks"))
+    chunk_nullability = asyncio.run(_fetch_column_nullability("transcript_chunks"))
+
+    assert extension.extname == "vector"
+    assert embedding_column.type_name == "vector"
+    assert embedding_column.atttypmod == 384
+    assert chunk_columns["embedding"] == "vector"
+    assert chunk_columns["embedding_model"] == "text"
+    assert chunk_columns["embedding_model_revision"] == "text"
+    assert chunk_columns["embedding_dimension"] == "int4"
+    assert chunk_columns["embedding_normalization"] == "text"
+    assert chunk_columns["embedding_version"] == "text"
+    assert chunk_columns["embedding_input_hash"] == "text"
+    assert chunk_columns["chunking_version"] == "text"
+    assert chunk_nullability["chunking_version"] == "NO"
+
+
+def test_non_null_legacy_embedding_blocks_schema_preflight() -> None:
+    try:
+        _assert_success(_run_alembic("downgrade", "base"))
+        _assert_success(_run_alembic("upgrade", "0006"))
+        asyncio.run(_insert_legacy_embedding_chunk_before_preflight())
+
+        result = _run_alembic("upgrade", "head")
+
+        assert result.returncode != 0
+        assert (
+            "Refusing 4.4 provenance migration with pre-existing non-null embeddings"
+            in result.stdout + result.stderr
+        )
+    finally:
+        _assert_success(_run_alembic("downgrade", "base"))
+        _assert_success(_run_alembic("upgrade", "head"))
+
+
+def test_embedding_vector_round_trip_and_provenance_constraint() -> None:
+    _assert_success(_run_alembic("upgrade", "head"))
+    asyncio.run(_assert_vector_round_trip_and_provenance_constraint())
+
+
+def test_active_embed_job_partial_unique_index_is_scoped() -> None:
+    _assert_success(_run_alembic("upgrade", "head"))
+    asyncio.run(_assert_active_embed_partial_unique_index())
+
+
+def test_transcript_chunk_orm_uses_pgvector_type() -> None:
+    source = inspect.getsource(transcript_chunk_model)
+
+    assert "UserDefinedType" not in source
+    assert isinstance(TranscriptChunk.__table__.c.embedding.type, Vector)
+    assert TranscriptChunk.__table__.c.embedding.type.dim == 384
