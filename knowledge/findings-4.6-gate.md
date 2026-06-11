@@ -10,9 +10,13 @@ created: 2026-06-11
 
 ## F-4.6c-1 — BLOCKER — startup recovery hook breaks ALL worker job processing (asyncpg cross-loop / fork-inherited dirty pool)
 
-**Status:** open · **Severity:** blocker (default config) · **Found by:** 4.6d-G1 live gate ·
-**Resolution:** deferred to a named follow-up task (4.6c regression fix) — NOT fixed in the gate task
-(category (b); product-code changes are out of scope for the gate).
+**Status:** FIXED (Task 4.6c-F1, 2026-06-11) · **Severity:** blocker (default config) · **Found by:**
+4.6d-G1 live gate · **Resolution:** `_startup_recovery_async` now runs on an isolated `NullPool` engine
+(injected into the reaper/reconciliation) and disposes it; the module engine is never connected in the
+parent. Regression test `tests/test_worker_startup_recovery.py` reproduces the exact `different loop`
+error on the unfixed code and passes on the fixed code. Invariant recorded in
+[[decisions/adr-032-stuck-row-reaper-singleton]] (+ flagged for 11.1's parent-side scheduler hooks).
+Backend `pytest` 350 passed. Gate re-run tracked below.
 
 ### Symptom
 Every e2e spec that runs a transcript through the workers fails. In the no-fault success batch:

@@ -5,6 +5,8 @@ import sys
 
 from redis import Redis
 from rq import Queue, Worker
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
 
 from app.domains.transcripts.embedding_encoder import validate_model_snapshot
 from app.platform.config import settings
@@ -39,18 +41,41 @@ def _run_startup_recovery() -> None:
 
 
 async def _startup_recovery_async() -> None:
-    if settings.REAPER_RUN_AT_STARTUP:
-        from app.domains.recovery.reaper import run_stuck_row_reaper
+    """Run startup recovery on an ISOLATED NullPool engine — the module-level engine singleton must
+    NEVER be connected in the parent worker process (F-4.6c-1). RQ forks a child per job; a parent-side
+    pooled asyncpg connection (bound to this startup event loop) would be inherited by the fork and fail
+    every job's first DB call with "got Future attached to a different loop". NullPool keeps no
+    fork-inheritable connection, and we dispose the isolated engine before `worker.work()` forks. The
+    invariant is structural ("recovery uses its own engine"), not "remember to dispose in the right
+    order". See [[findings-4.6-gate]] / adr-032; flag for 11.1's parent-side scheduler hooks."""
+    from app.platform.db import session as db_session_module
 
-        result = await run_stuck_row_reaper()
-        logger.info("Startup reaper result: %s", result)
-    if settings.RECONCILE_AT_STARTUP:
-        from app.domains.recovery.reconciliation import run_storage_reconciliation
-        from app.platform.storage import get_storage_provider
+    if db_session_module.DATABASE_URL is None:
+        return
 
-        storage = await get_storage_provider()
-        result = await run_storage_reconciliation(storage)
-        logger.info("Startup reconciliation result: %s", result)
+    recovery_engine = create_async_engine(db_session_module.DATABASE_URL, poolclass=NullPool)
+    recovery_factory = async_sessionmaker(
+        recovery_engine, class_=AsyncSession, expire_on_commit=False
+    )
+    try:
+        if settings.REAPER_RUN_AT_STARTUP:
+            from app.domains.recovery.reaper import run_stuck_row_reaper
+
+            result = await run_stuck_row_reaper(
+                session_factory=recovery_factory, engine=recovery_engine
+            )
+            logger.info("Startup reaper result: %s", result)
+        if settings.RECONCILE_AT_STARTUP:
+            from app.domains.recovery.reconciliation import run_storage_reconciliation
+            from app.platform.storage import get_storage_provider
+
+            storage = await get_storage_provider()
+            result = await run_storage_reconciliation(
+                storage, session_factory=recovery_factory, engine=recovery_engine
+            )
+            logger.info("Startup reconciliation result: %s", result)
+    finally:
+        await recovery_engine.dispose()
 
 
 def _queue_name() -> str:
