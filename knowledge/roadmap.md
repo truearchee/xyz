@@ -57,7 +57,7 @@ DONE             — governance stages where no browser gate applies (Stage 0 on
 ✅ Stage 4.3.5 Client Edge Recovery                       COMPLETE
 ✅ Stage 4.4   Embeddings                                 FULLY VERIFIED  (gate: 4.4 embedding browser run)
 ✅ Stage 4.5   AI infrastructure + summary generation   FULLY VERIFIED  (gate: 4.5d browser gate + full E2E + real-provider smoke)
-Stage 4.6   Replacement / retry / supersession         IN PROGRESS — 4.6a + 4.6b BACKEND VERIFIED (gate → 4.6d); 4.6c–d pending  ← next: 4.6c
+Stage 4.6   Replacement / retry / supersession         IN PROGRESS — 4.6a + 4.6b + 4.6c BACKEND VERIFIED (gate → 4.6d); only 4.6d (UI + browser gate) remains  ← next: 4.6d
 Stage 4.7   Student-facing summaries                   NOT STARTED
 Stage 4.8   First hosted deploy (staging)              NOT STARTED  (new in v3)
 Stage 4.9   Frontend foundation + platform hygiene     NOT STARTED  (new in v3)
@@ -283,8 +283,15 @@ against superseded/stale attempts; sanitized `failureCategory` + `retryable` on 
 migration 0011 (failure-category enum + parse one-active index). Backend 329 passed, fresh-DB round-trip,
 tsc clean. See [[specs/stage-04/4.6b-retry-fencing-failure-taxonomy]] /
 [[steps/stage-04/4.6b-retry-fencing-failure-taxonomy]], [[decisions/adr-031-retry-resume-from-failed-step-fenced]].
-Remaining: 4.6c reaper/reconciliation/MaintenanceRun (produces the `crashed` category) · 4.6d lecturer UI
-+ preview endpoint + browser gate (the UI proof obligation below).
+**4.6c recovery BACKEND VERIFIED** (2026-06-11): stuck-row reaper (step-aware, RQ-registry/age liveness,
+fenced `crashed` producer, singleton-locked, startup + admin trigger) + loss-safe storage reconciliation
+(report-only default, grace window, prefix-scoped, deletion-capped, superseded retained, missing reported
+never auto-fixed) + `MaintenanceRun` table (migration 0012) + admin maintenance endpoints. Backend 344
+passed, fresh-DB round-trip, tsc clean. See [[specs/stage-04/4.6c-recovery-reaper-reconciliation]] /
+[[steps/stage-04/4.6c-recovery-reaper-reconciliation]], [[decisions/adr-032-stuck-row-reaper-singleton]],
+[[decisions/adr-033-storage-reconciliation-loss-safe]].
+Remaining: **4.6d** lecturer replace/retry UI (off `retryable`/`failureCategory`) + active-summary preview
+endpoint + browser gate (the UI proof obligation below) — this closes Stage 4.6.
 
 **Goal:** make transcript replacement and failed-processing recovery safe and observable.
 

@@ -5,9 +5,12 @@
 import type { AssignMemberRequest } from '../models/AssignMemberRequest';
 import type { CreateModuleRequest } from '../models/CreateModuleRequest';
 import type { CreateUserRequest } from '../models/CreateUserRequest';
+import type { MaintenanceRunRead } from '../models/MaintenanceRunRead';
 import type { MembershipResponse } from '../models/MembershipResponse';
 import type { ModuleMemberResponse } from '../models/ModuleMemberResponse';
 import type { ModuleResponse } from '../models/ModuleResponse';
+import type { ReapStuckRowsRequest } from '../models/ReapStuckRowsRequest';
+import type { ReconcileStorageRequest } from '../models/ReconcileStorageRequest';
 import type { ResetPasswordRequest } from '../models/ResetPasswordRequest';
 import type { StatusResponse } from '../models/StatusResponse';
 import type { UserResponse } from '../models/UserResponse';
@@ -275,6 +278,54 @@ export class AdminService {
             headers: {
                 'Authorization': authorization,
             },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Reap Stuck Rows
+     * @param authorization
+     * @param requestBody
+     * @returns MaintenanceRunRead Successful Response
+     * @throws ApiError
+     */
+    public static reapStuckRowsAdminMaintenanceReapStuckRowsPost(
+        authorization?: (string | null),
+        requestBody?: (ReapStuckRowsRequest | null),
+    ): CancelablePromise<MaintenanceRunRead> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/admin/maintenance/reap-stuck-rows',
+            headers: {
+                'Authorization': authorization,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Reconcile Storage
+     * @param authorization
+     * @param requestBody
+     * @returns MaintenanceRunRead Successful Response
+     * @throws ApiError
+     */
+    public static reconcileStorageAdminMaintenanceReconcileStoragePost(
+        authorization?: (string | null),
+        requestBody?: (ReconcileStorageRequest | null),
+    ): CancelablePromise<MaintenanceRunRead> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/admin/maintenance/reconcile-storage',
+            headers: {
+                'Authorization': authorization,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
             errors: {
                 422: `Validation Error`,
             },

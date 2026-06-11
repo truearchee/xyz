@@ -50,6 +50,8 @@ class FakeStorageProvider:
         self.fail_put: Exception | None = None
         self.fail_get: Exception | None = None
         self.fail_delete = False
+        # Stage 4.6c: per-key created_at for storage reconciliation (grace-window) tests.
+        self.object_created_at: dict[str, datetime] = {}
 
     async def put_object(
         self,
@@ -81,6 +83,24 @@ class FakeStorageProvider:
         if self.fail_delete:
             raise StorageProviderError("delete failed")
         self.objects.pop(key, None)
+
+    async def list_objects(self, *, prefix: str, max_objects: int):
+        from app.platform.storage.base import ListedObject
+
+        results: list[ListedObject] = []
+        for key in sorted(self.objects):
+            if not key.startswith(prefix):
+                continue
+            if len(results) >= max_objects:
+                break
+            results.append(
+                ListedObject(
+                    key=key,
+                    created_at=self.object_created_at.get(key, datetime.now(UTC)),
+                    size=len(self.objects[key]),
+                )
+            )
+        return results
 
     async def create_signed_read_url(
         self,

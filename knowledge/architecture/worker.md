@@ -65,10 +65,12 @@ write no artifact — the transcript itself is not failed, so the status project
 Every step's destructive write is **fenced** (aborts if the transcript was superseded or the job is no
 longer the running attempt). See [[architecture/transcript-lifecycle]] for retry + fencing.
 
-## Recovery status (updated 4.6b)
-Replacement/supersession landed in **4.6a**; lecturer-driven **retry** (resume-from-earliest-failed-step
-over the DAG, fenced) landed in **4.6b** (adr-031). Still open: a process death after a commit can leave
-a job `queued` that was never enqueued to RQ, or `running` after a crash — the **step-aware stuck-row
-reaper + storage reconciliation (4.6c)** owns that (it produces the `crashed` failure category). The
-after-commit enqueue-failure path still leaves rows `queued` precisely so that reaper can re-drive them.
-RQ-scheduler-driven retry stays disabled (F-4.5-47); the retry endpoint is the product retry surface.
+## Recovery status (updated 4.6c)
+Replacement/supersession landed in **4.6a**; lecturer **retry** (resume-from-earliest-failed-step, fenced)
+in **4.6b** (adr-031); **stuck-row reaper + storage reconciliation** in **4.6c** (adr-032/033). The reaper
+runs at worker startup (`_run_startup_recovery` before `worker.work()`, singleton-locked so one of the N
+workers executes) and on an admin trigger: it re-enqueues never-enqueued/stuck-queued work and marks
+crashed `running` jobs `failed`+`crashed` (fenced) — so the after-commit enqueue-failure path that leaves
+rows `queued` now self-heals. Every run writes a `MaintenanceRun`. `scripts/reenqueue_summaries.py` was
+removed (the reaper subsumes it). RQ-scheduler-driven retry stays disabled (F-4.5-47); the retry endpoint
+is the product retry surface. 11.1 will point a cron at the reaper/reconciliation entrypoints.

@@ -81,9 +81,23 @@ a failed record. Distinct from the LLM-transport `LLM_FAULT_INJECTION` (summary 
   surfaces `failureCategory` (one of 9) + `retryable`. Missing raw file → `storage_missing`
   (`StorageObjectNotFoundError`).
 
+## Recovery (4.6c — adr-032/033)
+`app/domains/recovery/` — two idempotent, singleton-locked (`pg_try_advisory_lock` on a dedicated
+connection, `locks.py`), MaintenanceRun-logged (`maintenance_run_log.py`) units:
+- **Stuck-row reaper** (`reaper.py`): never-enqueued parse → re-enqueue; queued-not-live-in-RQ →
+  re-enqueue; running-past-step-threshold-not-live → mark `failed`+`crashed` (fenced re-read FOR UPDATE).
+  Liveness = RQ registry (`rq_liveness.py`: stable job_ids for embed/summary) + per-step age (parse/chunk);
+  no heartbeat columns. Action-capped. Runs at worker startup (`REAPER_RUN_AT_STARTUP`) + admin trigger.
+- **Storage reconciliation** (`reconciliation.py`): `storage.list_objects` (recursive, scoped to
+  `…/transcripts/…`, capped) diffed vs `SELECT storage_key FROM transcripts` (all lifecycle states retained).
+  Orphans (older than the grace window) reported; deleted only in `mode='cleanup'` + `RECONCILIATION_CLEANUP_ENABLED`
+  (capped). Missing refs reported loudly, never auto-fixed. Report-only default. Admin trigger (+ optional startup).
+- **MaintenanceRun** table (migration 0012) — one row per run (run_type/mode/status/summary_json/...).
+- Admin-only triggers: `POST /admin/maintenance/reap-stuck-rows`, `…/reconcile-storage`.
+
 ## Boundaries / deferred
-- one-active "current job" indexes: **embed/summary (0007/0008) + parse (0011)**. **chunk** stays
-  WITHOUT one (a one-active-chunk index breaks the tested two-chunk-jobs-coexist replacement path).
-- `crashed` failure category is mapped in the projection but only **produced** by the 4.6c reaper.
-- Reaper/reconciliation/`MaintenanceRun`/heartbeat → 4.6c. Lecturer UI + preview endpoint + browser gate
-  → 4.6d. Student surface → 4.7. Targeted `?jobType=` retry + RQ scheduler (F-4.5-47) → not 4.6.
+- one-active "current job" indexes: **embed/summary (0007/0008) + parse (0011)**. **chunk** stays WITHOUT one.
+- `crashed` failure category is produced by the 4.6c reaper (mapped in the projection since 4.6b).
+- Lecturer UI + active-summary preview endpoint + browser gate → **4.6d (closes Stage 4.6)**. Student surface
+  → 4.7. Cron pointing at the reaper/reconciliation entrypoints → 11.1. Targeted `?jobType=` retry + RQ
+  scheduler (F-4.5-47) → not 4.6. Heartbeat columns → not built (RQ-registry + age instead).

@@ -28,6 +28,7 @@ EXPECTED_TABLES = {
     "transcript_segments",
     "transcript_chunks",
     "ingestion_jobs",
+    "maintenance_runs",
 }
 EXPECTED_ID_DEFAULTS = {table: None for table in EXPECTED_TABLES}
 EXPECTED_CHECKS = {

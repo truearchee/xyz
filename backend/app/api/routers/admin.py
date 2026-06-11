@@ -1,8 +1,8 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, status
-from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.domains.admin import service
 from app.domains.admin.schemas import (
@@ -16,15 +16,25 @@ from app.domains.admin.schemas import (
     StatusResponse,
     UserResponse,
 )
+from app.domains.recovery.reaper import run_stuck_row_reaper
+from app.domains.recovery.reconciliation import run_storage_reconciliation
+from app.domains.recovery.schemas import (
+    MaintenanceRunRead,
+    ReapStuckRowsRequest,
+    ReconcileStorageRequest,
+)
 from app.platform.auth.context import CurrentUserContext
 from app.platform.auth.guards import require_role
+from app.platform.db.models import MaintenanceRun
 from app.platform.db.session import get_db_session
+from app.platform.storage import StorageProvider, get_storage_provider
 
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
 DbSession = Annotated[AsyncSession, Depends(get_db_session)]
 AdminUser = Annotated[CurrentUserContext, Depends(require_role("admin"))]
+Storage = Annotated[StorageProvider, Depends(get_storage_provider)]
 Limit = Annotated[int, Query(ge=1, le=100)]
 Offset = Annotated[int, Query(ge=0)]
 
@@ -146,3 +156,52 @@ async def remove_from_module(
     await service.remove_from_module(db, user_id, module_id, current_user)
     await db.commit()
     return StatusResponse(status="ok")
+
+
+# ─── Stage 4.6c maintenance triggers (admin-only; recovery jobs are otherwise startup-driven) ────
+
+
+async def _load_run(db: AsyncSession, result: dict | None) -> MaintenanceRunRead:
+    if result is None:
+        # Another instance holds the singleton advisory lock → this trigger is a no-op.
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="MAINTENANCE_RUN_IN_PROGRESS"
+        )
+    run = await db.get(MaintenanceRun, UUID(result["run_id"]))
+    if run is None:  # pragma: no cover - defensive
+        raise HTTPException(status_code=500, detail="MAINTENANCE_RUN_MISSING")
+    return MaintenanceRunRead.model_validate(run)
+
+
+@router.post("/maintenance/reap-stuck-rows", response_model=MaintenanceRunRead)
+async def reap_stuck_rows(
+    db: DbSession,
+    current_user: AdminUser,
+    payload: ReapStuckRowsRequest | None = None,
+) -> MaintenanceRunRead:
+    factory = async_sessionmaker(db.bind, expire_on_commit=False)
+    result = await run_stuck_row_reaper(
+        session_factory=factory,
+        engine=db.bind,
+        triggered_by_user_id=current_user.user_id,
+        report_only=bool(payload.report_only) if payload else False,
+    )
+    return await _load_run(db, result)
+
+
+@router.post("/maintenance/reconcile-storage", response_model=MaintenanceRunRead)
+async def reconcile_storage(
+    db: DbSession,
+    current_user: AdminUser,
+    storage_provider: Storage,
+    payload: ReconcileStorageRequest | None = None,
+) -> MaintenanceRunRead:
+    factory = async_sessionmaker(db.bind, expire_on_commit=False)
+    result = await run_storage_reconciliation(
+        storage_provider,
+        session_factory=factory,
+        engine=db.bind,
+        triggered_by_user_id=current_user.user_id,
+        mode=payload.mode if payload else "report_only",
+    )
+    return await _load_run(db, result)

@@ -1,8 +1,26 @@
 # Status
 
-_Last updated: 2026-06-11 - Stage 4.6b retry BACKEND VERIFIED. Lecturer retry endpoint (POST …/transcript/{transcriptId}/retry) resumes from the earliest failed step over the DAG; summaries decoupled to fork from parse (embed failure no longer blocks summaries); every destructive write fenced vs superseded/stale attempts; sanitized failureCategory + retryable on the status projection; migration 0011 (failure-category enum + parse one-active index). Backend 329 passed (+24), migration 0011 fresh-DB round-trip, frontend tsc exit 0. Stage 4.6a + 4.5 unchanged. Next → 4.6c (reaper + reconciliation + MaintenanceRun). Browser gate is 4.6d._
+_Last updated: 2026-06-11 - Stage 4.6c recovery BACKEND VERIFIED. Stuck-row reaper (step-aware, RQ-registry/age liveness, fenced `crashed` producer, singleton advisory lock, worker-startup + admin trigger) + loss-safe storage reconciliation (report-only default, grace window, prefix-scoped, deletion-capped, superseded retained, missing reported never auto-fixed) + MaintenanceRun table (migration 0012) + admin maintenance endpoints. Backend 344 passed (+15), migration 0012 fresh-DB round-trip, frontend tsc exit 0. 4.6a/4.6b/4.5 unchanged. Only 4.6d (lecturer UI + active-summary preview endpoint + browser gate) remains to close Stage 4.6._
 
 ## Stage 4.6 — Replacement / Retry / Supersession (IN PROGRESS)
+
+**4.6c Recovery — BACKEND VERIFIED (browser gate → 4.6d):**
+- `app/domains/recovery/`: **stuck-row reaper** + **loss-safe storage reconciliation**, both idempotent,
+  singleton-locked (`pg_try_advisory_lock` on a dedicated connection), MaintenanceRun-logged.
+- Reaper: never-enqueued parse → re-enqueue; queued-not-live-in-RQ → re-enqueue (subsumes the removed
+  `reenqueue_summaries.py`); running-past-step-threshold-not-live → mark `failed`+`crashed` (retryable,
+  fenced re-read FOR UPDATE). Liveness = RQ registry (stable job_ids for embed/summary) + per-step age
+  (parse/chunk); **no heartbeat columns**. Action-capped. Runs at worker startup (`REAPER_RUN_AT_STARTUP`)
+  + admin trigger. Produces the `crashed` category 4.6b defined.
+- Reconciliation: `storage.list_objects` (recursive, scoped to `…/transcripts/…`, capped) vs DB keys;
+  orphans (older than grace) reported, deleted only in `mode='cleanup'` + `RECONCILIATION_CLEANUP_ENABLED`
+  (capped); missing refs reported loudly, never auto-fixed; superseded files referenced (retained).
+- `MaintenanceRun` table (migration `0012`); admin-only `POST /admin/maintenance/{reap-stuck-rows,reconcile-storage}`.
+- **Deviation:** liveness via RQ-registry + age (no heartbeat, spec-allowed); reaper at startup, reconciliation
+  admin-only by default. **Not built:** lecturer UI + preview endpoint + browser gate (4.6d).
+- Verified: `pytest` **344 passed** (+15 in `test_recovery.py`); migration `0012` round-trips fresh;
+  `tsc --noEmit` exit 0; client regen (AdminService +2 methods + `MaintenanceRunRead`). Report:
+  [[steps/stage-04/4.6c-recovery-reaper-reconciliation]].
 
 **4.6b Retry — BACKEND VERIFIED (browser gate → 4.6d):**
 - Retry endpoint `POST /modules/{m}/sections/{s}/transcript/{transcriptId}/retry` (lecturer-only, assigned;
@@ -96,7 +114,7 @@ Stage 4.2  Transcript parsing           FULLY VERIFIED  (browser gate: 4.3.5e)
 Stage 4.3  Transcript chunk persistence FULLY VERIFIED  (browser gate: 4.3.5e)
 Stage 4.4  Embeddings                   FULLY VERIFIED  (browser gate: 4.4)
 Stage 4.5  AI infra + summaries          FULLY VERIFIED  (gate: 4.5d browser gate + full E2E + real-provider smoke)
-Stage 4.6  Replacement / retry / superse. IN PROGRESS — 4.6a + 4.6b BACKEND VERIFIED (gate → 4.6d); next 4.6c
+Stage 4.6  Replacement / retry / superse. IN PROGRESS — 4.6a + 4.6b + 4.6c BACKEND VERIFIED (gate → 4.6d); only 4.6d remains
 
 Client Edge Recovery Block (4.3.5): COMPLETE
   Stages 1, 2, 3, 4.1, 4.2, 4.3 all FULLY VERIFIED.
@@ -177,12 +195,12 @@ Required next:
 - Session 1.1b: Stage 1 browser gate satisfied. Docker-backed automated checks passed (`3 passed` config tests, `4 passed` health/CORS tests, full backend `136 passed`, frontend type-check exited 0), browser polling showed `ok -> unreachable -> ok`, and human DevTools Network confirmed direct `http://localhost:8000/health` with `Access-Control-Allow-Origin: http://localhost:3000` - completed 2026-06-03 13:58.
 
 ## In progress
-- Stage 4.6 — 4.6a foundation + 4.6b retry done; **4.6c (step-aware stuck-row reaper + loss-safe storage reconciliation + MaintenanceRun + heartbeat) is next.**
+- Stage 4.6 — 4.6a + 4.6b + 4.6c done; **4.6d (lecturer replace/retry UI + active-summary preview endpoint + browser gate) is next — it closes Stage 4.6.**
 
 ## Next up
-- 4.6c reaper (produces the `crashed` failure category) + reconciliation + MaintenanceRun + heartbeat; startup + admin trigger.
-- 4.6d lecturer replace/retry UI (off `retryable`/`failureCategory`) + active-summary preview endpoint + browser gate.
-- Apply migrations `0010` + `0011` to the dev/hosted DB with the next backend deploy (dev `xyz_lms` is intentionally still at `0009`).
+- 4.6d lecturer replace/retry UI (off `retryable`/`failureCategory`) + active-summary preview endpoint (over the `ActiveTranscriptSummaryResolver`) + the full browser gate (the UI proof obligation: retry + replacement continuity + fencing).
+- Apply migrations `0010` + `0011` + `0012` to the dev/hosted DB with the next backend deploy (dev `xyz_lms` is intentionally still at `0009`).
+- 11.1: point a cron at `run_stuck_row_reaper` / `run_storage_reconciliation` (one-line wiring).
 
 ## Known issues / blockers
 - Hosted Postgres extension bootstrap is not covered by the local Docker init script; handle `vector` and `pgcrypto` explicitly before first hosted deployment.
@@ -196,5 +214,5 @@ Required next:
 - Chunk text is not exposed through any user-facing DTO yet; future 4.7 surfaces must preserve the no-raw-key and role-aware visibility boundaries.
 - Transcript parse recovery is intentionally deferred to Session 4.6c (reaper): enqueue failure can leave `uploaded`, and mid-parse crash can leave `parsing` plus a `running` job. (4.6a built the state model + provenance the reaper keys off; the reaper itself is 4.6c.)
 - Transcript chunk recovery is intentionally deferred to Session 4.6c (reaper): parse-to-chunk enqueue failure can leave a queued chunk job, and mid-chunk crash can leave a `running` chunk job.
-- **Dev/hosted DB drift (4.6a/4.6b):** migrations `0010` (drops `is_active` for `lifecycle_state`) + `0011` (widened failure-category enum + parse one-active index) are applied to `xyz_lms_test` only. Dev DB `xyz_lms` is intentionally left at `0009` so the running pre-4.6 containers keep working. Apply `0010` + `0011` together with the next backend rebuild+deploy — not before.
+- **Dev/hosted DB drift (4.6a/4.6b/4.6c):** migrations `0010` (lifecycle_state) + `0011` (failure-category enum + parse index) + `0012` (maintenance_runs table) are applied to `xyz_lms_test` only. Dev DB `xyz_lms` is intentionally left at `0009` so the running pre-4.6 containers keep working. Apply `0010`+`0011`+`0012` together with the next backend rebuild+deploy — not before.
 - Superseded pending transcripts leave orphaned storage objects until the 4.6c reconciliation job reclaims them (by design).

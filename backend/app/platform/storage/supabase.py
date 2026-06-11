@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+from datetime import UTC, datetime
 from typing import Any, BinaryIO
 from urllib.parse import urlsplit, urlunsplit
 
 from app.platform.config import settings
 from app.platform.storage.base import (
+    ListedObject,
     StorageObjectNotFoundError,
     StorageProviderError,
     StorageUnavailableError,
@@ -96,6 +98,65 @@ class SupabaseStorageProvider:
         if error is not None:
             raise StorageProviderError(f"Storage provider delete failed: {error}")
 
+    async def list_objects(self, *, prefix: str, max_objects: int) -> list[ListedObject]:
+        # Supabase `.list()` is non-recursive (one "folder" level) + paginated, so walk the prefix tree.
+        bucket = await self._bucket()
+        results: list[ListedObject] = []
+        await self._walk(bucket, prefix.strip("/"), results, max_objects)
+        return results
+
+    async def _walk(
+        self, bucket: Any, path: str, results: list[ListedObject], max_objects: int
+    ) -> None:
+        if len(results) >= max_objects:
+            return
+        offset = 0
+        page = 100
+        while len(results) < max_objects:
+            entries = await self._list_page(bucket, path, limit=page, offset=offset)
+            if not entries:
+                break
+            for entry in entries:
+                if len(results) >= max_objects:
+                    return
+                name = entry.get("name")
+                if not name:
+                    continue
+                full = f"{path}/{name}" if path else name
+                if entry.get("id") is None:  # a "folder" placeholder → recurse
+                    await self._walk(bucket, full, results, max_objects)
+                else:
+                    results.append(
+                        ListedObject(
+                            key=full,
+                            created_at=_parse_listed_created_at(entry),
+                            size=_listed_size(entry),
+                        )
+                    )
+            if len(entries) < page:
+                break
+            offset += page
+
+    async def _list_page(
+        self, bucket: Any, path: str, *, limit: int, offset: int
+    ) -> list[dict]:
+        try:
+            list_fn = bucket.list
+            options = {"limit": limit, "offset": offset}
+            if inspect.iscoroutinefunction(list_fn):
+                response = await list_fn(path, options)
+            else:
+                response = await asyncio.to_thread(list_fn, path, options)
+            if inspect.isawaitable(response):
+                response = await response
+        except (TimeoutError, ConnectionError) as exc:
+            raise StorageUnavailableError("Storage provider unavailable") from exc
+        except Exception as exc:
+            raise StorageProviderError("Storage provider list failed") from exc
+        if isinstance(response, list):
+            return [entry for entry in response if isinstance(entry, dict)]
+        return []
+
     async def create_signed_read_url(
         self,
         *,
@@ -140,6 +201,25 @@ async def get_storage_provider() -> SupabaseStorageProvider:
             bucket_name=settings.SUPABASE_STORAGE_BUCKET,
         )
     return _storage_provider
+
+
+def _parse_listed_created_at(entry: dict) -> datetime:
+    raw = entry.get("created_at") or entry.get("updated_at")
+    if isinstance(raw, str):
+        try:
+            return datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        except ValueError:
+            pass
+    return datetime.now(UTC)
+
+
+def _listed_size(entry: dict) -> int:
+    metadata = entry.get("metadata")
+    if isinstance(metadata, dict):
+        size = metadata.get("size")
+        if isinstance(size, int):
+            return size
+    return 0
 
 
 def _looks_like_not_found(text: str) -> bool:

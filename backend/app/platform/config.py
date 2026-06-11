@@ -159,6 +159,64 @@ class Settings:
         value = os.environ.get("PIPELINE_FAULT_INJECTION")
         return value.strip() if value and value.strip() else None
 
+    # ─── recovery (Stage 4.6c: stuck-row reaper + storage reconciliation) ────
+    @property
+    def REAPER_RUN_AT_STARTUP(self) -> bool:
+        """Run the stuck-row reaper once at worker startup (singleton-locked; only one worker executes)."""
+        return self._bool("REAPER_RUN_AT_STARTUP", default=True)
+
+    @property
+    def RECONCILE_AT_STARTUP(self) -> bool:
+        """Also run storage reconciliation at worker startup (default off — it lists the bucket; admin-triggered)."""
+        return self._bool("RECONCILE_AT_STARTUP", default=False)
+
+    @property
+    def REAPER_THRESHOLD_PARSE_SECONDS(self) -> int:
+        return self._int("REAPER_THRESHOLD_PARSE_SECONDS", "300", minimum=1)
+
+    @property
+    def REAPER_THRESHOLD_CHUNK_SECONDS(self) -> int:
+        return self._int("REAPER_THRESHOLD_CHUNK_SECONDS", "300", minimum=1)
+
+    @property
+    def REAPER_THRESHOLD_EMBED_SECONDS(self) -> int:
+        """Embed scales with transcript size — generous default above any realistic embed run."""
+        return self._int("REAPER_THRESHOLD_EMBED_SECONDS", "1800", minimum=1)
+
+    @property
+    def REAPER_THRESHOLD_SUMMARY_SECONDS(self) -> int:
+        """Summary = prompt timeout + limiter/backoff buffer (> LLM_DETAILED_TIMEOUT_SECONDS)."""
+        return self._int("REAPER_THRESHOLD_SUMMARY_SECONDS", "900", minimum=1)
+
+    @property
+    def REAPER_ACTION_CAP_PER_RUN(self) -> int:
+        """Max rows the reaper acts on per run (safety bound)."""
+        return self._int("REAPER_ACTION_CAP_PER_RUN", "100", minimum=1)
+
+    @property
+    def RECONCILIATION_MANAGED_PREFIX(self) -> str:
+        """Storage prefix the reconciliation job scopes to (transcript keys live under modules/)."""
+        return os.environ.get("RECONCILIATION_MANAGED_PREFIX", "modules/")
+
+    @property
+    def RECONCILIATION_GRACE_WINDOW_SECONDS(self) -> int:
+        """An object is an orphan candidate only if older than this (an in-flight upload looks identical)."""
+        return self._int("RECONCILIATION_GRACE_WINDOW_SECONDS", "86400", minimum=0)
+
+    @property
+    def RECONCILIATION_DELETION_CAP_PER_RUN(self) -> int:
+        return self._int("RECONCILIATION_DELETION_CAP_PER_RUN", "50", minimum=1)
+
+    @property
+    def RECONCILIATION_MAX_OBJECTS(self) -> int:
+        """Cap on objects scanned per reconciliation run (a hit cap skips missing-ref detection)."""
+        return self._int("RECONCILIATION_MAX_OBJECTS", "10000", minimum=1)
+
+    @property
+    def RECONCILIATION_CLEANUP_ENABLED(self) -> bool:
+        """Cleanup (actual deletion) requires BOTH this flag AND mode='cleanup' on the run. Default off."""
+        return self._bool("RECONCILIATION_CLEANUP_ENABLED", default=False)
+
     @property
     def REDIS_URL(self) -> str:
         return os.environ.get("REDIS_URL", "redis://redis:6379/0")

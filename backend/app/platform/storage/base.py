@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from typing import BinaryIO, Protocol
 
 
@@ -30,6 +31,16 @@ class StoredObject:
     content_type: str
 
 
+@dataclass(frozen=True)
+class ListedObject:
+    """A bucket object as seen by storage reconciliation (Stage 4.6c). ``created_at`` drives the
+    orphan grace window — an object younger than the window is indistinguishable from an in-flight upload."""
+
+    key: str
+    created_at: datetime
+    size: int
+
+
 class StorageProvider(Protocol):
     async def put_object(
         self,
@@ -45,6 +56,13 @@ class StorageProvider(Protocol):
     async def get_object(self, *, key: str) -> bytes: ...
 
     async def delete_object(self, *, key: str) -> None: ...
+
+    async def list_objects(
+        self,
+        *,
+        prefix: str,
+        max_objects: int,
+    ) -> list["ListedObject"]: ...
 
     async def create_signed_read_url(
         self,

@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 import sys
@@ -23,7 +24,33 @@ def main() -> None:
     connection = Redis.from_url(redis_url)
     worker = Worker([Queue(queue_name, connection=connection)], connection=connection)
     logger.info("Worker ready. Listening on %s queue.", queue_name)
+    _run_startup_recovery()
     worker.work()
+
+
+def _run_startup_recovery() -> None:
+    """Stage 4.6c: run the stuck-row reaper (and, if enabled, storage reconciliation) once at startup.
+    Both are singleton-locked (only one of the N workers executes; the rest skip). A recovery error must
+    NEVER stop the worker from starting, so it is best-effort."""
+    try:
+        asyncio.run(_startup_recovery_async())
+    except Exception:  # pragma: no cover - defensive; recovery never blocks worker boot
+        logger.exception("Startup recovery failed; continuing to start the worker")
+
+
+async def _startup_recovery_async() -> None:
+    if settings.REAPER_RUN_AT_STARTUP:
+        from app.domains.recovery.reaper import run_stuck_row_reaper
+
+        result = await run_stuck_row_reaper()
+        logger.info("Startup reaper result: %s", result)
+    if settings.RECONCILE_AT_STARTUP:
+        from app.domains.recovery.reconciliation import run_storage_reconciliation
+        from app.platform.storage import get_storage_provider
+
+        storage = await get_storage_provider()
+        result = await run_storage_reconciliation(storage)
+        logger.info("Startup reconciliation result: %s", result)
 
 
 def _queue_name() -> str:
