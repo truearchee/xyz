@@ -24,6 +24,10 @@ class TranscriptMeta(CamelModel):
     file_size: int
     language: str | None
     status: str
+    # Supersession lifecycle (Stage 4.6a): active | pending | superseded. Lets the lecturer UI
+    # distinguish a just-uploaded replacement (pending) from the live transcript (active). Internal
+    # provenance (storageKey/checksum/supersededAt/lineage) stays unexposed.
+    lifecycle_state: str
     uploaded_by_user_id: UUID | None
     created_at: datetime
     updated_at: datetime

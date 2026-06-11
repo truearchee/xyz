@@ -94,6 +94,17 @@ class TranscriptChunk(Base):
     embedding_version: Mapped[str | None] = mapped_column(Text)
     embedding_input_hash: Mapped[str | None] = mapped_column(Text)
     embedding_generated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Provenance (4.6 fencing/audit, ON DELETE SET NULL). The chunk job that created the row vs the
+    # embed job that wrote the vector are SEPARATE: embed updates embedding columns in place and must
+    # NOT touch created_by_ingestion_job_id, or chunk-creation provenance is corrupted.
+    created_by_ingestion_job_id: Mapped[UUID | None] = mapped_column(
+        PostgresUUID(as_uuid=True),
+        ForeignKey("ingestion_jobs.id", ondelete="SET NULL"),
+    )
+    embedding_created_by_ingestion_job_id: Mapped[UUID | None] = mapped_column(
+        PostgresUUID(as_uuid=True),
+        ForeignKey("ingestion_jobs.id", ondelete="SET NULL"),
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

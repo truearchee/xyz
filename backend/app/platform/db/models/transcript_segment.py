@@ -44,6 +44,12 @@ class TranscriptSegment(Base):
     end_ms: Mapped[int | None] = mapped_column(BigInteger)
     speaker_name: Mapped[str | None] = mapped_column(Text)
     text: Mapped[str] = mapped_column(Text, nullable=False)
+    # Provenance: the parse IngestionJob that created this segment (4.6 fencing/audit). Nullable —
+    # forward-only; ON DELETE SET NULL so deleting a job never deletes the artifact.
+    created_by_ingestion_job_id: Mapped[UUID | None] = mapped_column(
+        PostgresUUID(as_uuid=True),
+        ForeignKey("ingestion_jobs.id", ondelete="SET NULL"),
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

@@ -25,6 +25,7 @@ from app.domains.transcripts.embedding_encoder import (
 from app.platform.config import settings
 from app.platform.db.models import IngestionJob, Transcript, TranscriptChunk
 from app.platform.db.session import async_session
+from app.platform.faults.pipeline_faults import maybe_fail_step
 
 
 logger = logging.getLogger(__name__)
@@ -145,6 +146,7 @@ async def embed_transcript_async(
         transcript_id = await _claim_embed_job(factory, ingestion_job_id=ingestion_job_id)
         if transcript_id is None:
             return
+        maybe_fail_step("embed")
         while True:
             stale_chunks = await _next_stale_batch(
                 factory,
@@ -157,6 +159,7 @@ async def embed_transcript_async(
             vectors = active_encoder.encode([chunk.text for chunk in stale_chunks])
             await _persist_embedding_batch(
                 factory,
+                ingestion_job_id=ingestion_job_id,
                 stale_chunks=stale_chunks,
                 vectors=vectors,
                 model_revision=revision,
@@ -318,6 +321,7 @@ async def _next_stale_batch(
 async def _persist_embedding_batch(
     factory: async_sessionmaker[AsyncSession],
     *,
+    ingestion_job_id: UUID,
     stale_chunks: list[StaleChunk],
     vectors: list[list[float]],
     model_revision: str,
@@ -362,6 +366,9 @@ async def _persist_embedding_batch(
                 chunk.embedding_version = EMBEDDING_VERSION
                 chunk.embedding_input_hash = expected_hash
                 chunk.embedding_generated_at = now
+                # Stamp ONLY the embedding-writer job; never touch created_by_ingestion_job_id
+                # (that belongs to the chunk job, ADR-46-B §6).
+                chunk.embedding_created_by_ingestion_job_id = ingestion_job_id
                 chunk.updated_at = now
 
 

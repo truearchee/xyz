@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import UTC, datetime
 from uuid import UUID
 
 from fastapi import HTTPException, UploadFile, status
@@ -22,7 +23,7 @@ from app.domains.transcripts.validators import (
 )
 from app.platform.auth.context import CurrentUserContext
 from app.platform.config import settings
-from app.platform.db.models import Transcript
+from app.platform.db.models import ModuleSection, Transcript
 from app.platform.query.section_context import (
     AuthorizedSectionContext,
     get_authorized_lecturer_section_context,
@@ -77,24 +78,10 @@ async def _best_effort_delete(
 
 
 def _is_active_transcript_conflict(exc: IntegrityError) -> bool:
-    return "uq_active_transcript_per_section" in str(exc)
-
-
-async def _ensure_no_active_transcript(
-    db: AsyncSession,
-    *,
-    section_id: UUID,
-) -> None:
-    result = await db.execute(
-        select(Transcript.id)
-        .where(
-            Transcript.module_section_id == section_id,
-            Transcript.is_active.is_(True),
-        )
-        .limit(1)
+    return (
+        "uq_active_transcript_per_section" in str(exc)
+        or "uq_pending_transcript_per_section" in str(exc)
     )
-    if result.first() is not None:
-        raise _coded_error(status.HTTP_409_CONFLICT, TRANSCRIPT_ALREADY_EXISTS)
 
 
 async def prepare_transcript_upload(
@@ -115,7 +102,10 @@ async def prepare_transcript_upload(
             422,
             SECTION_TYPE_UNSUPPORTED,
         )
-    await _ensure_no_active_transcript(db, section_id=section_context.section_id)
+    # Replacement is allowed (ADR-46-A): a second upload to a section that already has an active
+    # transcript no longer 409s — it becomes a `pending` replacement that swaps in atomically on
+    # completion. The one-active / one-pending invariants are enforced under a section lock in
+    # ``upload_transcript`` (not pre-checked here, which would race).
     return section_context
 
 
@@ -182,24 +172,15 @@ async def upload_transcript(
         validated.content.close()
         raise _storage_http_error(exc) from exc
 
-    transcript = Transcript(
-        id=transcript_id,
-        module_section_id=section_context.section_id,
-        source_type="manual_upload",
-        original_file_name=validated.original_file_name,
-        storage_key=storage_key,
-        mime_type=validated.effective_mime_type,
-        file_size=validated.size_bytes,
-        checksum=validated.sha256,
-        language=None,
-        status="uploaded",
-        uploaded_by_user_id=current_user.user_id,
-        is_active=True,
-    )
-    db.add(transcript)
-
     try:
-        await db.commit()
+        transcript = await _create_transcript_under_section_lock(
+            db,
+            section_id=section_context.section_id,
+            transcript_id=transcript_id,
+            storage_key=storage_key,
+            validated=validated,
+            uploaded_by_user_id=current_user.user_id,
+        )
     except IntegrityError as exc:
         await db.rollback()
         await _best_effort_delete(
@@ -233,6 +214,92 @@ async def upload_transcript(
     return transcript
 
 
+async def _create_transcript_under_section_lock(
+    db: AsyncSession,
+    *,
+    section_id: UUID,
+    transcript_id: UUID,
+    storage_key: str,
+    validated,
+    uploaded_by_user_id: UUID,
+) -> Transcript:
+    """Create the transcript row inside a ``moduleSectionId``-scoped lock (ADR-46-A).
+
+    The lock serializes concurrent uploads to the same section (double-click, client retry, two
+    co-lecturers) so the one-active / one-pending invariants surface as ordered state transitions
+    rather than constraint-violation 500s. With a prior active present the new transcript is created
+    ``pending`` (a replacement); a pre-existing pending is discarded (``discarded_pending``) before the
+    new one is inserted so the one-pending partial-unique index always holds. First-ever upload (no
+    active) is created ``active`` immediately — unchanged behaviour.
+    """
+    # Lock the section row; concurrent uploads to this section block here until we commit.
+    await db.execute(
+        select(ModuleSection.id).where(ModuleSection.id == section_id).with_for_update()
+    )
+
+    active = (
+        await db.execute(
+            select(Transcript).where(
+                Transcript.module_section_id == section_id,
+                Transcript.lifecycle_state == "active",
+            )
+        )
+    ).scalar_one_or_none()
+    pending = (
+        await db.execute(
+            select(Transcript).where(
+                Transcript.module_section_id == section_id,
+                Transcript.lifecycle_state == "pending",
+            )
+        )
+    ).scalar_one_or_none()
+
+    now = datetime.now(UTC)
+    if pending is not None:
+        # Discard the prior pending (one-pending invariant). Demote it FIRST with a NULL lineage
+        # pointer and flush, so the new pending insert never collides with it on the one-pending
+        # partial-unique index (the unit of work does not preserve assignment order), and so the
+        # lineage FK is not set to a transcript row that does not exist yet.
+        pending.lifecycle_state = "superseded"
+        pending.supersession_reason = "discarded_pending"
+        pending.superseded_at = now
+        pending.superseded_by_transcript_id = None
+        await db.flush()
+
+    if active is not None:
+        lifecycle_state = "pending"
+        replacement_of_transcript_id: UUID | None = active.id
+    else:
+        lifecycle_state = "active"
+        replacement_of_transcript_id = None
+
+    transcript = Transcript(
+        id=transcript_id,
+        module_section_id=section_id,
+        source_type="manual_upload",
+        original_file_name=validated.original_file_name,
+        storage_key=storage_key,
+        mime_type=validated.effective_mime_type,
+        file_size=validated.size_bytes,
+        checksum=validated.sha256,
+        language=None,
+        status="uploaded",
+        uploaded_by_user_id=uploaded_by_user_id,
+        lifecycle_state=lifecycle_state,
+        replacement_of_transcript_id=replacement_of_transcript_id,
+    )
+    db.add(transcript)
+    await db.flush()
+
+    if pending is not None:
+        # Back-fill the lineage now that the new row exists (FK satisfiable; old pending already
+        # demoted so this UPDATE cannot reintroduce a second pending).
+        pending.superseded_by_transcript_id = transcript_id
+
+    await db.commit()
+    return transcript
+
+
 async def get_active_transcript(
     db: AsyncSession,
     *,
@@ -249,7 +316,7 @@ async def get_active_transcript(
     result = await db.execute(
         select(Transcript).where(
             Transcript.module_section_id == section_context.section_id,
-            Transcript.is_active.is_(True),
+            Transcript.lifecycle_state == "active",
         )
     )
     transcript = result.scalar_one_or_none()

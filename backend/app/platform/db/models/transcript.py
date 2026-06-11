@@ -11,6 +11,13 @@ from uuid6 import uuid7
 from app.platform.db.models.base import Base
 
 
+# Transcript supersession lifecycle (ADR-46-A). A section has at most one `active` and at most one
+# `pending` transcript (partial-unique indexes below); a replacement processes as `pending` alongside
+# the still-`active` old one and atomically swaps in only on completion.
+LIFECYCLE_STATES = ("active", "pending", "superseded")
+SUPERSESSION_REASONS = ("replaced_active", "discarded_pending")
+
+
 class Transcript(Base):
     __tablename__ = "transcripts"
     __table_args__ = (
@@ -23,8 +30,21 @@ class Transcript(Base):
             name="ck_transcripts_source_type",
         ),
         CheckConstraint(
-            "NOT (is_active = true AND superseded_at IS NOT NULL)",
-            name="ck_transcripts_active_not_superseded",
+            "lifecycle_state IN ('active', 'pending', 'superseded')",
+            name="ck_transcripts_lifecycle_state",
+        ),
+        CheckConstraint(
+            "supersession_reason IS NULL OR "
+            "supersession_reason IN ('replaced_active', 'discarded_pending')",
+            name="ck_transcripts_supersession_reason",
+        ),
+        CheckConstraint(
+            "lifecycle_state <> 'superseded' OR superseded_at IS NOT NULL",
+            name="ck_transcripts_superseded_has_ts",
+        ),
+        CheckConstraint(
+            "lifecycle_state <> 'active' OR superseded_at IS NULL",
+            name="ck_transcripts_active_no_ts",
         ),
         CheckConstraint(
             "source_type <> 'manual_upload' OR uploaded_by_user_id IS NOT NULL",
@@ -39,7 +59,13 @@ class Transcript(Base):
             "uq_active_transcript_per_section",
             "module_section_id",
             unique=True,
-            postgresql_where=text("is_active = true"),
+            postgresql_where=text("lifecycle_state = 'active'"),
+        ),
+        Index(
+            "uq_pending_transcript_per_section",
+            "module_section_id",
+            unique=True,
+            postgresql_where=text("lifecycle_state = 'pending'"),
         ),
         Index("uq_transcripts_storage_key", "storage_key", unique=True),
         Index("ix_transcripts_module_section_id", "module_section_id"),
@@ -75,10 +101,20 @@ class Transcript(Base):
         PostgresUUID(as_uuid=True),
         ForeignKey("app_users.id"),
     )
-    is_active: Mapped[bool] = mapped_column(
+    lifecycle_state: Mapped[str] = mapped_column(
+        Text,
         nullable=False,
-        server_default=text("true"),
+        server_default=text("'active'"),
     )
+    replacement_of_transcript_id: Mapped[UUID | None] = mapped_column(
+        PostgresUUID(as_uuid=True),
+        ForeignKey("transcripts.id", ondelete="SET NULL"),
+    )
+    superseded_by_transcript_id: Mapped[UUID | None] = mapped_column(
+        PostgresUUID(as_uuid=True),
+        ForeignKey("transcripts.id", ondelete="SET NULL"),
+    )
+    supersession_reason: Mapped[str | None] = mapped_column(Text)
     superseded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

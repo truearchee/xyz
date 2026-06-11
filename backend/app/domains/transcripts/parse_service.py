@@ -16,6 +16,7 @@ from app.domains.transcripts.parsers.timestamps import validate_range
 from app.domains.transcripts.parsers.types import TranscriptParseError
 from app.platform.db.models import IngestionJob, Transcript, TranscriptSegment
 from app.platform.db.session import async_session
+from app.platform.faults.pipeline_faults import maybe_fail_step
 from app.platform.storage.base import (
     StorageProvider,
     StorageProviderError,
@@ -58,6 +59,7 @@ async def parse_transcript_async(
         return
 
     try:
+        maybe_fail_step("parse")
         raw_bytes = await storage.get_object(key=claim.storage_key)
         parsed_segments = route_and_parse(raw_bytes, mime_type=claim.mime_type)
         persisted_segments = _prepare_persisted_segments(parsed_segments)
@@ -182,6 +184,7 @@ async def _persist_success(
                     end_ms=segment.end_ms,
                     speaker_name=segment.speaker_name,
                     text=segment.text,
+                    created_by_ingestion_job_id=job.id,
                 )
                 for sequence_number, segment in enumerate(segments)
             ]

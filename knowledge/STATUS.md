@@ -1,6 +1,30 @@
 # Status
 
-_Last updated: 2026-06-11 - Stage 4.5 (AI infrastructure + summary generation) ✅ FULLY VERIFIED. All three close-out gates green: full E2E suite, forced-fault browser coverage, and the real-provider smoke (PASS, rule-11 model-ID echo on both routes). Next → Stage 4.6._
+_Last updated: 2026-06-11 - Stage 4.6a foundation BACKEND VERIFIED. lifecycleState migration (is_active removed) + supersession lineage + one-active/one-pending indexes; section-locked pending creation + tryActivatePendingTranscript atomic swap; domain summary_eligibility + read-only ActiveTranscriptSummaryResolver; per-row provenance (embed never clobbers chunk creator); env-gated pipeline fault harness; lifecycleState on TranscriptMeta. Backend 305 passed (+16), migration 0010 fresh-DB round-trip, frontend tsc exit 0. Stage 4.5 remains FULLY VERIFIED. Next → 4.6b (retry). Browser gate is 4.6d._
+
+## Stage 4.6 — Replacement / Retry / Supersession (IN PROGRESS)
+
+**4.6a Foundation — BACKEND VERIFIED (browser gate → 4.6d):**
+- `transcripts.lifecycle_state` (active|pending|superseded) replaces boolean `is_active` (migration `0010`);
+  lineage (`replacement_of`/`superseded_by`/`supersession_reason`/`superseded_at`); partial-unique
+  one-active AND one-pending per section.
+- Replacement no longer 409s: a second upload creates a `pending` row under a `module_sections` `FOR UPDATE`
+  lock; a prior pending is discarded (`discarded_pending`). `try_activate_pending_transcript` swaps
+  old→superseded / pending→active atomically once `overall_state=='summarized'` + exactly one eligible
+  brief + one detailed; triggered post-summary-completion (no-op otherwise).
+- `transcripts/domain/summary_eligibility` owns the predicate (identity + checksum; success-only table →
+  "generated" = row exists) + write-side readiness; `platform/query/ActiveTranscriptSummaryResolver` wraps
+  the SAME predicate read-only (lecturer preview lands 4.6d; student authz 4.7). ADR-029, ADR-030.
+- Per-row provenance: `created_by_ingestion_job_id` on segments/chunks/summaries + a SEPARATE
+  `embedding_created_by_ingestion_job_id` on chunks.
+- Env-gated fault harness `PIPELINE_FAULT_INJECTION_ENABLED` (no-op off, refuses outside non-prod) +
+  `seed_failed_ingestion_job`; wired into all five steps; `docker-compose.fault.yml` override.
+- **Deviation:** parse/chunk one-active "current job" indexes deferred to 4.6b (would break the tested
+  two-chunk-jobs-coexist replacement path). **Not built:** retry/fenced deletes (4.6b), reaper/
+  reconciliation/MaintenanceRun (4.6c), lecturer UI + preview endpoint + browser gate (4.6d).
+- Verified: `pytest` **305 passed** (+16 in `test_transcript_lifecycle.py` + provenance test); migration
+  `0010` round-trips on a fresh DB (up→base→up, `is_active` gone); `tsc --noEmit` exit 0; client regen
+  (+`lifecycleState`). Report: [[steps/stage-04/4.6a-lifecycle-supersession-foundation]].
 
 ## Stage 4.5 — AI Infrastructure + Summary Generation (✅ FULLY VERIFIED)
 Gate 2.A is GREEN: developer restored `knowledge/roadmap.md` v3 (sha256 `a677c580…`, recorded in
@@ -49,7 +73,8 @@ Stage 4.1  Transcript upload            FULLY VERIFIED  (browser gate: 4.3.5e)
 Stage 4.2  Transcript parsing           FULLY VERIFIED  (browser gate: 4.3.5e)
 Stage 4.3  Transcript chunk persistence FULLY VERIFIED  (browser gate: 4.3.5e)
 Stage 4.4  Embeddings                   FULLY VERIFIED  (browser gate: 4.4)
-Stage 4.5  AI infra + summaries          FULLY VERIFIED  (gate: 4.5d browser gate + full E2E + real-provider smoke)   ← Stage 4.6 next
+Stage 4.5  AI infra + summaries          FULLY VERIFIED  (gate: 4.5d browser gate + full E2E + real-provider smoke)
+Stage 4.6  Replacement / supersession    IN PROGRESS — 4.6a foundation BACKEND VERIFIED (gate → 4.6d); next 4.6b
 
 Client Edge Recovery Block (4.3.5): COMPLETE
   Stages 1, 2, 3, 4.1, 4.2, 4.3 all FULLY VERIFIED.
@@ -130,10 +155,12 @@ Required next:
 - Session 1.1b: Stage 1 browser gate satisfied. Docker-backed automated checks passed (`3 passed` config tests, `4 passed` health/CORS tests, full backend `136 passed`, frontend type-check exited 0), browser polling showed `ok -> unreachable -> ok`, and human DevTools Network confirmed direct `http://localhost:8000/health` with `Access-Control-Allow-Origin: http://localhost:3000` - completed 2026-06-03 13:58.
 
 ## In progress
-- None.
+- Stage 4.6 — 4.6a foundation done; **4.6b (retry / resume-from-failed-step + fenced deletes) is next.**
 
 ## Next up
-- Stage 4.5 planning: AIRequestLog + summary generation.
+- 4.6b retry over the DAG (delete-and-regenerate, fencing, failure taxonomy, retry endpoint; parse/chunk current-job pointer).
+- 4.6c reaper + reconciliation + MaintenanceRun. 4.6d lecturer UI + active-summary preview endpoint + browser gate.
+- Apply migration `0010` to the dev/hosted DB with the next backend deploy (dev `xyz_lms` is intentionally still at `0009`).
 
 ## Known issues / blockers
 - Hosted Postgres extension bootstrap is not covered by the local Docker init script; handle `vector` and `pgcrypto` explicitly before first hosted deployment.
@@ -145,5 +172,7 @@ Required next:
 - Already-issued signed read URLs remain usable until expiry; unpublish blocks future minting, not issued bearer URLs.
 - Raw transcript files are private and not exposed; future summary/transcript surfaces must continue to avoid exposing raw storage keys.
 - Chunk text is not exposed through any user-facing DTO yet; future 4.7 surfaces must preserve the no-raw-key and role-aware visibility boundaries.
-- Transcript parse recovery is intentionally deferred to Session 4.6: enqueue failure can leave `uploaded`, and mid-parse crash can leave `parsing` plus a `running` job.
-- Transcript chunk recovery is intentionally deferred to Session 4.6: parse-to-chunk enqueue failure can leave a queued chunk job, and mid-chunk crash can leave a `running` chunk job.
+- Transcript parse recovery is intentionally deferred to Session 4.6c (reaper): enqueue failure can leave `uploaded`, and mid-parse crash can leave `parsing` plus a `running` job. (4.6a built the state model + provenance the reaper keys off; the reaper itself is 4.6c.)
+- Transcript chunk recovery is intentionally deferred to Session 4.6c (reaper): parse-to-chunk enqueue failure can leave a queued chunk job, and mid-chunk crash can leave a `running` chunk job.
+- **Dev/hosted DB drift (4.6a):** migration `0010` (drops `is_active` for `lifecycle_state`) is applied to `xyz_lms_test` only. Dev DB `xyz_lms` is intentionally left at `0009` so the running pre-4.6a containers (which query `is_active`) keep working. Apply `0010` with the next backend rebuild+deploy — not before.
+- Superseded pending transcripts leave orphaned storage objects until the 4.6c reconciliation job reclaims them (by design).

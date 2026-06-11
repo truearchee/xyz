@@ -23,6 +23,7 @@ from app.domains.transcripts.embedding_service import (
 )
 from app.platform.db.models import IngestionJob, Transcript, TranscriptChunk, TranscriptSegment
 from app.platform.db.session import async_session
+from app.platform.faults.pipeline_faults import maybe_fail_step
 from app.workers.queues import enqueue_embed_transcript
 
 
@@ -146,6 +147,8 @@ async def _persist_chunks(
             job.updated_at = now
             return None
 
+        maybe_fail_step("chunk")
+
         segments = (
             await session.execute(
                 select(TranscriptSegment)
@@ -172,7 +175,12 @@ async def _persist_chunks(
         )
         session.add_all(
             [
-                _chunk_model(transcript_id=transcript.id, draft=draft, segments=segments)
+                _chunk_model(
+                    transcript_id=transcript.id,
+                    draft=draft,
+                    segments=segments,
+                    created_by_ingestion_job_id=job.id,
+                )
                 for draft in result.chunks
             ]
         )
@@ -303,6 +311,7 @@ def _chunk_model(
     transcript_id: UUID,
     draft: ChunkDraft,
     segments: list[TranscriptSegment],
+    created_by_ingestion_job_id: UUID,
 ) -> TranscriptChunk:
     segment_transcripts = {
         segment.id: segment.transcript_id
@@ -316,10 +325,13 @@ def _chunk_model(
     payload = asdict(draft)
     payload.pop("start_time")
     payload.pop("end_time")
+    # Stamp the chunk-creating job. Embed later writes the vector and stamps
+    # embedding_created_by_ingestion_job_id SEPARATELY — it must never overwrite this column.
     return TranscriptChunk(
         transcript_id=transcript_id,
         start_time=draft.start_time,
         end_time=draft.end_time,
+        created_by_ingestion_job_id=created_by_ingestion_job_id,
         **payload,
     )
 

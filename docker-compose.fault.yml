@@ -1,7 +1,19 @@
-# E2E forced-fault override (Stage 4.5d Gate 2). Sets the deterministic provider fault on the
-# ai_worker (global env). Use with a single fault per stack run; restore by recreating ai_worker
-# without this override. Non-prod only — DeterministicTestProvider refuses faults outside non-prod.
+# E2E forced-fault override (Stage 4.5d Gate 2 + Stage 4.6a recovery harness). Sets the deterministic
+# LLM-transport fault on the ai_worker AND the Stage 4.6 pipeline step-fault harness on every worker
+# (PIPELINE_FAULT_INJECTION ∈ parse|chunk|embed|summary_brief|summary_detailed). Use a single fault per
+# stack run; restore by recreating the workers without this override. Non-prod only — both harnesses
+# refuse to fire outside non-prod.
 services:
+  worker:
+    environment:
+      PIPELINE_FAULT_INJECTION_ENABLED: ${PIPELINE_FAULT_INJECTION_ENABLED:-}
+      PIPELINE_FAULT_INJECTION: ${PIPELINE_FAULT_INJECTION:-}
+  embedding_worker:
+    environment:
+      PIPELINE_FAULT_INJECTION_ENABLED: ${PIPELINE_FAULT_INJECTION_ENABLED:-}
+      PIPELINE_FAULT_INJECTION: ${PIPELINE_FAULT_INJECTION:-}
   ai_worker:
     environment:
       LLM_FAULT_INJECTION: ${LLM_FAULT_INJECTION:-}
+      PIPELINE_FAULT_INJECTION_ENABLED: ${PIPELINE_FAULT_INJECTION_ENABLED:-}
+      PIPELINE_FAULT_INJECTION: ${PIPELINE_FAULT_INJECTION:-}

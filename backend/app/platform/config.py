@@ -146,6 +146,20 @@ class Settings:
         return self.ENVIRONMENT not in {"production", "staging"}
 
     @property
+    def PIPELINE_FAULT_INJECTION_ENABLED(self) -> bool:
+        """Master gate for the Stage 4.6 pipeline fault-injection harness (deterministic forced step
+        failure + seeded failed-job records). Default OFF; absent/no-op when off. Distinct from the
+        LLM-transport ``LLM_FAULT_INJECTION`` (summary jobs only) — this covers ALL five steps."""
+        return self._bool("PIPELINE_FAULT_INJECTION_ENABLED", default=False)
+
+    @property
+    def PIPELINE_FAULT_INJECTION(self) -> str | None:
+        """Which pipeline step to force-fail when the harness is enabled (one of parse/chunk/embed/
+        summary_brief/summary_detailed). Mirrors the ``LLM_FAULT_INJECTION`` value pattern."""
+        value = os.environ.get("PIPELINE_FAULT_INJECTION")
+        return value.strip() if value and value.strip() else None
+
+    @property
     def REDIS_URL(self) -> str:
         return os.environ.get("REDIS_URL", "redis://redis:6379/0")
 

@@ -25,6 +25,13 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from uuid6 import uuid7
 
 from app.domains.transcripts.chunker import NORMALIZATION_VERSION, normalize_segment_text
+from app.domains.transcripts.summary_specs import (
+    BRIEF,
+    DETAILED,
+    SUMMARY_JOB_TYPES,
+    SUMMARY_SPECS,
+    SummarySpec,
+)
 from app.platform.db.models import (
     AIRequestLog,
     GeneratedLectureSummary,
@@ -35,17 +42,22 @@ from app.platform.db.models import (
 )
 from app.platform.config import settings
 from app.platform.db.session import async_session
+from app.platform.faults.pipeline_faults import maybe_fail_step
 from app.platform.llm.errors import GatewayError
 from app.platform.llm.gateway import ContextRefs, LLMGateway
-from app.platform.llm.models.prompt import PromptKey, SummaryFeature
-from app.platform.llm.models.summary import (
-    BRIEF_SCHEMA_VERSION,
-    DETAILED_SCHEMA_VERSION,
-    BriefSummary,
-    DetailedSummary,
-)
 
 logger = logging.getLogger(__name__)
+
+__all__ = [
+    "BRIEF",
+    "DETAILED",
+    "SUMMARY_JOB_TYPES",
+    "SUMMARY_SPECS",
+    "SummarySpec",
+    "generate_brief_summary_async",
+    "generate_detailed_summary_async",
+    "insert_summary_jobs",
+]
 
 # Failures that warrant an RQ retry (rule 15: reserved for transient + bounded invalid_output).
 # provider_config_error / provider_auth_error are deliberately ABSENT — a bad model id or key is
@@ -63,36 +75,6 @@ _FAILURE_CATEGORIES = {
 
 class SummaryGenerationError(RuntimeError):
     pass
-
-
-@dataclass(frozen=True)
-class SummarySpec:
-    job_type: str
-    feature: SummaryFeature
-    prompt_key: PromptKey
-    output_schema: type[BriefSummary] | type[DetailedSummary]
-    summary_type: str
-    content_schema_version: str
-
-
-BRIEF = SummarySpec(
-    job_type="generate_brief_summary",
-    feature="summary_brief",
-    prompt_key=PromptKey("brief_summary", "v1"),
-    output_schema=BriefSummary,
-    summary_type="brief",
-    content_schema_version=BRIEF_SCHEMA_VERSION,
-)
-DETAILED = SummarySpec(
-    job_type="generate_detailed_summary",
-    feature="summary_detailed",
-    prompt_key=PromptKey("detailed_summary", "v1"),
-    output_schema=DetailedSummary,
-    summary_type="detailed_study",
-    content_schema_version=DETAILED_SCHEMA_VERSION,
-)
-SUMMARY_SPECS: dict[str, SummarySpec] = {BRIEF.job_type: BRIEF, DETAILED.job_type: DETAILED}
-SUMMARY_JOB_TYPES = tuple(SUMMARY_SPECS)
 
 
 @dataclass(frozen=True)
@@ -265,6 +247,7 @@ async def _generate_summary_async(
         return
 
     try:
+        maybe_fail_step(spec.feature)
         result = await active_gateway.complete(
             prompt_key=spec.prompt_key,
             output_schema=spec.output_schema,
@@ -302,6 +285,28 @@ async def _generate_summary_async(
     await _persist_summary_success(
         factory, ingestion_job_id=ingestion_job_id, spec=spec, context=context, result=result
     )
+
+    # 4.6a (ADR-46-A): if this transcript is a completed pending replacement, swap it in. No-op for
+    # the common active-first-upload path and for a pending that is not yet fully summarized. Never
+    # fail the summary job on an activation error — leave the pending for a later trigger / retry.
+    await _try_activate_after_summary(factory, transcript_id=context.transcript_id)
+
+
+async def _try_activate_after_summary(
+    factory: async_sessionmaker[AsyncSession],
+    *,
+    transcript_id: UUID,
+) -> None:
+    from app.domains.transcripts.activation import try_activate_pending_transcript
+
+    try:
+        async with factory() as session:
+            await try_activate_pending_transcript(session, transcript_id=transcript_id)
+    except Exception:  # pragma: no cover - defensive; activation never breaks summary completion
+        logger.warning(
+            "Pending-transcript activation attempt failed after summary completion; left pending",
+            extra={"transcript_id": str(transcript_id)},
+        )
 
 
 async def _claim_summary_job(
@@ -419,6 +424,7 @@ async def _persist_summary_success(
                     source_transcript_checksum=context.source_transcript_checksum,
                     input_hash=context.input_hash,
                     ai_request_log_id=log.id,
+                    created_by_ingestion_job_id=ingestion_job_id,
                 )
                 .on_conflict_do_nothing(constraint="uq_gen_summaries_provenance")
             )

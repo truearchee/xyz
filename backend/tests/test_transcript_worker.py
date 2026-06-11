@@ -68,7 +68,7 @@ async def _create_worker_transcript(
         checksum=hashlib.sha256(raw).hexdigest(),
         status="uploaded",
         uploaded_by_user_id=lecturer.id,
-        is_active=True,
+        lifecycle_state="active",
     )
     session.add(transcript)
     await session.flush()
@@ -1346,3 +1346,59 @@ async def test_conditional_queued_update_does_not_downgrade_parsing_status(
     assert enqueued == [transcript_id]
     assert refreshed is not None
     assert refreshed.status == "parsing"
+
+
+@pytest.mark.anyio
+async def test_pipeline_stamps_per_row_provenance(
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Stage 4.6a (ADR-46-B §6): each artifact records the job that produced it. Crucially, embed
+    # stamps embedding_created_by_ingestion_job_id and must NOT overwrite the chunk's
+    # created_by_ingestion_job_id (separate columns, separate jobs).
+    parseable_vtt = (
+        b"WEBVTT\n\n"
+        b"00:00.000 --> 00:01.000\n<v Dr Smith>Hello</v>\n\n"
+        b"00:01.000 --> 00:02.500\nExample: Preserve this label\n"
+    )
+    storage = FakeStorageProvider()
+    transcript = await _create_worker_transcript(db_session, raw=parseable_vtt)
+    storage.objects[transcript.storage_key] = parseable_vtt
+    transcript_id = transcript.id
+    enqueued_chunk: list[UUID] = []
+    enqueued_embed: list[UUID] = []
+    monkeypatch.setattr(
+        parse_service, "enqueue_chunk_transcript", lambda job_id: enqueued_chunk.append(job_id)
+    )
+    monkeypatch.setattr(
+        chunk_service, "enqueue_embed_transcript", lambda job_id: enqueued_embed.append(job_id)
+    )
+    await db_session.commit()
+    factory = _session_factory(db_session)
+
+    await parse_transcript_async(transcript_id, storage_provider=storage, session_factory=factory)
+    assert enqueued_chunk
+    await chunk_service.chunk_transcript_async(enqueued_chunk[0], session_factory=factory)
+    assert enqueued_embed
+    await embedding_service.embed_transcript_async(
+        enqueued_embed[0],
+        encoder=DeterministicEmbeddingEncoder(),
+        session_factory=factory,
+        batch_size=1,
+    )
+    db_session.expire_all()
+
+    parse_job = await _parse_job(db_session, transcript_id)
+    chunk_job = await _chunk_job(db_session, transcript_id)
+    embed_job = await _embed_job(db_session, transcript_id)
+    segments = await _segments(db_session, transcript_id)
+    chunks = await _chunks(db_session, transcript_id)
+
+    assert segments
+    assert all(seg.created_by_ingestion_job_id == parse_job.id for seg in segments)
+    assert chunks
+    for chunk in chunks:
+        assert chunk.created_by_ingestion_job_id == chunk_job.id
+        assert chunk.embedding_created_by_ingestion_job_id == embed_job.id
+        # The embed job wrote the vector but must NOT have clobbered chunk-creation provenance.
+        assert chunk.created_by_ingestion_job_id != embed_job.id

@@ -57,7 +57,7 @@ DONE             — governance stages where no browser gate applies (Stage 0 on
 ✅ Stage 4.3.5 Client Edge Recovery                       COMPLETE
 ✅ Stage 4.4   Embeddings                                 FULLY VERIFIED  (gate: 4.4 embedding browser run)
 ✅ Stage 4.5   AI infrastructure + summary generation   FULLY VERIFIED  (gate: 4.5d browser gate + full E2E + real-provider smoke)
-Stage 4.6   Replacement / retry / supersession         NOT STARTED  ← next
+Stage 4.6   Replacement / retry / supersession         IN PROGRESS — 4.6a foundation BACKEND VERIFIED (gate → 4.6d); 4.6b–d pending  ← next: 4.6b
 Stage 4.7   Student-facing summaries                   NOT STARTED
 Stage 4.8   First hosted deploy (staging)              NOT STARTED  (new in v3)
 Stage 4.9   Frontend foundation + platform hygiene     NOT STARTED  (new in v3)
@@ -269,7 +269,15 @@ Lecturer uploads transcript → parsed/chunked/embedded → both summary jobs ru
 
 ## Stage 4.6 — Replacement / Retry / Supersession
 
-**Status:** NOT STARTED.
+**Status:** IN PROGRESS. **4.6a foundation BACKEND VERIFIED** (2026-06-11): lifecycleState migration +
+lineage (`is_active` removed), one-active + one-pending indexes, section-locked pending creation +
+`tryActivatePendingTranscript` atomic swap, `transcripts/domain/summary_eligibility` + read-only
+`ActiveTranscriptSummaryResolver`, per-row provenance stamps, env-gated pipeline fault harness; backend
+305 passed, migration 0010 round-trips on a fresh DB, frontend `tsc` clean. See
+[[specs/stage-04/4.6a-lifecycle-supersession-foundation]] / [[steps/stage-04/4.6a-lifecycle-supersession-foundation]],
+[[decisions/adr-029-transcript-replacement-atomic-swap]], [[decisions/adr-030-summary-eligibility-domain-resolver-split]].
+Remaining: 4.6b retry + fenced deletes · 4.6c reaper/reconciliation/MaintenanceRun · 4.6d lecturer UI +
+preview endpoint + browser gate (the UI proof obligation below).
 
 **Goal:** make transcript replacement and failed-processing recovery safe and observable.
 

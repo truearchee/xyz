@@ -79,6 +79,12 @@ class GeneratedLectureSummary(Base):
         ForeignKey("ai_request_logs.id"),
         nullable=False,
     )
+    # Provenance: the summary IngestionJob that produced this artifact (4.6 fencing/audit). Nullable,
+    # forward-only; ON DELETE SET NULL so deleting the job never deletes the summary.
+    created_by_ingestion_job_id: Mapped[UUID | None] = mapped_column(
+        PostgresUUID(as_uuid=True),
+        ForeignKey("ingestion_jobs.id", ondelete="SET NULL"),
+    )
     generated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

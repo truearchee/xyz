@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+from datetime import UTC, datetime
 from io import BytesIO
 from uuid import UUID, uuid4
 
@@ -125,7 +126,7 @@ async def _create_transcript(
     *,
     section_id: UUID,
     uploaded_by_user_id: UUID,
-    is_active: bool = True,
+    lifecycle_state: str = "active",
     status: str = "uploaded",
     storage_key: str | None = None,
 ) -> Transcript:
@@ -139,7 +140,10 @@ async def _create_transcript(
         checksum=hashlib.sha256(VTT_BYTES).hexdigest(),
         status=status,
         uploaded_by_user_id=uploaded_by_user_id,
-        is_active=is_active,
+        lifecycle_state=lifecycle_state,
+        superseded_at=(
+            datetime.now(UTC) if lifecycle_state == "superseded" else None
+        ),
     )
     session.add(transcript)
     await session.flush()
@@ -346,6 +350,7 @@ async def test_assigned_lecturer_uploads_vtt_and_txt_to_lecture_and_lab(
     assert lecture_response.json()["status"] == "queued"
     assert lecture_response.json()["mimeType"] == "text/vtt"
     assert lecture_response.json()["originalFileName"] == "lecture.vtt"
+    assert lecture_response.json()["lifecycleState"] == "active"
     assert not {"storageKey", "checksum", "isActive", "supersededAt"} & set(
         lecture_response.json()
     )
@@ -487,13 +492,15 @@ async def test_transcript_upload_multipart_shape_and_size_errors(
 
 
 @pytest.mark.anyio
-async def test_duplicate_active_transcript_rejects_before_storage(
+async def test_second_upload_creates_pending_replacement(
     auth_client: AsyncClient,
     db_session: AsyncSession,
     jwt_factory,
     mock_jwks_client,
     fake_storage: FakeStorageProvider,
 ) -> None:
+    # Stage 4.6a (ADR-46-A): a second upload to a section with an active transcript no longer 409s —
+    # it becomes a `pending` replacement processing alongside the still-active old one.
     lecturer = await _create_user(db_session, email="duplicate-lecturer@example.com", role="lecturer")
     module = await _create_module(db_session, owner_id=lecturer.id)
     await _create_membership(
@@ -518,19 +525,35 @@ async def test_duplicate_active_transcript_rejects_before_storage(
         files=_transcript_file(),
         headers=_headers(lecturer, jwt_factory),
     )
+
+    assert response.status_code == 201
+    assert fake_storage.put_calls  # the replacement object IS stored
+    new_id = UUID(response.json()["id"])
+    assert new_id != existing_id
+
+    db_session.expire_all()
     rows = (
         await db_session.execute(
             select(Transcript).where(Transcript.module_section_id == section_id)
         )
     ).scalars().all()
+    by_id = {row.id: row for row in rows}
+    assert by_id[existing_id].lifecycle_state == "active"
+    assert by_id[new_id].lifecycle_state == "pending"
+    assert by_id[new_id].replacement_of_transcript_id == existing_id
 
-    assert response.status_code == 409
-    assert fake_storage.put_calls == []
-    assert [row.id for row in rows] == [existing_id]
+
+async def _raise_active_conflict(_db, **_kwargs):
+    # Simulate a lost section-lock race: the one-active partial-unique index rejects the insert.
+    raise IntegrityError(
+        'INSERT INTO transcripts ... "uq_active_transcript_per_section"',
+        {},
+        Exception("duplicate key value violates unique constraint"),
+    )
 
 
 @pytest.mark.anyio
-async def test_lost_race_cleans_loser_object_and_keeps_one_active_row(
+async def test_integrity_conflict_cleans_loser_object_and_keeps_one_active_row(
     auth_client: AsyncClient,
     db_session: AsyncSession,
     jwt_factory,
@@ -538,6 +561,9 @@ async def test_lost_race_cleans_loser_object_and_keeps_one_active_row(
     fake_storage: FakeStorageProvider,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    # The section lock normally serializes uploads, but the integrity-conflict cleanup path remains a
+    # defensive backstop: on a unique-index violation the just-stored object must be deleted and 409
+    # returned, leaving the prior active row untouched.
     lecturer = await _create_user(db_session, email="race-lecturer@example.com", role="lecturer")
     module = await _create_module(db_session, owner_id=lecturer.id)
     await _create_membership(
@@ -557,10 +583,9 @@ async def test_lost_race_cleans_loser_object_and_keeps_one_active_row(
     existing_id = existing.id
     await db_session.commit()
 
-    async def skip_precheck(_db, *, section_id):
-        return None
-
-    monkeypatch.setattr(transcript_service, "_ensure_no_active_transcript", skip_precheck)
+    monkeypatch.setattr(
+        transcript_service, "_create_transcript_under_section_lock", _raise_active_conflict
+    )
 
     response = await auth_client.post(
         f"/modules/{module_id}/sections/{section_id}/transcript",
@@ -571,7 +596,7 @@ async def test_lost_race_cleans_loser_object_and_keeps_one_active_row(
         await db_session.execute(
             select(Transcript).where(
                 Transcript.module_section_id == section_id,
-                Transcript.is_active.is_(True),
+                Transcript.lifecycle_state == "active",
             )
         )
     ).scalars().all()
@@ -584,7 +609,7 @@ async def test_lost_race_cleans_loser_object_and_keeps_one_active_row(
 
 
 @pytest.mark.anyio
-async def test_lost_race_cleanup_failure_logs_and_keeps_one_active_row(
+async def test_integrity_conflict_cleanup_failure_logs_and_keeps_one_active_row(
     auth_client: AsyncClient,
     db_session: AsyncSession,
     jwt_factory,
@@ -612,10 +637,9 @@ async def test_lost_race_cleanup_failure_logs_and_keeps_one_active_row(
     existing_id = existing.id
     await db_session.commit()
 
-    async def skip_precheck(_db, *, section_id):
-        return None
-
-    monkeypatch.setattr(transcript_service, "_ensure_no_active_transcript", skip_precheck)
+    monkeypatch.setattr(
+        transcript_service, "_create_transcript_under_section_lock", _raise_active_conflict
+    )
     fake_storage.fail_delete = True
     caplog.set_level("WARNING", logger=transcript_service.__name__)
 
@@ -628,7 +652,7 @@ async def test_lost_race_cleanup_failure_logs_and_keeps_one_active_row(
         await db_session.execute(
             select(Transcript).where(
                 Transcript.module_section_id == section_id,
-                Transcript.is_active.is_(True),
+                Transcript.lifecycle_state == "active",
             )
         )
     ).scalars().all()
@@ -782,6 +806,7 @@ async def test_get_active_transcript_is_lecturer_only(
 
     assert active_response.status_code == 200
     assert active_response.json()["id"] == str(transcript.id)
+    assert active_response.json()["lifecycleState"] == "active"
     assert not {"storageKey", "checksum", "isActive", "supersededAt"} & set(
         active_response.json()
     )

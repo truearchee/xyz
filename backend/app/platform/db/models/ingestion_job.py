@@ -31,6 +31,10 @@ class IngestionJob(Base):
         ),
         Index("uq_ingestion_jobs_idempotency_key", "idempotency_key", unique=True),
         Index("ix_ingestion_jobs_transcript_job_type", "transcript_id", "job_type"),
+        # One-active "current job" pointers. Embed/summary only: the chunk pipeline legitimately keeps
+        # two chunk jobs (old + new processor version) queued at once and serializes them at runtime,
+        # so a one-active-chunk index would break that path. The parse/chunk fencing pointer is a 4.6b
+        # concern (designed with the retry that consumes it).
         Index(
             "ingestion_jobs_one_active_embed_per_transcript",
             "transcript_id",

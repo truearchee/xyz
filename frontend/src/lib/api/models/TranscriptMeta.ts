@@ -11,6 +11,7 @@ export type TranscriptMeta = {
     fileSize: number;
     language: (string | null);
     status: string;
+    lifecycleState: string;
     uploadedByUserId: (string | null);
     createdAt: string;
     updatedAt: string;
