@@ -1,8 +1,8 @@
 # Status
 
-_Last updated: 2026-06-10 - Stage 4.5a platform/llm foundation COMPLETE (deterministic provider; gate 2.A GREEN). Stage 4.5 IN PROGRESS, NOT FULLY VERIFIED (4.5b-d pending)._
+_Last updated: 2026-06-11 - Stage 4.5 (AI infrastructure + summary generation) ✅ FULLY VERIFIED. All three close-out gates green: full E2E suite, forced-fault browser coverage, and the real-provider smoke (PASS, rule-11 model-ID echo on both routes). Next → Stage 4.6._
 
-## Stage 4.5 — AI Infrastructure + Summary Generation (IN PROGRESS)
+## Stage 4.5 — AI Infrastructure + Summary Generation (✅ FULLY VERIFIED)
 Gate 2.A is GREEN: developer restored `knowledge/roadmap.md` v3 (sha256 `a677c580…`, recorded in
 [[steps/stage-04/4.5a]]); the master spec was filed with patches A/B and ADR refs remapped
 015..018 → adr-025..028.
@@ -23,12 +23,18 @@ Gate 2.A is GREEN: developer restored `knowledge/roadmap.md` v3 (sha256 `a677c58
   limiter TTL-lease reclaim proven; `ai_worker` live-processed brief+detailed jobs; OpenAPI client
   regenerated; `tsc --noEmit` exit 0. Report: [[steps/stage-04/4.5a]].
 
-**Remaining for Stage 4.5 FULLY VERIFIED:**
-- 4.5b — first REAL K2Think call (brief/Cerebras + brief→Nvidia fallback); requires gate 2.B (IFM API
-  key verified via curl — developer action). adr-025.
-- 4.5c — detailed generation (Think/Nvidia) + section validator. adr-027.
-- 4.5d — lecturer summary UI + status-badge rework + authz 404/403 matrix + browser gate +
-  real-provider smoke (gate 2.C).
+**4.5b–4.5d — DONE (Stage 4.5 FULLY VERIFIED 2026-06-11):**
+- 4.5b — first REAL K2Think call wired (brief); single-model deviation on `K2-Think-v2` (ADR-025);
+  full HTTP error classification; in-call rate-limit backoff recorded in-row; migration 0009.
+- 4.5c — detailed generation live; routing split exercised (brief=cerebras / detailed=use_nvidia);
+  ADR-027. ([[steps/stage-04/4.5b]], [[steps/stage-04/4.5c]])
+- 4.5d — lecturer summary UI (brief + detailed by section) + status-badge rework (backoff polling, no
+  60s timeout) + authz 404/403 matrix + browser gate. Close-out gates: **Gate 1** full active E2E
+  suite green as a set; **Gate 2** forced-fault coverage (invalid_output/invalid_input); **Gate 3**
+  real-provider smoke PASS (model-ID echo matched on both routes; brief 11.9s, detailed 39.8s, both
+  finish_reason stop). Real-call-only fixes: F-4.5-48 (extractor/truncation), F-4.5-49 (route-aware
+  timeout). ([[steps/stage-04/4.5d]], [[steps/stage-04/4.5d-real-provider-smoke]])
+- Open (non-blocking, accepted-with-trigger): F-4.5-27, F-4.5-28. Carried to 4.6: F-4.5-47.
 
 ## Current focus
 Stage 1 is FULLY VERIFIED. Session 1.1b satisfied the browser gate: the root page called `http://localhost:8000/health` directly through the generated client, CORS allowed `http://localhost:3000`, and the browser showed live backend state.
@@ -43,6 +49,7 @@ Stage 4.1  Transcript upload            FULLY VERIFIED  (browser gate: 4.3.5e)
 Stage 4.2  Transcript parsing           FULLY VERIFIED  (browser gate: 4.3.5e)
 Stage 4.3  Transcript chunk persistence FULLY VERIFIED  (browser gate: 4.3.5e)
 Stage 4.4  Embeddings                   FULLY VERIFIED  (browser gate: 4.4)
+Stage 4.5  AI infra + summaries          FULLY VERIFIED  (gate: 4.5d browser gate + full E2E + real-provider smoke)   ← Stage 4.6 next
 
 Client Edge Recovery Block (4.3.5): COMPLETE
   Stages 1, 2, 3, 4.1, 4.2, 4.3 all FULLY VERIFIED.

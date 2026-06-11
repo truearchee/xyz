@@ -86,6 +86,7 @@ class K2ThinkProvider:
         base_url: str | None = None,
         api_key: str | None = None,
         timeout_seconds: int | None = None,
+        detailed_timeout_seconds: int | None = None,
         json_mode: bool | None = None,
     ) -> None:
         self._base_url = (base_url or settings.LLM_PROVIDER_BASE_URL).rstrip("/")
@@ -94,12 +95,22 @@ class K2ThinkProvider:
             # Required iff LLM_PROVIDER='k2think' (§11). Failing here keeps a keyless real provider
             # from ever issuing a doomed authenticated call.
             raise SettingsError("LLM_API_KEY is required when LLM_PROVIDER='k2think'")
-        self._timeout = (
+        # Route-aware timeout (F-4.5-49): the detailed (Nvidia) reasoning generation needs materially
+        # more wall-clock than brief, so it gets its own (longer) timeout rather than inflating brief.
+        self._base_timeout = (
             timeout_seconds
             if timeout_seconds is not None
             else settings.LLM_PROVIDER_TIMEOUT_SECONDS
         )
+        self._detailed_timeout = (
+            detailed_timeout_seconds
+            if detailed_timeout_seconds is not None
+            else settings.LLM_DETAILED_TIMEOUT_SECONDS
+        )
         self._json_mode = settings.LLM_PROVIDER_JSON_MODE if json_mode is None else json_mode
+
+    def _timeout_for(self, backend: Backend) -> int:
+        return self._detailed_timeout if backend == "nvidia" else self._base_timeout
 
     @property
     def endpoint(self) -> str:
@@ -131,7 +142,7 @@ class K2ThinkProvider:
             "Content-Type": "application/json",
         }
         try:
-            with httpx.Client(timeout=self._timeout) as client:
+            with httpx.Client(timeout=self._timeout_for(backend)) as client:
                 response = client.post(
                     self.endpoint,
                     headers=headers,

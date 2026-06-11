@@ -97,6 +97,16 @@ def test_payload_includes_response_format_when_json_mode(monkeypatch):
     assert sent["response_format"] == {"type": "json_object"}
 
 
+def test_detailed_route_gets_a_longer_timeout_than_brief(monkeypatch):
+    # F-4.5-49: the detailed (Nvidia) reasoning call needs more wall-clock; the provider selects a
+    # per-route timeout (detailed > brief) so brief is not inflated and detailed does not time out.
+    monkeypatch.setenv("LLM_PROVIDER_TIMEOUT_SECONDS", "60")
+    monkeypatch.setenv("LLM_DETAILED_TIMEOUT_SECONDS", "240")
+    provider = K2ThinkProvider(api_key=API_KEY)
+    assert provider._timeout_for("cerebras") == 60
+    assert provider._timeout_for("nvidia") == 240
+
+
 def test_payload_requests_use_nvidia_only_for_the_nvidia_route(monkeypatch):
     # 4.5c routing split (Option A): the Nvidia route is requested via metadata.use_nvidia; the
     # Cerebras route is the provider default (no metadata).

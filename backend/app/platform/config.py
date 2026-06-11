@@ -189,8 +189,16 @@ class Settings:
 
     @property
     def LLM_PROVIDER_TIMEOUT_SECONDS(self) -> int:
-        """HTTP transport timeout for the real provider; a timeout maps to provider_transient (§8)."""
+        """HTTP transport timeout for the BRIEF/base call; a timeout maps to provider_transient (§8)."""
         return self._int("LLM_PROVIDER_TIMEOUT_SECONDS", "60", minimum=1)
+
+    @property
+    def LLM_DETAILED_TIMEOUT_SECONDS(self) -> int:
+        """HTTP transport timeout for the DETAILED (Nvidia route) call. K2-Think-v2 reasons inline then
+        emits the full structured DetailedSummary, which needs materially more wall-clock than brief —
+        60s timed it out repeatably (F-4.5-49). The provider selects this per-route (detailed > brief).
+        Kept >= the lease TTL so a legitimate long call is not reclaimed mid-flight."""
+        return self._int("LLM_DETAILED_TIMEOUT_SECONDS", "240", minimum=1)
 
     @property
     def LLM_CONTEXT_FALLBACK_ENABLED(self) -> bool:
@@ -279,8 +287,11 @@ class Settings:
 
     @property
     def LLM_LEASE_TTL_SECONDS(self) -> int:
-        """Concurrency-lease TTL; a crashed worker's slot is reclaimable after this."""
-        return self._int("LLM_LEASE_TTL_SECONDS", "120", minimum=1)
+        """Concurrency-lease TTL; a crashed worker's slot is reclaimable after this. Must stay >= the
+        longest request timeout (LLM_DETAILED_TIMEOUT_SECONDS) so a legitimate long detailed/reasoning
+        call is not reclaimed mid-flight in the gateway path (F-4.5-49). Raised 120→300 with the
+        detailed timeout; the smoke calls the provider directly and does not use the lease."""
+        return self._int("LLM_LEASE_TTL_SECONDS", "300", minimum=1)
 
     def _bool(self, name: str, *, default: bool) -> bool:
         raw_value = os.environ.get(name)

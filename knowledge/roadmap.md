@@ -56,8 +56,8 @@ DONE             — governance stages where no browser gate applies (Stage 0 on
 ✅ Stage 4.3   Transcript chunk persistence               FULLY VERIFIED  (gate: 4.3.5e)
 ✅ Stage 4.3.5 Client Edge Recovery                       COMPLETE
 ✅ Stage 4.4   Embeddings                                 FULLY VERIFIED  (gate: 4.4 embedding browser run)
-Stage 4.5   AI infrastructure + summary generation     IN PROGRESS  ← 4.5a landed (deterministic); NOT FULLY VERIFIED (4.5b-d pending)
-Stage 4.6   Replacement / retry / supersession         NOT STARTED
+✅ Stage 4.5   AI infrastructure + summary generation   FULLY VERIFIED  (gate: 4.5d browser gate + full E2E + real-provider smoke)
+Stage 4.6   Replacement / retry / supersession         NOT STARTED  ← next
 Stage 4.7   Student-facing summaries                   NOT STARTED
 Stage 4.8   First hosted deploy (staging)              NOT STARTED  (new in v3)
 Stage 4.9   Frontend foundation + platform hygiene     NOT STARTED  (new in v3)
@@ -171,10 +171,14 @@ The K2 reference's "token volume is not the constraint" holds for chat-sized req
 
 ## Stage 4.5 — AI Infrastructure + Summary Generation
 
-**Status:** IN PROGRESS. 4.5a (platform/llm foundation, deterministic provider) is complete and
-verified against CI ([[steps/stage-04/4.5a]]); gate 2.A is GREEN. The stage
-is **NOT FULLY VERIFIED** — 4.5b (first real K2Think call, gate 2.B), 4.5c, and 4.5d (browser gate +
-real-provider smoke, gate 2.C) remain. adr-026 + adr-028 recorded; adr-025/adr-027 land in 4.5b/4.5c.
+**Status:** ✅ FULLY VERIFIED (2026-06-11). 4.5a (platform/llm foundation) → 4.5b (first real K2Think
+call, gate 2.B) → 4.5c (detailed summary, routing split live) → 4.5d (lecturer UI + browser gate +
+full E2E + real-provider smoke). All three close-out gates green: full active E2E suite
+([[steps/stage-04/4.5d]]), forced-fault browser coverage, and the real-provider smoke
+([[steps/stage-04/4.5d-real-provider-smoke]] — PASS, model-ID echo matched on both routes, rule 11).
+adr-025/026/027/028 recorded. Open (accepted-with-trigger, non-blocking, rule 13): F-4.5-27
+(intended models inaccessible — switch-back = config/prompt edit), F-4.5-28 (backendUsed not
+response-verifiable). Carry-forward to Stage 4.6: F-4.5-47 (RQ scheduler / per-request fault injection).
 
 **Goal:** build the complete AI provenance and capacity infrastructure *before* the first K2Think call, then generate brief and detailed summaries.
 
@@ -579,9 +583,9 @@ OpenAI embeddings option              if retrieval quality demands (Slice 5 note
 ## Updated stage ordering
 
 ```
-✅ 0 → ✅ 1 → ✅ 2 → ✅ 3 → ✅ 4.1 → ✅ 4.2 → ✅ 4.3 → ✅ 4.3.5 → ✅ 4.4
-4.5  AI infrastructure + summaries        (4.5a → 4.5b → 4.5c → 4.5d)
-4.6  Replacement / retry / supersession / reconciliation
+✅ 0 → ✅ 1 → ✅ 2 → ✅ 3 → ✅ 4.1 → ✅ 4.2 → ✅ 4.3 → ✅ 4.3.5 → ✅ 4.4 → ✅ 4.5
+✅ 4.5  AI infrastructure + summaries     (4.5a → 4.5b → 4.5c → 4.5d)  FULLY VERIFIED
+4.6  Replacement / retry / supersession / reconciliation        ← next
 4.7  Student-facing summaries             (prereq: Stage 3 spec restored)
 4.8  First hosted deploy (staging)
 4.9  Frontend foundation + hygiene

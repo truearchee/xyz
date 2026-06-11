@@ -21,6 +21,7 @@ Usage (operator shell, with LLM_API_KEY exported):
 from __future__ import annotations
 
 import sys
+import time
 
 from app.platform.config import settings
 from app.platform.llm.errors import GatewayError, ProviderAuthError, ProviderConfigError
@@ -28,11 +29,6 @@ from app.platform.llm.models.summary import BriefSummary, DetailedSummary
 from app.platform.llm.provider import K2ThinkProvider
 from app.platform.llm.registry import PromptKey, get_prompt_registry
 from app.platform.llm.validation import OutputValidator
-
-# Temporary diagnostic (4.5d Gate 3 FAIL triage). Prints redacted raw-text lengths + the validator
-# threshold so an A/B/echo cause is unambiguous. Synthetic text is NOT secret; the key/headers are
-# never printed. Set False (or remove this block) once the gate passes.
-DIAGNOSTIC = True
 
 # A SHORT SYNTHETIC transcript — no real student / uploaded / production data is sent to IFM. Sized to
 # a realistic lecture (~320 words) so brief + detailed both produce valid-length, well-sectioned output.
@@ -65,13 +61,9 @@ DETAILED_KEY = PromptKey("detailed_summary", "v1")
 def _run_route(provider: K2ThinkProvider, validator: OutputValidator, *, key, backend, schema, section_type):
     registry = get_prompt_registry()
     rendered = registry.render(key, transcript=SYNTHETIC_TRANSCRIPT, section_type=section_type)
+    started = time.monotonic()
     raw = provider.send(rendered=rendered, backend=backend)  # ONE real authenticated POST
-    if DIAGNOSTIC:
-        from app.platform.llm.validation import BRIEF_MIN_CHARS  # threshold, for the FAIL triage
-
-        print(f"  [diag] raw content length: {len(raw.text)} chars (brief too_short floor = {BRIEF_MIN_CHARS})")
-        print(f"  [diag] raw head: {raw.text[:400]!r}")
-        print(f"  [diag] raw tail: {raw.text[-200:]!r}")
+    elapsed_s = time.monotonic() - started
     parsed = validator.validate(raw_text=raw.text, output_schema=schema, section_type=section_type)
     expected_model = rendered.model_id
     echo_ok = raw.model_id_echoed == expected_model
@@ -81,6 +73,7 @@ def _run_route(provider: K2ThinkProvider, validator: OutputValidator, *, key, ba
     print(f"  backend_used        : {backend}")
     print(f"  backend_route_source: requested")
     print(f"  finish_reason       : {raw.finish_reason!r}  ('length' = truncated by max_tokens; 'stop' = complete)")
+    print(f"  elapsed             : {elapsed_s:.1f}s  (timeout for this route = {provider._timeout_for(backend)}s)")
     print(f"  usage               : prompt={usage['prompt_tokens']} completion={usage['completion_tokens']} total={usage['total_tokens']}")
     print(f"  reasoning_level     : {raw.reasoning_level!r}  (present-but-null on K2-Think-v2 → logged null, never faked)")
     print(f"  status_code         : {raw.status_code}")
