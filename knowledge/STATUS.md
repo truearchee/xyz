@@ -1,8 +1,30 @@
 # Status
 
-_Last updated: 2026-06-11 - Stage 4.6a foundation BACKEND VERIFIED. lifecycleState migration (is_active removed) + supersession lineage + one-active/one-pending indexes; section-locked pending creation + tryActivatePendingTranscript atomic swap; domain summary_eligibility + read-only ActiveTranscriptSummaryResolver; per-row provenance (embed never clobbers chunk creator); env-gated pipeline fault harness; lifecycleState on TranscriptMeta. Backend 305 passed (+16), migration 0010 fresh-DB round-trip, frontend tsc exit 0. Stage 4.5 remains FULLY VERIFIED. Next → 4.6b (retry). Browser gate is 4.6d._
+_Last updated: 2026-06-11 - Stage 4.6b retry BACKEND VERIFIED. Lecturer retry endpoint (POST …/transcript/{transcriptId}/retry) resumes from the earliest failed step over the DAG; summaries decoupled to fork from parse (embed failure no longer blocks summaries); every destructive write fenced vs superseded/stale attempts; sanitized failureCategory + retryable on the status projection; migration 0011 (failure-category enum + parse one-active index). Backend 329 passed (+24), migration 0011 fresh-DB round-trip, frontend tsc exit 0. Stage 4.6a + 4.5 unchanged. Next → 4.6c (reaper + reconciliation + MaintenanceRun). Browser gate is 4.6d._
 
 ## Stage 4.6 — Replacement / Retry / Supersession (IN PROGRESS)
+
+**4.6b Retry — BACKEND VERIFIED (browser gate → 4.6d):**
+- Retry endpoint `POST /modules/{m}/sections/{s}/transcript/{transcriptId}/retry` (lecturer-only, assigned;
+  superseded → 409 `TRANSCRIPT_SUPERSEDED`; nothing failed → 409 `NO_RETRYABLE_FAILURE`). Targets the
+  active transcript OR a failed pending replacement. `resolve_retry_scope` resumes from the earliest failed
+  step over the DAG (parse cascade; else earliest of chunk/embed + independent failed summaries).
+- **DAG decouple:** summary jobs fork from **parse** (was embed) — an embed failure no longer blocks
+  summaries; a summary retry never touches chunks/embeddings. (Moved `insert_summary_jobs` call site; logic
+  unchanged — modifies 4.5a wiring, change-history appended.)
+- **Fencing** (`fencing.can_commit_step`): before any destructive write, re-read job + transcript FOR
+  UPDATE and abort if superseded or no-longer-running. Wired into parse/chunk/embed (incl. each batch)/
+  summary. Parse gained a one-active index; chunk keeps coexistence.
+- **Per-step delete-and-regenerate:** parse deletes summaries→chunks→segments (FK order); chunk deletes
+  chunks; embed rewrites in place; summary success-only — NO duplicate segments/chunks/summaries on retry.
+- **Failure taxonomy:** each step sets a sanitized `failure_category`; projection surfaces `failureCategory`
+  (one of 9) + `retryable`. Missing raw file → `storage_missing` (`StorageObjectNotFoundError`). Migration `0011`.
+- **Deviation:** endpoint is section-scoped-with-transcriptId (not the spec's literal `/transcripts/{id}/retry`);
+  `unsupported_file` has no parse producer (upload gates type). **Not built:** reaper/reconciliation/
+  MaintenanceRun (4.6c — produces `crashed`), lecturer UI + preview endpoint + browser gate (4.6d).
+- Verified: `pytest` **329 passed** (+24 in `test_transcript_retry.py`); migration `0011` round-trips fresh;
+  `tsc --noEmit` exit 0; client regen (+`retrySectionTranscriptProcessing`, +`failureCategory`/`retryable`).
+  Report: [[steps/stage-04/4.6b-retry-fencing-failure-taxonomy]].
 
 **4.6a Foundation — BACKEND VERIFIED (browser gate → 4.6d):**
 - `transcripts.lifecycle_state` (active|pending|superseded) replaces boolean `is_active` (migration `0010`);
@@ -74,7 +96,7 @@ Stage 4.2  Transcript parsing           FULLY VERIFIED  (browser gate: 4.3.5e)
 Stage 4.3  Transcript chunk persistence FULLY VERIFIED  (browser gate: 4.3.5e)
 Stage 4.4  Embeddings                   FULLY VERIFIED  (browser gate: 4.4)
 Stage 4.5  AI infra + summaries          FULLY VERIFIED  (gate: 4.5d browser gate + full E2E + real-provider smoke)
-Stage 4.6  Replacement / supersession    IN PROGRESS — 4.6a foundation BACKEND VERIFIED (gate → 4.6d); next 4.6b
+Stage 4.6  Replacement / retry / superse. IN PROGRESS — 4.6a + 4.6b BACKEND VERIFIED (gate → 4.6d); next 4.6c
 
 Client Edge Recovery Block (4.3.5): COMPLETE
   Stages 1, 2, 3, 4.1, 4.2, 4.3 all FULLY VERIFIED.
@@ -155,12 +177,12 @@ Required next:
 - Session 1.1b: Stage 1 browser gate satisfied. Docker-backed automated checks passed (`3 passed` config tests, `4 passed` health/CORS tests, full backend `136 passed`, frontend type-check exited 0), browser polling showed `ok -> unreachable -> ok`, and human DevTools Network confirmed direct `http://localhost:8000/health` with `Access-Control-Allow-Origin: http://localhost:3000` - completed 2026-06-03 13:58.
 
 ## In progress
-- Stage 4.6 — 4.6a foundation done; **4.6b (retry / resume-from-failed-step + fenced deletes) is next.**
+- Stage 4.6 — 4.6a foundation + 4.6b retry done; **4.6c (step-aware stuck-row reaper + loss-safe storage reconciliation + MaintenanceRun + heartbeat) is next.**
 
 ## Next up
-- 4.6b retry over the DAG (delete-and-regenerate, fencing, failure taxonomy, retry endpoint; parse/chunk current-job pointer).
-- 4.6c reaper + reconciliation + MaintenanceRun. 4.6d lecturer UI + active-summary preview endpoint + browser gate.
-- Apply migration `0010` to the dev/hosted DB with the next backend deploy (dev `xyz_lms` is intentionally still at `0009`).
+- 4.6c reaper (produces the `crashed` failure category) + reconciliation + MaintenanceRun + heartbeat; startup + admin trigger.
+- 4.6d lecturer replace/retry UI (off `retryable`/`failureCategory`) + active-summary preview endpoint + browser gate.
+- Apply migrations `0010` + `0011` to the dev/hosted DB with the next backend deploy (dev `xyz_lms` is intentionally still at `0009`).
 
 ## Known issues / blockers
 - Hosted Postgres extension bootstrap is not covered by the local Docker init script; handle `vector` and `pgcrypto` explicitly before first hosted deployment.
@@ -174,5 +196,5 @@ Required next:
 - Chunk text is not exposed through any user-facing DTO yet; future 4.7 surfaces must preserve the no-raw-key and role-aware visibility boundaries.
 - Transcript parse recovery is intentionally deferred to Session 4.6c (reaper): enqueue failure can leave `uploaded`, and mid-parse crash can leave `parsing` plus a `running` job. (4.6a built the state model + provenance the reaper keys off; the reaper itself is 4.6c.)
 - Transcript chunk recovery is intentionally deferred to Session 4.6c (reaper): parse-to-chunk enqueue failure can leave a queued chunk job, and mid-chunk crash can leave a `running` chunk job.
-- **Dev/hosted DB drift (4.6a):** migration `0010` (drops `is_active` for `lifecycle_state`) is applied to `xyz_lms_test` only. Dev DB `xyz_lms` is intentionally left at `0009` so the running pre-4.6a containers (which query `is_active`) keep working. Apply `0010` with the next backend rebuild+deploy — not before.
+- **Dev/hosted DB drift (4.6a/4.6b):** migrations `0010` (drops `is_active` for `lifecycle_state`) + `0011` (widened failure-category enum + parse one-active index) are applied to `xyz_lms_test` only. Dev DB `xyz_lms` is intentionally left at `0009` so the running pre-4.6 containers keep working. Apply `0010` + `0011` together with the next backend rebuild+deploy — not before.
 - Superseded pending transcripts leave orphaned storage objects until the 4.6c reconciliation job reclaims them (by design).

@@ -330,6 +330,19 @@ async def _claim_summary_job(
             if job is None or job.status == "completed":
                 return None
 
+            transcript = (
+                await session.execute(
+                    select(Transcript)
+                    .where(Transcript.id == job.transcript_id)
+                    .with_for_update()
+                )
+            ).scalar_one_or_none()
+            if transcript is None:
+                raise SummaryGenerationError("transcript not found")
+            if transcript.lifecycle_state == "superseded":
+                # Fenced before any mutation: do not summarize a superseded transcript (ADR-46-B §3.2).
+                return None
+
             now = _now()
             job.status = "running"
             job.attempts += 1
@@ -338,14 +351,6 @@ async def _claim_summary_job(
             job.updated_at = now
             job.error_message = None
             job.failure_category = None
-
-            transcript = (
-                await session.execute(
-                    select(Transcript).where(Transcript.id == job.transcript_id)
-                )
-            ).scalar_one_or_none()
-            if transcript is None:
-                raise SummaryGenerationError("transcript not found")
 
             section = (
                 await session.execute(
@@ -401,6 +406,17 @@ async def _persist_summary_success(
                 )
             ).scalar_one_or_none()
             if job is None or job.status != "running":
+                return
+
+            transcript = (
+                await session.execute(
+                    select(Transcript)
+                    .where(Transcript.id == context.transcript_id)
+                    .with_for_update()
+                )
+            ).scalar_one_or_none()
+            if transcript is None or transcript.lifecycle_state == "superseded":
+                # Fenced: do not write a summary artifact for a superseded transcript (ADR-46-B §3.2).
                 return
 
             log = await session.get(AIRequestLog, result["ai_request_log_id"])

@@ -7,6 +7,7 @@ from urllib.parse import urlsplit, urlunsplit
 
 from app.platform.config import settings
 from app.platform.storage.base import (
+    StorageObjectNotFoundError,
     StorageProviderError,
     StorageUnavailableError,
     StoredObject,
@@ -65,10 +66,14 @@ class SupabaseStorageProvider:
         except (TimeoutError, ConnectionError) as exc:
             raise StorageUnavailableError("Storage provider unavailable") from exc
         except Exception as exc:
+            if _looks_like_not_found(str(exc)):
+                raise StorageObjectNotFoundError(f"Storage object not found: {key}") from exc
             raise StorageProviderError("Storage provider read failed") from exc
 
         error = _storage_response_error(response)
         if error is not None:
+            if _looks_like_not_found(error):
+                raise StorageObjectNotFoundError(f"Storage object not found: {key}")
             raise StorageProviderError(f"Storage provider read failed: {error}")
         return _storage_response_bytes(response)
 
@@ -135,6 +140,17 @@ async def get_storage_provider() -> SupabaseStorageProvider:
             bucket_name=settings.SUPABASE_STORAGE_BUCKET,
         )
     return _storage_provider
+
+
+def _looks_like_not_found(text: str) -> bool:
+    lowered = text.lower()
+    return (
+        "not found" in lowered
+        or "not_found" in lowered
+        or "no such key" in lowered
+        or "nosuchkey" in lowered
+        or "404" in lowered
+    )
 
 
 def _storage_response_error(response: Any) -> str | None:

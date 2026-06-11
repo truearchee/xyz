@@ -59,6 +59,10 @@ class TranscriptProcessingStatus(CamelModel):
     chunk_count: int
     embedded_chunk_count: int
     safe_failure_message: str | None
+    # Sanitized failure category (Stage 4.6b) + whether a lecturer retry can help. The lecturer UI
+    # (4.6d) shows the retry control off `retryable`; the full internal reason is never exposed.
+    failure_category: str | None
+    retryable: bool
     updated_at: datetime
 
 

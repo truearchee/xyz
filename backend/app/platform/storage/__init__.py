@@ -1,4 +1,5 @@
 from app.platform.storage.base import (
+    StorageObjectNotFoundError,
     StorageProvider,
     StorageProviderError,
     StorageUnavailableError,
@@ -7,6 +8,7 @@ from app.platform.storage.base import (
 from app.platform.storage.supabase import SupabaseStorageProvider, get_storage_provider
 
 __all__ = [
+    "StorageObjectNotFoundError",
     "StorageProvider",
     "StorageProviderError",
     "StorageUnavailableError",

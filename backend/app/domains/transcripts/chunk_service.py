@@ -121,15 +121,6 @@ async def _persist_chunks(
         if completed_job is not None:
             return None
 
-        now = _now()
-        job.status = "running"
-        job.attempts += 1
-        job.started_at = now
-        job.completed_at = None
-        job.updated_at = now
-        job.error_message = None
-        job.result_metadata = None
-
         transcript = (
             await session.execute(
                 select(Transcript)
@@ -139,6 +130,18 @@ async def _persist_chunks(
         ).scalar_one_or_none()
         if transcript is None:
             raise TranscriptChunkError("transcript not found")
+        if transcript.lifecycle_state == "superseded":
+            # Fenced before any mutation: do not chunk a superseded transcript (ADR-46-B §3.2).
+            return None
+
+        now = _now()
+        job.status = "running"
+        job.attempts += 1
+        job.started_at = now
+        job.completed_at = None
+        job.updated_at = now
+        job.error_message = None
+        job.result_metadata = None
 
         parse_job = await _completed_parse_job(session, transcript_id=transcript.id)
         if parse_job is None:
@@ -229,12 +232,16 @@ async def _persist_failure(
                 .with_for_update()
             )
         ).scalar_one_or_none()
+        if transcript is not None and transcript.lifecycle_state == "superseded":
+            # Fenced: do not fail a superseded transcript's pipeline (ADR-46-B §3.2).
+            return
         now = _now()
         if transcript is not None:
             transcript.status = "failed"
             transcript.updated_at = now
         job.status = "failed"
         job.error_message = sanitized
+        job.failure_category = "chunk_failed"
         job.updated_at = now
         logger.warning(
             "Chunk job failed",

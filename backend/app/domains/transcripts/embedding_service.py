@@ -22,6 +22,7 @@ from app.domains.transcripts.embedding_encoder import (
     EmbeddingEncoder,
     SentenceTransformersEmbeddingEncoder,
 )
+from app.domains.transcripts.fencing import can_commit_step
 from app.platform.config import settings
 from app.platform.db.models import IngestionJob, Transcript, TranscriptChunk
 from app.platform.db.session import async_session
@@ -164,7 +165,7 @@ async def embed_transcript_async(
                 vectors=vectors,
                 model_revision=revision,
             )
-        summary_jobs = await _persist_success(
+        await _persist_success(
             factory,
             ingestion_job_id=ingestion_job_id,
             transcript_id=transcript_id,
@@ -175,24 +176,9 @@ async def embed_transcript_async(
         if raise_on_failure:
             raise TranscriptEmbeddingError(_sanitize_error(exc)) from None
         return
-    # Stage 4.5: after the embed transaction commits, enqueue the summary jobs onto the ai queue.
-    if summary_jobs:
-        _enqueue_summary_jobs(summary_jobs)
-
-
-def _enqueue_summary_jobs(summary_jobs: list[tuple[str, UUID]]) -> None:
-    from app.workers.queues import enqueue_summary_job
-
-    for job_type, job_id in summary_jobs:
-        try:
-            enqueue_summary_job(job_type, job_id)
-        except Exception:
-            # Spec §8 resilience gap: leave the row 'queued' for the Stage 4.6 sweeper to
-            # re-enqueue. Do NOT mark it failed and do NOT add an ad-hoc fix here.
-            logger.warning(
-                "Failed to enqueue summary job; left queued for the Stage 4.6 sweeper",
-                extra={"ingestion_job_id": str(job_id), "job_type": job_type},
-            )
+    # 4.6b (ADR-46-B): summaries fork from PARSE, not embed — embed no longer creates/enqueues them,
+    # so an embed failure cannot block summaries. Embed still gates overall_state=='summarized' via the
+    # projection (embed + brief + detailed all completed).
 
 
 async def mark_embed_enqueue_failed(
@@ -249,15 +235,6 @@ async def _claim_embed_job(
             if job is None:
                 return None
 
-            now = _now()
-            job.status = "running"
-            job.attempts += 1
-            job.started_at = now
-            job.completed_at = None
-            job.updated_at = now
-            job.error_message = None
-            job.result_metadata = None
-
             transcript = (
                 await session.execute(
                     select(Transcript)
@@ -267,6 +244,18 @@ async def _claim_embed_job(
             ).scalar_one_or_none()
             if transcript is None:
                 raise TranscriptEmbeddingError("transcript not found")
+            if transcript.lifecycle_state == "superseded":
+                # Fenced before any mutation: do not embed a superseded transcript (ADR-46-B §3.2).
+                return None
+
+            now = _now()
+            job.status = "running"
+            job.attempts += 1
+            job.started_at = now
+            job.completed_at = None
+            job.updated_at = now
+            job.error_message = None
+            job.result_metadata = None
             transcript.status = "embedding"
             transcript.updated_at = now
 
@@ -331,6 +320,27 @@ async def _persist_embedding_batch(
     stale_by_id = {chunk.id: chunk for chunk in stale_chunks}
     async with factory() as session:
         async with session.begin():
+            # Fence each batch write: re-read the job + transcript FOR UPDATE and abort if the job is
+            # no longer running or the transcript was superseded, so a stale embed never writes
+            # vectors onto rows belonging to a newer attempt (ADR-46-B §3.2).
+            job = (
+                await session.execute(
+                    select(IngestionJob)
+                    .where(
+                        IngestionJob.id == ingestion_job_id,
+                        IngestionJob.job_type == EMBED_JOB_TYPE,
+                    )
+                    .with_for_update()
+                )
+            ).scalar_one_or_none()
+            transcript = (
+                await session.execute(
+                    select(Transcript).where(Transcript.id == job.transcript_id).with_for_update()
+                )
+            ).scalar_one_or_none() if job is not None else None
+            if job is None or not can_commit_step(job=job, transcript=transcript):
+                return
+
             chunks = (
                 await session.execute(
                     select(TranscriptChunk)
@@ -391,9 +401,6 @@ async def _persist_success(
                     .with_for_update()
                 )
             ).scalar_one_or_none()
-            if job is None or job.status != "running":
-                return []
-
             transcript = (
                 await session.execute(
                     select(Transcript)
@@ -401,8 +408,9 @@ async def _persist_success(
                     .with_for_update()
                 )
             ).scalar_one_or_none()
-            if transcript is None:
-                raise TranscriptEmbeddingError("transcript not found")
+            if job is None or not can_commit_step(job=job, transcript=transcript):
+                # Fenced: stale attempt or superseded transcript — write nothing (ADR-46-B §3.2).
+                return
 
             chunk_count = await _chunk_count(session, transcript_id=transcript_id)
             embedded_chunk_count = await _current_embedding_count(
@@ -422,6 +430,7 @@ async def _persist_success(
             job.completed_at = now
             job.updated_at = now
             job.error_message = None
+            job.failure_category = None
             job.result_metadata = {
                 "chunk_count": chunk_count,
                 "embedded_chunk_count": embedded_chunk_count,
@@ -430,13 +439,7 @@ async def _persist_success(
                 "embedding_dimension": EMBEDDING_DIMENSION,
                 "embedding_normalization": EMBEDDING_NORMALIZATION,
             }
-
-            # Stage 4.5 (spec §8): queue both summary jobs in the SAME transaction that marks
-            # embedding complete. The caller enqueues them onto the ai queue after commit.
-            from app.domains.transcripts.summary_service import insert_summary_jobs
-
-            summary_jobs = await insert_summary_jobs(session, transcript=transcript)
-        return summary_jobs
+            # 4.6b: summaries are NOT created here anymore — they fork from parse (ADR-46-B).
 
 
 async def _persist_failure(
@@ -468,12 +471,16 @@ async def _persist_failure(
                     .with_for_update()
                 )
             ).scalar_one_or_none()
+            if transcript is not None and transcript.lifecycle_state == "superseded":
+                # Fenced: do not fail a superseded transcript's pipeline (ADR-46-B §3.2).
+                return
             now = _now()
             if transcript is not None:
                 transcript.status = "failed"
                 transcript.updated_at = now
             job.status = "failed"
             job.error_message = sanitized
+            job.failure_category = "embedding_failed"
             job.updated_at = now
             logger.warning(
                 "Embed job failed",

@@ -57,6 +57,17 @@ class TranscriptProcessingStepRead:
     completed_at: datetime | None
 
 
+# Internal IngestionJob.failure_category values that a lecturer retry cannot fix (re-running just
+# fails the same way) — the fix is replace-the-transcript / contact-support, so retryable is False.
+_NON_RETRYABLE_CATEGORIES = {
+    "provider_config_error",
+    "provider_auth_error",
+    "invalid_input",
+    "storage_missing",
+    "unsupported_file",
+}
+
+
 @dataclass(frozen=True)
 class TranscriptProcessingStatusRead:
     active_transcript_id: UUID
@@ -69,6 +80,10 @@ class TranscriptProcessingStatusRead:
     chunk_count: int
     embedded_chunk_count: int
     safe_failure_message: str | None
+    # Sanitized failure category surfaced to the lecturer (one of the 9 Stage 4.6 categories) +
+    # whether a lecturer retry can help. The full internal reason stays on IngestionJob.error_message.
+    failure_category: str | None
+    retryable: bool
     updated_at: datetime
 
 
@@ -97,6 +112,8 @@ async def get_transcript_processing_status_read(
     steps = _steps(transcript=transcript, jobs=jobs)
     failed_step = _failed_step(transcript=transcript, jobs=jobs)
     safe_failure_message = _safe_failure_message(failed_step=failed_step, jobs=jobs)
+    failure_category = _sanitized_failure_category(failed_step=failed_step, jobs=jobs)
+    retryable = _retryable(failed_step=failed_step, jobs=jobs)
     overall_state = _overall_state(
         transcript=transcript,
         steps=steps,
@@ -115,6 +132,8 @@ async def get_transcript_processing_status_read(
         chunk_count=chunk_count,
         embedded_chunk_count=embedded_chunk_count,
         safe_failure_message=safe_failure_message,
+        failure_category=failure_category,
+        retryable=retryable,
         updated_at=_updated_at(transcript=transcript, jobs=jobs),
     )
 
@@ -200,6 +219,55 @@ def _safe_failure_message(
             category or "failed", SAFE_FAILURE_MESSAGES[failed_step]
         )
     return SAFE_FAILURE_MESSAGES.get(failed_step, "Transcript processing failed.")
+
+
+def _sanitized_failure_category(
+    *,
+    failed_step: str | None,
+    jobs: dict[str, IngestionJob],
+) -> str | None:
+    """Map (failed_step + the job's internal failure_category) to one of the 9 Stage 4.6 sanitized
+    categories. The lecturer sees only this; the full internal reason stays on error_message."""
+    if failed_step is None or failed_step == "upload":
+        return None
+    job = jobs.get(failed_step)
+    internal = job.failure_category if job is not None else None
+    if internal == "crashed":
+        return "crashed"
+    if failed_step == "parse":
+        if internal in ("storage_missing", "unsupported_file"):
+            return internal
+        return "parse_failed"
+    if failed_step == "chunk":
+        return "chunk_failed"
+    if failed_step == "embed":
+        return "embedding_failed"
+    if failed_step in SUMMARY_STEP_KEYS:
+        if internal == "invalid_output":
+            return "invalid_output"
+        if internal in (
+            "provider_transient",
+            "rate_limited",
+            "provider_config_error",
+            "provider_auth_error",
+        ):
+            return "provider_error"
+        return "summary_generation_failed"  # 'failed' / 'invalid_input' / None
+    return None
+
+
+def _retryable(
+    *,
+    failed_step: str | None,
+    jobs: dict[str, IngestionJob],
+) -> bool:
+    """Whether a lecturer retry can target a failed step and plausibly help."""
+    if failed_step is None or failed_step == "upload":
+        return False
+    job = jobs.get(failed_step)
+    if job is None or job.status != "failed":
+        return False
+    return job.failure_category not in _NON_RETRYABLE_CATEGORIES
 
 
 def _overall_state(

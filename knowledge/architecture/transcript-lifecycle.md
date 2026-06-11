@@ -62,9 +62,28 @@ is called once at the top of each of the five step bodies; `seed_failed_ingestio
 a failed record. Distinct from the LLM-transport `LLM_FAULT_INJECTION` (summary jobs only).
 `docker-compose.fault.yml` wires the env onto all three workers.
 
+## Retry, fencing & the DAG (4.6b — adr-031)
+- **Retry endpoint:** `POST /modules/{m}/sections/{s}/transcript/{transcriptId}/retry` (lecturer-only,
+  assigned; superseded → 409; nothing failed → 409). `app/domains/transcripts/retry.py`:
+  `resolve_retry_scope` (earliest failed step over the DAG: parse failed → just parse; else earliest of
+  chunk/embed + independent failed summaries), `apply_retry` (reset failed jobs → queued, enqueue after
+  commit). Service: `service.retry_transcript_processing`.
+- **DAG decouple:** summary jobs fork from **parse** (`parse._persist_success` calls `insert_summary_jobs`
+  + enqueues brief/detailed), NOT embed — an embed failure no longer blocks summaries; a summary retry
+  never touches chunks/embeddings.
+- **Per-step delete-and-regenerate:** parse deletes summaries → chunks → segments (FK order) then
+  regenerates; chunk deletes chunks; embed rewrites embedding fields in place; summary is success-only.
+- **Fencing** (`app/domains/transcripts/fencing.py` `can_commit_step`): before any destructive write,
+  the worker re-reads job + transcript FOR UPDATE and aborts if `superseded` or the job is no longer
+  running. Wired into parse/chunk/embed (incl. each embed batch)/summary persist paths. Parse gained a
+  one-active index (its current-job pointer); chunk keeps the completed-key dedup (coexistence).
+- **Failure taxonomy:** each step sets a sanitized `IngestionJob.failure_category`; the projection
+  surfaces `failureCategory` (one of 9) + `retryable`. Missing raw file → `storage_missing`
+  (`StorageObjectNotFoundError`).
+
 ## Boundaries / deferred
-- one-active "current job" partial-unique indexes exist for **embed/summary only**. parse/chunk are
-  deferred to 4.6b (a one-active-chunk index breaks the tested two-chunk-jobs-coexist replacement
-  path); the fencing pointer is designed with the retry that consumes it.
-- Retry + fenced deletes → 4.6b. Reaper/reconciliation/`MaintenanceRun`/heartbeat → 4.6c. UI + preview
-  endpoint + browser gate → 4.6d. Student surface → 4.7.
+- one-active "current job" indexes: **embed/summary (0007/0008) + parse (0011)**. **chunk** stays
+  WITHOUT one (a one-active-chunk index breaks the tested two-chunk-jobs-coexist replacement path).
+- `crashed` failure category is mapped in the projection but only **produced** by the 4.6c reaper.
+- Reaper/reconciliation/`MaintenanceRun`/heartbeat → 4.6c. Lecturer UI + preview endpoint + browser gate
+  → 4.6d. Student surface → 4.7. Targeted `?jobType=` retry + RQ scheduler (F-4.5-47) → not 4.6.

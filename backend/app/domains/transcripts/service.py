@@ -28,6 +28,11 @@ from app.platform.query.section_context import (
     AuthorizedSectionContext,
     get_authorized_lecturer_section_context,
 )
+from app.domains.transcripts.retry import (
+    apply_retry,
+    enqueue_retry_jobs,
+    resolve_retry_scope,
+)
 from app.platform.query.summary_read import get_latest_transcript_summaries
 from app.platform.query.transcript_status import get_transcript_processing_status_read
 from app.platform.storage.base import (
@@ -46,6 +51,8 @@ SECTION_NOT_FOUND = "SECTION_NOT_FOUND"
 SECTION_TYPE_UNSUPPORTED = "SECTION_TYPE_UNSUPPORTED"
 TRANSCRIPT_ALREADY_EXISTS = "TRANSCRIPT_ALREADY_EXISTS"
 TRANSCRIPT_NOT_FOUND = "TRANSCRIPT_NOT_FOUND"
+TRANSCRIPT_SUPERSEDED = "TRANSCRIPT_SUPERSEDED"
+NO_RETRYABLE_FAILURE = "NO_RETRYABLE_FAILURE"
 
 
 def _http_error(status_code: int, detail: str) -> HTTPException:
@@ -339,6 +346,56 @@ async def get_transcript_processing_status(
         section_id=section_id,
     )
     projection = await get_transcript_processing_status_read(db, transcript=transcript)
+    return TranscriptProcessingStatus.model_validate(projection)
+
+
+async def retry_transcript_processing(
+    db: AsyncSession,
+    *,
+    current_user: CurrentUserContext,
+    module_id: UUID,
+    section_id: UUID,
+    transcript_id: UUID,
+) -> TranscriptProcessingStatus:
+    """Lecturer-triggered retry of failed processing (ADR-46-B). Resumes from the earliest failed step
+    over the DAG; the worker does the fenced delete-and-regenerate when the re-enqueued job runs.
+
+    Authz is the existing assigned-lecturer section authz (403 non-lecturer / 404 unassigned). The
+    transcriptId targets the active transcript OR a failed pending replacement; a superseded transcript
+    is rejected (409). 409 when nothing is in a retryable failed state.
+    """
+    section_context = await _get_lecturer_section_context(
+        db,
+        current_user=current_user,
+        module_id=module_id,
+        section_id=section_id,
+    )
+
+    transcript = (
+        await db.execute(select(Transcript).where(Transcript.id == transcript_id))
+    ).scalar_one_or_none()
+    if transcript is None or transcript.module_section_id != section_context.section_id:
+        raise _coded_error(status.HTTP_404_NOT_FOUND, TRANSCRIPT_NOT_FOUND)
+    if transcript.lifecycle_state == "superseded":
+        raise _coded_error(status.HTTP_409_CONFLICT, TRANSCRIPT_SUPERSEDED)
+
+    projection = await get_transcript_processing_status_read(db, transcript=transcript)
+    scope = resolve_retry_scope(projection)
+    if not scope:
+        raise _coded_error(status.HTTP_409_CONFLICT, NO_RETRYABLE_FAILURE)
+
+    to_enqueue = await apply_retry(db, transcript=transcript, scope=scope)
+    await db.commit()
+    if not to_enqueue:
+        # The targeted jobs were no longer failed (lost a race to a concurrent retry).
+        raise _coded_error(status.HTTP_409_CONFLICT, NO_RETRYABLE_FAILURE)
+
+    enqueue_retry_jobs(transcript_id, to_enqueue)
+
+    refreshed = (
+        await db.execute(select(Transcript).where(Transcript.id == transcript_id))
+    ).scalar_one()
+    projection = await get_transcript_processing_status_read(db, transcript=refreshed)
     return TranscriptProcessingStatus.model_validate(projection)
 
 

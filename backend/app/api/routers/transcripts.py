@@ -15,6 +15,7 @@ from app.domains.transcripts.service import (
     get_transcript_processing_status,
     get_transcript_summaries,
     prepare_transcript_upload,
+    retry_transcript_processing,
     upload_transcript,
 )
 from app.platform.auth.context import CurrentUserContext
@@ -136,6 +137,27 @@ async def get_section_transcript_processing_status(
         current_user=current_user,
         module_id=module_id,
         section_id=section_id,
+    )
+
+
+@router.post(
+    "/modules/{module_id}/sections/{section_id}/transcript/{transcript_id}/retry",
+    response_model=TranscriptProcessingStatus,
+    operation_id="retrySectionTranscriptProcessing",
+)
+async def retry_section_transcript_processing(
+    module_id: UUID,
+    section_id: UUID,
+    transcript_id: UUID,
+    db: DbSession,
+    current_user: CurrentUser,
+) -> TranscriptProcessingStatus:
+    return await retry_transcript_processing(
+        db,
+        current_user=current_user,
+        module_id=module_id,
+        section_id=section_id,
+        transcript_id=transcript_id,
     )
 
 

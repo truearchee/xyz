@@ -57,7 +57,7 @@ DONE             — governance stages where no browser gate applies (Stage 0 on
 ✅ Stage 4.3.5 Client Edge Recovery                       COMPLETE
 ✅ Stage 4.4   Embeddings                                 FULLY VERIFIED  (gate: 4.4 embedding browser run)
 ✅ Stage 4.5   AI infrastructure + summary generation   FULLY VERIFIED  (gate: 4.5d browser gate + full E2E + real-provider smoke)
-Stage 4.6   Replacement / retry / supersession         IN PROGRESS — 4.6a foundation BACKEND VERIFIED (gate → 4.6d); 4.6b–d pending  ← next: 4.6b
+Stage 4.6   Replacement / retry / supersession         IN PROGRESS — 4.6a + 4.6b BACKEND VERIFIED (gate → 4.6d); 4.6c–d pending  ← next: 4.6c
 Stage 4.7   Student-facing summaries                   NOT STARTED
 Stage 4.8   First hosted deploy (staging)              NOT STARTED  (new in v3)
 Stage 4.9   Frontend foundation + platform hygiene     NOT STARTED  (new in v3)
@@ -276,8 +276,15 @@ lineage (`is_active` removed), one-active + one-pending indexes, section-locked 
 305 passed, migration 0010 round-trips on a fresh DB, frontend `tsc` clean. See
 [[specs/stage-04/4.6a-lifecycle-supersession-foundation]] / [[steps/stage-04/4.6a-lifecycle-supersession-foundation]],
 [[decisions/adr-029-transcript-replacement-atomic-swap]], [[decisions/adr-030-summary-eligibility-domain-resolver-split]].
-Remaining: 4.6b retry + fenced deletes · 4.6c reaper/reconciliation/MaintenanceRun · 4.6d lecturer UI +
-preview endpoint + browser gate (the UI proof obligation below).
+**4.6b retry BACKEND VERIFIED** (2026-06-11): lecturer retry endpoint
+(`POST …/transcript/{transcriptId}/retry`) resumes from the earliest failed step over the DAG; summaries
+decoupled to fork from parse (embed failure no longer blocks summaries); every destructive write fenced
+against superseded/stale attempts; sanitized `failureCategory` + `retryable` on the status projection;
+migration 0011 (failure-category enum + parse one-active index). Backend 329 passed, fresh-DB round-trip,
+tsc clean. See [[specs/stage-04/4.6b-retry-fencing-failure-taxonomy]] /
+[[steps/stage-04/4.6b-retry-fencing-failure-taxonomy]], [[decisions/adr-031-retry-resume-from-failed-step-fenced]].
+Remaining: 4.6c reaper/reconciliation/MaintenanceRun (produces the `crashed` category) · 4.6d lecturer UI
++ preview endpoint + browser gate (the UI proof obligation below).
 
 **Goal:** make transcript replacement and failed-processing recovery safe and observable.
 

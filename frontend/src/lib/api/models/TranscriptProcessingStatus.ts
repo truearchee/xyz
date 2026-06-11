@@ -14,5 +14,7 @@ export type TranscriptProcessingStatus = {
     chunkCount: number;
     embeddedChunkCount: number;
     safeFailureMessage: (string | null);
+    failureCategory: (string | null);
+    retryable: boolean;
     updatedAt: string;
 };

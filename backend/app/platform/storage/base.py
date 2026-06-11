@@ -12,6 +12,17 @@ class StorageUnavailableError(StorageProviderError):
     pass
 
 
+class StorageObjectNotFoundError(StorageProviderError):
+    """The requested object key does not exist in the bucket (404).
+
+    Distinct from ``StorageUnavailableError`` (transient) — a missing raw transcript file is a
+    terminal ``storage_missing`` condition (Stage 4.6 failure taxonomy), the same condition
+    reconciliation reports; it must not be buried under a generic parse failure.
+    """
+
+    pass
+
+
 @dataclass(frozen=True)
 class StoredObject:
     key: str

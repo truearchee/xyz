@@ -26,15 +26,28 @@ class IngestionJob(Base):
         CheckConstraint(
             "failure_category IS NULL OR failure_category IN "
             "('provider_transient', 'rate_limited', 'invalid_output', 'invalid_input', "
-            "'provider_config_error', 'provider_auth_error', 'failed')",
+            "'provider_config_error', 'provider_auth_error', 'failed', "
+            "'parse_failed', 'chunk_failed', 'embedding_failed', "
+            "'storage_missing', 'unsupported_file', 'crashed')",
             name="ck_ingestion_jobs_failure_category",
         ),
         Index("uq_ingestion_jobs_idempotency_key", "idempotency_key", unique=True),
         Index("ix_ingestion_jobs_transcript_job_type", "transcript_id", "job_type"),
-        # One-active "current job" pointers. Embed/summary only: the chunk pipeline legitimately keeps
+        # One-active "current job" pointers (the fencing pointer 4.6b retry keys off). Parse has
+        # exactly one job per transcript (idempotency parse:{id}:{checksum}, checksum immutable), so a
+        # one-active-parse index is safe (added in 0011). CHUNK stays WITHOUT one: it legitimately keeps
         # two chunk jobs (old + new processor version) queued at once and serializes them at runtime,
-        # so a one-active-chunk index would break that path. The parse/chunk fencing pointer is a 4.6b
-        # concern (designed with the retry that consumes it).
+        # so a one-active-chunk index would break that path — chunk fencing uses the completed-key
+        # check + attempt + the superseded guard instead.
+        Index(
+            "ingestion_jobs_one_active_parse_per_transcript",
+            "transcript_id",
+            "job_type",
+            unique=True,
+            postgresql_where=text(
+                "job_type = 'parse' AND status IN ('queued', 'running')"
+            ),
+        ),
         Index(
             "ingestion_jobs_one_active_embed_per_transcript",
             "transcript_id",

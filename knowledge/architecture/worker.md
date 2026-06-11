@@ -55,16 +55,20 @@ Worker isolation extends by queue: `python -m app.workers.worker <queue>` select
 snapshot at startup; the `ai` worker validates the PromptRegistry (a malformed/missing prompt is a
 boot failure) and the provider config.
 
-Successful embedding completion (Stage 4.5) creates two queued summary `ingestion_jobs`
-(`generate_brief_summary`, `generate_detailed_summary`) in the same transaction that marks embedding
-complete, then enqueues them onto the `ai` queue after commit. The summary handlers call
-`LLMGateway.complete` (see [[architecture/llm]]); on success they store a `GeneratedLectureSummary`
-with full provenance, on failure they set `IngestionJob.failure_category` and write no artifact — the
-transcript itself is not failed, so the status projection can show per-step failure.
+Successful **parse** completion creates two queued summary `ingestion_jobs` (`generate_brief_summary`,
+`generate_detailed_summary`) and enqueues them onto the `ai` queue after commit, alongside the chunk
+job — summaries fork from parse (the normalized text comes from segments), NOT from embed, so an embed
+failure cannot block summaries (4.6b / adr-031; was after-embed in 4.5, moved in 4.6b). The summary
+handlers call `LLMGateway.complete` (see [[architecture/llm]]); on success they store a
+`GeneratedLectureSummary` with full provenance, on failure they set `IngestionJob.failure_category` and
+write no artifact — the transcript itself is not failed, so the status projection shows per-step failure.
+Every step's destructive write is **fenced** (aborts if the transcript was superseded or the job is no
+longer the running attempt). See [[architecture/transcript-lifecycle]] for retry + fencing.
 
-## Intentional gaps
-Session 4.3 does not implement retry, backoff, stale-running recovery, replacement, or supersession. A
-process death after parse commit can leave a queued chunk job that has not been enqueued to RQ; Session
-4.6 owns recovery. Stage 4.5 adds the same shape for summaries: if commit succeeds but the `ai`-queue
-enqueue fails, the summary rows stay `queued` for the Session 4.6 sweeper (the rows are inserted as
-`queued` precisely so that sweeper can act — no ad-hoc fix in 4.5).
+## Recovery status (updated 4.6b)
+Replacement/supersession landed in **4.6a**; lecturer-driven **retry** (resume-from-earliest-failed-step
+over the DAG, fenced) landed in **4.6b** (adr-031). Still open: a process death after a commit can leave
+a job `queued` that was never enqueued to RQ, or `running` after a crash — the **step-aware stuck-row
+reaper + storage reconciliation (4.6c)** owns that (it produces the `crashed` failure category). The
+after-commit enqueue-failure path still leaves rows `queued` precisely so that reaper can re-drive them.
+RQ-scheduler-driven retry stays disabled (F-4.5-47); the retry endpoint is the product retry surface.

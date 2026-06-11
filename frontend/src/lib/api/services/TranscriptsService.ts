@@ -100,6 +100,37 @@ export class TranscriptsService {
         });
     }
     /**
+     * Retry Section Transcript Processing
+     * @param moduleId
+     * @param sectionId
+     * @param transcriptId
+     * @param authorization
+     * @returns TranscriptProcessingStatus Successful Response
+     * @throws ApiError
+     */
+    public static retrySectionTranscriptProcessing(
+        moduleId: string,
+        sectionId: string,
+        transcriptId: string,
+        authorization?: (string | null),
+    ): CancelablePromise<TranscriptProcessingStatus> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/modules/{module_id}/sections/{section_id}/transcript/{transcript_id}/retry',
+            path: {
+                'module_id': moduleId,
+                'section_id': sectionId,
+                'transcript_id': transcriptId,
+            },
+            headers: {
+                'Authorization': authorization,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * Get Section Transcript Summaries
      * @param moduleId
      * @param sectionId
