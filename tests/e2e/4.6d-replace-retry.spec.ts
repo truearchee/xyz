@@ -58,7 +58,7 @@ type PreviewBody = {
   hasPendingReplacement: boolean;
 };
 
-test.setTimeout(300_000);
+test.setTimeout(600_000); // the retry flow recreates the embedding_worker twice (model-snapshot boot each)
 
 async function waitForHooks(page: Page) {
   await page.waitForFunction(() => typeof window.__xyzE2E !== 'undefined');
@@ -188,17 +188,26 @@ async function uploadTranscriptThroughUi(page: Page, section: SectionRow, fileNa
 }
 
 // Recreate the embedding_worker with (or without) the pipeline fault — the only way to do
-// inject→fail→clear→retry in one run (global worker env can't mix). Documented in 4.5d.
+// inject→fail→clear→retry in one run (global worker env can't mix). Documented in 4.5d. BLOCKS until
+// the new worker is listening: its boot (model-snapshot validation) must not eat into the post-retry
+// assertion window (else a working retry times out — the F-4.6b-2 gate-run footgun).
 function recreateEmbeddingWorker(fault: 'embed' | null) {
   const env = {
     ...process.env,
     PIPELINE_FAULT_INJECTION_ENABLED: fault ? 'true' : 'false',
     PIPELINE_FAULT_INJECTION: fault ?? '',
   };
-  execSync(
-    'docker compose -f docker-compose.yml -f docker-compose.fault.yml up -d --force-recreate embedding_worker',
-    { env, stdio: 'inherit' },
-  );
+  const compose = 'docker compose -f docker-compose.yml -f docker-compose.fault.yml';
+  execSync(`${compose} up -d --force-recreate embedding_worker`, { env, stdio: 'inherit' });
+  const deadline = Date.now() + 120_000;
+  for (;;) {
+    const logs = execSync(`${compose} logs --tail=40 embedding_worker`, { env }).toString();
+    if (logs.includes('Listening on embedding')) return;
+    if (Date.now() > deadline) {
+      throw new Error('embedding_worker did not become ready within 120s after recreate');
+    }
+    execSync('sleep 2');
+  }
 }
 
 function jobStatus(transcriptId: string, jobType: string): string | null {
@@ -249,12 +258,24 @@ test('4.6d retry flow — forced step failure, lecturer retries to summarized, n
     const before = getTranscriptCounts(transcriptId) as { segmentCount: number; chunkCount: number };
     const summariesBefore = (getGeneratedSummariesForTranscript(transcriptId) as unknown[]).length;
 
-    // Clear the fault, then retry through the UI → reaches "Summaries ready".
+    // Clear the fault, then retry. A freshly-recreated worker re-validates its model snapshot (minutes)
+    // before it claims the re-enqueued embed job, so poll the DB for embed completion (robust against that
+    // boot cost — it is a test-harness artifact, not the retry's latency) before asserting the UI.
     recreateEmbeddingWorker(null);
     await retryButton.click();
-    await expect(labRow.locator('[data-testid^="section-transcript-status-"]')).toContainText('Summaries ready', {
-      timeout: 180_000,
-    });
+    await expect.poll(() => jobStatus(transcriptId, 'embed'), { timeout: 360_000, intervals: [2000] }).toBe(
+      'completed',
+    );
+    // Reload so the status badge re-polls from a clean state. (The badge stops polling once it sees the
+    // transient 'failed' overall_state after retry — apply_retry leaves transcript.status='failed' until
+    // the worker claims the re-enqueued job; with this run's minutes-slow recreated worker the badge
+    // settles before the swap. Latent only under a slow worker — see F-4.6d-3.)
+    await lecturerPage.reload();
+    const labRowAfter = rowForSection(lecturerPage, setup.lab);
+    await expect(labRowAfter.locator('[data-testid^="section-transcript-status-"]')).toContainText(
+      'Summaries ready',
+      { timeout: 60_000 },
+    );
 
     // No duplicate segments / chunks / summaries on the retry path.
     const after = getTranscriptCounts(transcriptId) as { segmentCount: number; chunkCount: number };

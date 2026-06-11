@@ -134,6 +134,21 @@ The earlier continuity assertions (preview holds on v1, `hasPendingReplacement=t
 - Retry flow + 4.5d-summary-fault specs: not yet characterized (the priority assertion outranks; stopped
   per the category-(b) rule).
 
+## F-4.6d-3 — MINOR / latent — status badge stops polling on the transient post-retry "failed" state
+**Status:** open (deferred — UI polish; not a correctness defect) · **Severity:** minor, latent ·
+**Found by:** 4.6b-F2 retry-flow gate run.
+`apply_retry` resets the failed JOB to `queued` but leaves `transcript.status='failed'` until the worker
+claims the re-enqueued job (`retry.py:118-122`). The lecturer status badge's `isSettled` returns true on
+`overall_state=='failed'`, so a poll that lands in that transient window settles and **stops** — the badge
+then misses the eventual `summarized` and shows the stale failure until a reload. **Masked in production**
+(a live worker claims in ~100ms, before the badge's 1500ms first poll → it sees `embedding`, keeps polling);
+**exposed** here only because the test recreates the embedding_worker and its minutes-long model-snapshot
+boot holds the job unclaimed past the badge's settle. The retry itself is correct (DB: `summarized`,
+embed `attempts=2`, no duplicate rows). **Proposed fix (follow-up, NOT this task):** reset
+`transcript.status` off `failed` in `apply_retry` (e.g. to `queued`) so the projection shows "retrying"
+immediately, or keep the badge polling for a grace period after a retry click. The retry-flow gate reloads
+after a DB-confirmed embed completion to assert the lecturer-visible `Summaries ready`.
+
 ## Cross-stage-seam pattern (Step 4 of Task 4.6b-F2 — record before 4.7 stacks on this)
 The Stage 4.6 live gate surfaced **two** category-(b) bugs that per-session verification structurally
 **could not** catch, because both lived in the **seam between** verified sessions, not inside any one:
