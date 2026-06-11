@@ -69,12 +69,63 @@ Leaving `REAPER_RUN_AT_STARTUP=false` would make the gate *appear* green by disa
 rejected. The stack is restored to canonical reaper-on (the real, broken state). The gate is **BLOCKED**
 pending the product fix; Stage 4.6 stays **BACKEND VERIFIED + UI BUILT, gate pending**.
 
-## Gate progress recorded (4.6d-G1)
+## F-4.6b-2 — BLOCKER — a fully-processed pending replacement never activates (4.6a activation trigger ↔ 4.6b DAG decouple)
+
+**Status:** open · **Severity:** blocker (replacement continuity — the priority gate) · **Found by:**
+4.6c-F1 gate re-run (after F-4.6c-1 fixed) · **Resolution:** deferred to a named follow-up task —
+out of scope for 4.6c-F1 (startup-recovery fix only). NOT fixed here.
+
+### Symptom
+4.6d replacement-continuity gate: the replacement (v2) processes fully — **all 5 jobs completed,
+`status='completed'`** — but stays `lifecycle_state='pending'` forever; the atomic swap never fires, so
+the preview never flips to v2 and v1 is never `superseded`. The gate times out (240s) waiting for the swap.
+
+### Root cause (confirmed by completion timestamps)
+Activation is triggered **only** by `summary_service.py:292` (`_try_activate_after_summary`, after each
+summary completes). Its readiness gate (`activation.py:76`) requires `overall_state == "summarized"`,
+which requires **embed completed** too. **4.6b decoupled the DAG** (summaries fork from parse, parallel to
+embed). Observed order for v2: parse 48.479 → chunk 48.545 → brief 48.734 → detailed 48.956 → **embed
+51.622** (embed finished 2.7s AFTER both summaries). So:
+1. brief completes → activate → embed not done → NOT_READY.
+2. detailed completes → activate → embed still not done → NOT_READY.
+3. embed completes LAST → **no activation trigger exists for embed completion** → pending never activates.
+Pre-4.6b, summaries ran *after* embed, so embed was always done when summaries completed — the implicit
+ordering masked the missing embed-side trigger. The 4.6b decouple removed that ordering.
+
+### Proposed fix (follow-up task)
+Trigger activation after **embed** success too, not only after summaries — i.e.
+`embedding_service._persist_success` (and the embed worker terminal path) calls the same idempotent
+`try_activate_pending_transcript`. Activation is already a no-op until `summarized`, so re-attempting it
+after any step that can be "last" is safe. (Alternative — relax the readiness gate to not require embed —
+is riskier: it would let the active transcript serve before embeddings exist; keep "fully processed before
+swap" and just add the embed trigger.) Add a regression test: a pending whose **embed completes after its
+summaries** still activates. Re-run the continuity gate.
+
+### Not a test artifact
+The continuity test replaces with the same file (same checksum); readiness is correctly scoped by
+`transcript_id` (`summary_eligibility.py:84`), so same-checksum is NOT the cause — the timing/trigger gap is.
+The earlier continuity assertions (preview holds on v1, `hasPendingReplacement=true`, eligible) all
+**passed**; only the swap is blocked.
+
+## Gate progress recorded (4.6d-G1 + 4.6c-F1)
 - Step 1 ✓ branch `stage/4.6-replacement-retry`, 4.6d committed (43dd2cf); main untouched.
 - Step 2 ✓ migration pre-flight on a pg_dump copy of dev data: backfill correct (7→active, 0 NULL), all
   three partial-unique indexes built clean, `maintenance_runs` + provenance present. No data finding.
 - Step 3 cutover ✓ images rebuilt; `xyz_lms` migrated 0009→0012 (backfill verified on the live DB);
   e2e stack up (hooks + local Supabase); seed OK; **4.3.5b PASSED, 4.3.5c PASSED**.
-- Step 3 BLOCKED by F-4.6c-1 — transcript-processing specs (4.3.5e/4.4/4.5d) + the 4.6d gates cannot run
-  to green until the reaper-startup defect is fixed. **4.6d replacement-continuity (priority assertion)
-  NOT YET PROVEN** — it requires the workers to process a replacement, which the defect blocks.
+- Step 3 first attempt BLOCKED by F-4.6c-1 — transcript-processing specs (4.3.5e/4.4/4.5d) all failed.
+
+### 4.6c-F1 re-run (after the F-4.6c-1 fix)
+- F-4.6c-1 **FIXED + proven**: rebuilt the worker image reaper-on; startup reaper ran clean
+  (`scanned:3 recovered:3`, 0 loop errors); the **no-fault success batch is GREEN — 5/5**
+  (4.3.5b, 4.3.5c, **4.3.5e edited 409→201**, 4.4, **4.5d-summary-browser**). That answers rule-14's open
+  question: **the 4.5 gate still passes post-4.6b-decouple.** Regression test
+  `tests/test_worker_startup_recovery.py` added (fails on unfixed code with the exact different-loop error).
+- Category-(a) e2e fix on the branch: the continuity spec's `getByRole('button', {name:'Replace transcript'})`
+  was ambiguous (the file-input label substring-matches) → made it `exact: true`.
+- **NEW BLOCKER F-4.6b-2** — 4.6d **replacement continuity (the priority assertion) FAILS**: the
+  replacement processes fully but never activates (see F-4.6b-2 above). The preview-holds-on-v1 half is
+  proven; the atomic-swap half is blocked by the activation-trigger gap. **Gate still BLOCKED** — Stage 4.6
+  stays *BACKEND VERIFIED + UI BUILT, gate pending*.
+- Retry flow + 4.5d-summary-fault specs: not yet characterized (the priority assertion outranks; stopped
+  per the category-(b) rule).

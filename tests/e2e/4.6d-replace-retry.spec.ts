@@ -308,7 +308,9 @@ test('4.6d replacement continuity — preview stays on the active until the atom
     // Replace with v2 (inline confirm).
     const replaceInput = labRow.locator('[data-testid^="section-transcript-replace-upload-"]');
     await replaceInput.setInputFiles(resolve(TRANSCRIPT_DIR, 'lab-notes.txt'));
-    await labRow.getByRole('button', { name: 'Replace transcript' }).click();
+    // exact name so we hit the button, not the file input whose label ("Replace transcript for …")
+    // substring-matches a non-exact role-name query.
+    await labRow.getByRole('button', { name: 'Replace transcript', exact: true }).click();
     await labRow.getByRole('button', { name: 'Confirm replace' }).click();
 
     // v2 processes as pending; v1 stays active.
