@@ -151,9 +151,21 @@ The earlier continuity assertions (preview holds on v1, `hasPendingReplacement=t
 - Backend `pytest` **353 passed** (the F-4.6c-1 + 3 F-4.6b-2 regression tests included).
 - **Gate is GREEN.** Pending only the human's go: Stage 4.6 → FULLY VERIFIED + branch → main merge.
 
-## F-4.6d-3 — C-LITE CONTRACT VIOLATION (4.4) in the post-retry status path — deferred, owner: 4.6d-P1
-**Status:** open · deferred · **Owner:** **Task 4.6d-P1** (standalone polish — see below for why not 4.7) ·
-**Severity:** minor / latent (data correct; lecturer-only; production-masked) · **Found by:** 4.6b-F2 retry-flow gate run.
+## F-4.6d-3 — C-LITE CONTRACT VIOLATION (4.4) in the post-retry status path — FIXED (Task 4.6d-P1)
+**Status:** **FIXED** (Task 4.6d-P1, 2026-06-11) · **Severity:** minor / latent (data correct;
+lecturer-only; production-masked) · **Found by:** 4.6b-F2 retry-flow gate run.
+
+**Resolution.** The fix was in the **doneness authority, not the badge** (confirming the re-frame):
+`_overall_state` and `_failed_step` (`transcript_status.py`) no longer short-circuit on
+`transcript.status` — both derive purely from the **step/job states**. Every genuine failure also fails a
+step, so the failed case is unchanged; a step re-enqueued by retry is queued/running, so `overallState`
+now reports in-progress (not the stale `failed`) and the badge keeps polling to `summarized` on its own.
+Breadcrumb hygiene (resetting `transcript.status` in `apply_retry`) was deliberately NOT relied on — the
+authority no longer trusts the breadcrumb at all. 3 regression tests pin both directions
+(`test_transcript_retry.py`: retried→in-progress [fails on pre-fix code], genuine-failure→failed,
+happy→summarized). Live re-proof: full active Playwright suite **9/9** green with the change in, the **4.6d
+retry flow now passes reload-free** (badge settles on its own corrected poll). The e2e `reload()` workaround
+was **removed** (cross-link discharged both ends). Backend `pytest` 356.
 
 **Re-framed (Task 4.6-CLOSE Gate 2).** Original wording blamed the badge's poll timing; the precise root
 cause is a **C-lite read-contract violation (4.4: `overallState`/the projection is the SOLE doneness
