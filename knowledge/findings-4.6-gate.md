@@ -131,8 +131,25 @@ The earlier continuity assertions (preview holds on v1, `hasPendingReplacement=t
   replacement processes fully but never activates (see F-4.6b-2 above). The preview-holds-on-v1 half is
   proven; the atomic-swap half is blocked by the activation-trigger gap. **Gate still BLOCKED** — Stage 4.6
   stays *BACKEND VERIFIED + UI BUILT, gate pending*.
-- Retry flow + 4.5d-summary-fault specs: not yet characterized (the priority assertion outranks; stopped
-  per the category-(b) rule).
+- Retry flow + 4.5d-summary-fault specs: not yet characterized at this point (the priority assertion
+  outranks; stopped per the category-(b) rule).
+
+### 4.6b-F2 re-run (after the F-4.6b-2 fix) — FULL ACTIVE SUITE GREEN
+- F-4.6b-2 **FIXED + proven**: every leaf attempts idempotent activation; rebuilt the worker image
+  (resolved an e2e-vs-base build-cache divergence where `-f docker-compose.e2e.yml --env-file .env.e2e`
+  resolved to a stale cached image; plain `docker compose build backend` baked the fix). 3 activation
+  regression tests added (embed-after-summaries fails on unfixed code).
+- **Replacement continuity GREEN (13.5s)** — the priority assertion: preview holds on v1 while pending →
+  flips to v2 on the atomic swap → v1 `superseded` with lineage → exactly one active. The swap fires.
+- **Full active Playwright suite GREEN (9/9):** 4.3.5b, 4.3.5c, 4.3.5e (409→201), 4.4, **4.5d-summary-browser
+  (4.5 post-decouple)**, 4.5d-summary-fault **invalid_output** + **invalid_input** (ai_worker LLM-fault runs),
+  4.6d **replacement continuity**, 4.6d **retry flow** (forced embed failure → retry → summarized, no
+  duplicate segments/chunks/summaries; embed failure did not block summaries).
+- Category-(a) e2e robustness fixes on the branch: `recreateEmbeddingWorker` blocks on readiness; the
+  retry assertion polls the DB for embed completion then reloads (worker-recreation model-boot is minutes
+  on a cold image — a harness artifact, not retry latency). Minor latent finding F-4.6d-3 recorded.
+- Backend `pytest` **353 passed** (the F-4.6c-1 + 3 F-4.6b-2 regression tests included).
+- **Gate is GREEN.** Pending only the human's go: Stage 4.6 → FULLY VERIFIED + branch → main merge.
 
 ## F-4.6d-3 — MINOR / latent — status badge stops polling on the transient post-retry "failed" state
 **Status:** open (deferred — UI polish; not a correctness defect) · **Severity:** minor, latent ·
