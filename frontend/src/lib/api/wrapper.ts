@@ -15,6 +15,7 @@ import {
   TranscriptsService,
   type TranscriptMeta,
   type TranscriptProcessingStatus,
+  type TranscriptSummariesRead,
   type UpdateSectionNotesRequest,
 } from './index';
 import { consumeForcedBearerToken } from '../e2e/e2eAuthOverride';
@@ -220,6 +221,13 @@ export const api = {
           moduleId,
           sectionId,
         ),
+      ),
+    getSummaries: (
+      moduleId: string,
+      sectionId: string,
+    ): Promise<TranscriptSummariesRead> =>
+      withAuthRecovery(() =>
+        TranscriptsService.getSectionTranscriptSummaries(moduleId, sectionId),
       ),
   },
 };

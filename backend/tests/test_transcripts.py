@@ -20,9 +20,11 @@ from app.domains.transcripts.validators import (
     spool_and_validate_transcript,
 )
 from app.platform.db.models import (
+    AIRequestLog,
     AppUser,
     CourseMembership,
     CourseModule,
+    GeneratedLectureSummary,
     IngestionJob,
     ModuleSection,
     Transcript,
@@ -1129,3 +1131,170 @@ async def test_partial_unique_index_rejects_second_active_transcript(
         await db_session.flush()
 
     assert "uq_active_transcript_per_section" in str(exc_info.value)
+
+
+# --- Stage 4.5d: lecturer summary read endpoint -------------------------------------------------
+
+_BRIEF_CONTENT = {"text": "A concise paragraph summarizing the lecture for a student."}
+_DETAILED_CONTENT = {
+    "overview": "An overview of the session.",
+    "keyConcepts": ["First concept", "Second concept"],
+    "importantDefinitions": [{"term": "Term", "definition": "Its definition."}],
+    "mainExplanations": ["A full-sentence explanation."],
+    "examples": ["A worked example."],
+    "examRelevantPoints": ["A point likely to be assessed."],
+    "labNotes": ["A procedure note."],
+}
+
+
+async def _create_generated_summary(
+    session: AsyncSession,
+    *,
+    transcript: Transcript,
+    section_id: UUID,
+    summary_type: str,
+    backend_used: str,
+    content_json: dict,
+) -> GeneratedLectureSummary:
+    feature = "summary_brief" if summary_type == "brief" else "summary_detailed"
+    job = await _create_ingestion_job(
+        session,
+        transcript_id=transcript.id,
+        job_type=("generate_brief_summary" if summary_type == "brief" else "generate_detailed_summary"),
+        status="completed",
+    )
+    log = AIRequestLog(
+        ingestion_job_id=job.id,
+        feature=feature,
+        model_id="MBZUAI-IFM/K2-Think-v2",
+        prompt_version="v1",
+        prompt_content_hash="h" * 64,
+        rendered_prompt_hash="r" * 64,
+        input_content_hash="i" * 64,
+        backend_used=backend_used,
+        backend_route_source="requested",
+        status="succeeded",
+    )
+    session.add(log)
+    await session.flush()
+    summary = GeneratedLectureSummary(
+        transcript_id=transcript.id,
+        module_section_id=section_id,
+        summary_type=summary_type,
+        content_json=content_json,
+        content_schema_version=("brief-v1" if summary_type == "brief" else "detailed-v1"),
+        model_id="MBZUAI-IFM/K2-Think-v2",
+        prompt_version="v1",
+        prompt_content_hash="h" * 64,
+        backend_used=backend_used,
+        source_transcript_checksum=transcript.checksum,
+        input_hash="i" * 64,
+        ai_request_log_id=log.id,
+    )
+    session.add(summary)
+    await session.flush()
+    return summary
+
+
+@pytest.mark.anyio
+async def test_transcript_summaries_returns_brief_and_detailed_for_assigned_lecturer(
+    auth_client: AsyncClient,
+    db_session: AsyncSession,
+    jwt_factory,
+    mock_jwks_client,
+) -> None:
+    lecturer = await _create_user(db_session, email="sum-lecturer@example.com", role="lecturer")
+    module = await _create_module(db_session, owner_id=lecturer.id)
+    await _create_membership(db_session, user_id=lecturer.id, module_id=module.id, role="lecturer")
+    section = await _create_section(db_session, module_id=module.id)
+    transcript = await _create_transcript(
+        db_session, section_id=section.id, uploaded_by_user_id=lecturer.id, status="completed"
+    )
+    await _create_generated_summary(
+        db_session, transcript=transcript, section_id=section.id,
+        summary_type="brief", backend_used="cerebras", content_json=_BRIEF_CONTENT,
+    )
+    await _create_generated_summary(
+        db_session, transcript=transcript, section_id=section.id,
+        summary_type="detailed_study", backend_used="nvidia", content_json=_DETAILED_CONTENT,
+    )
+
+    response = await auth_client.get(
+        f"/modules/{module.id}/sections/{section.id}/transcript-summaries",
+        headers=_headers(lecturer, jwt_factory),
+    )
+    body = response.json()
+
+    assert response.status_code == 200
+    assert body["brief"]["text"] == _BRIEF_CONTENT["text"]
+    assert body["detailed"]["overview"] == _DETAILED_CONTENT["overview"]
+    assert body["detailed"]["keyConcepts"] == _DETAILED_CONTENT["keyConcepts"]
+    assert body["detailed"]["importantDefinitions"][0]["term"] == "Term"
+    assert body["detailed"]["labNotes"] == ["A procedure note."]
+    # The combined shape carries the projection status (the doneness authority).
+    assert body["status"]["activeTranscriptId"] == str(transcript.id)
+    assert body["status"]["steps"]["summaryBrief"]["status"] == "completed"
+    assert body["status"]["steps"]["summaryDetailed"]["status"] == "completed"
+    # No raw provenance / storage internals leak in the read surface.
+    assert "storageKey" not in body and "inputHash" not in body
+
+
+@pytest.mark.anyio
+async def test_transcript_summaries_are_null_before_generation(
+    auth_client: AsyncClient,
+    db_session: AsyncSession,
+    jwt_factory,
+    mock_jwks_client,
+) -> None:
+    lecturer = await _create_user(db_session, email="sum-pending@example.com", role="lecturer")
+    module = await _create_module(db_session, owner_id=lecturer.id)
+    await _create_membership(db_session, user_id=lecturer.id, module_id=module.id, role="lecturer")
+    section = await _create_section(db_session, module_id=module.id)
+    transcript = await _create_transcript(
+        db_session, section_id=section.id, uploaded_by_user_id=lecturer.id, status="completed"
+    )
+
+    response = await auth_client.get(
+        f"/modules/{module.id}/sections/{section.id}/transcript-summaries",
+        headers=_headers(lecturer, jwt_factory),
+    )
+    body = response.json()
+
+    assert response.status_code == 200
+    assert body["brief"] is None
+    assert body["detailed"] is None
+    assert body["status"]["activeTranscriptId"] == str(transcript.id)
+
+
+@pytest.mark.anyio
+async def test_transcript_summaries_authz_matrix(
+    auth_client: AsyncClient,
+    db_session: AsyncSession,
+    jwt_factory,
+    mock_jwks_client,
+) -> None:
+    lecturer = await _create_user(db_session, email="sum-assigned@example.com", role="lecturer")
+    unassigned = await _create_user(db_session, email="sum-unassigned@example.com", role="lecturer")
+    student = await _create_user(db_session, email="sum-student@example.com", role="student")
+    admin = await _create_user(db_session, email="sum-admin@example.com", role="admin")
+    module = await _create_module(db_session, owner_id=lecturer.id)
+    await _create_membership(db_session, user_id=lecturer.id, module_id=module.id, role="lecturer")
+    await _create_membership(db_session, user_id=student.id, module_id=module.id, role="student")
+    # unassigned lecturer + admin have NO membership in this module
+    section = await _create_section(db_session, module_id=module.id)
+    await _create_transcript(
+        db_session, section_id=section.id, uploaded_by_user_id=lecturer.id, status="completed"
+    )
+
+    url = f"/modules/{module.id}/sections/{section.id}/transcript-summaries"
+    cases = [
+        (lecturer, 200, None),
+        (unassigned, 404, "SECTION_NOT_FOUND"),   # cross-tenant → existence-leak prevention
+        (student, 403, "TRANSCRIPT_FORBIDDEN"),    # role-forbidden, session kept
+        (admin, 403, "TRANSCRIPT_FORBIDDEN"),
+    ]
+    for user, expected_status, expected_detail in cases:
+        response = await auth_client.get(url, headers=_headers(user, jwt_factory))
+        assert response.status_code == expected_status, (user.email, response.text)
+        if expected_detail is not None:
+            assert response.json()["detail"] == expected_detail

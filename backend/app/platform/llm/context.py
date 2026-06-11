@@ -61,8 +61,16 @@ class ContextBuilder:
         if reserved <= context_window(declared):
             return FitResult(declared, model_for_backend(declared), est, reserved, fell_back=False)
 
-        # Brief (Cerebras) falls back to Nvidia only on over-context (adr-025).
-        if declared == "cerebras" and reserved <= context_window("nvidia"):
+        # Brief (Cerebras) falls back to Nvidia only on over-context (adr-025) — and only when the
+        # fallback is enabled. Under the single-model 4.5b deviation the two routes are NOT proven to
+        # share a context window, so the fallback is disabled: an over-limit prompt becomes
+        # invalid_input rather than silently rerouting onto an unverified window (§12, F-4.5-37). The
+        # mechanism stays here, dormant, and reactivates when the dual-model split returns.
+        if (
+            settings.LLM_CONTEXT_FALLBACK_ENABLED
+            and declared == "cerebras"
+            and reserved <= context_window("nvidia")
+        ):
             return FitResult("nvidia", model_for_backend("nvidia"), est, reserved, fell_back=True)
 
         raise InvalidInput(

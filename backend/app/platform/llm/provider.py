@@ -4,12 +4,15 @@ The provider knows about HTTP and authentication and nothing else: no rendering,
 or validation. Two implementations share one Protocol so real and deterministic paths are
 behaviorally identical behind the gateway:
 
-- ``K2ThinkProvider`` — real transport. In 4.5a it is a STUB whose ``send`` raises
-  ``NotImplementedError`` (the first real call lands in 4.5b, gated on 2.B). It makes no network
-  call and imports no HTTP client, so the 4.5a hard gate "no K2Think call exists in the codebase"
-  holds by construction.
+- ``K2ThinkProvider`` — the real transport (4.5b). One ``send`` is ONE HTTP POST to the OpenAI-shaped
+  ``/v1/chat/completions`` endpoint; the model id comes from the rendered prompt (config), never
+  hardcoded (rule 11). Every HTTP outcome is mapped to a typed gateway error (§8); the in-call 429
+  backoff that turns a transient 429 into multiple POSTs lives in the gateway, not here. Response
+  bodies and headers are never put into an exception message — a 4xx carries its status code only
+  (§0/§8) so a bad key or a stray header can never reach a log.
 - ``DeterministicTestProvider`` — returns fixed, schema-conformant output so CI exercises the full
-  gateway path at the provider boundary only (rule 11). Carries an E2E-only fault switch.
+  gateway path at the provider boundary only. Carries a fault switch covering every §8 outcome so the
+  classification + 429 backoff are provable without a network or a real key.
 """
 
 from __future__ import annotations
@@ -20,11 +23,27 @@ import os
 from dataclasses import dataclass
 from typing import Iterator, Protocol
 
-from app.platform.config import settings
-from app.platform.llm.errors import ProviderTransient
+import httpx
+
+from app.platform.config import SettingsError, settings
+from app.platform.llm.errors import (
+    InvalidOutput,
+    ProviderAuthError,
+    ProviderConfigError,
+    ProviderTransient,
+    RateLimited,
+)
 from app.platform.llm.models.prompt import Backend, RenderedPrompt, Usage
 
-VALID_FAULTS = ("invalid_output", "invalid_input", "provider_transient")
+VALID_FAULTS = (
+    "invalid_output",
+    "invalid_input",
+    "provider_transient",
+    "rate_limited",
+    "provider_config",
+    "provider_auth",
+    "timeout",
+)
 
 
 @dataclass(frozen=True)
@@ -34,6 +53,12 @@ class RawCompletion:
     model_id_echoed: str
     provider_request_id: str | None = None
     reasoning_level: str | None = None
+    # HTTP status of the successful transport (200 for the real provider; None for the
+    # deterministic double, which makes no HTTP call). Recorded as last_provider_status_code.
+    status_code: int | None = None
+    # The choice's finish_reason ('stop' | 'length' | …). 'length' means the answer was truncated by
+    # max_tokens — important for a reasoning model that spends the budget thinking inline in content.
+    finish_reason: str | None = None
 
 
 class LLMProvider(Protocol):
@@ -51,23 +76,182 @@ def _estimate(text: str) -> int:
 
 
 class K2ThinkProvider:
-    """Real K2Think transport — STUB until 4.5b. Makes no network call in 4.5a."""
+    """Real K2Think transport (4.5b). One ``send`` == one HTTP POST; the gateway owns retries."""
 
-    def __init__(self, *, base_url: str | None = None, api_key: str | None = None) -> None:
-        self._base_url = base_url or settings.LLM_PROVIDER_BASE_URL
-        self._api_key = api_key  # resolved/verified at 2.B; unused in 4.5a
+    _CHAT_PATH = "/v1/chat/completions"
+
+    def __init__(
+        self,
+        *,
+        base_url: str | None = None,
+        api_key: str | None = None,
+        timeout_seconds: int | None = None,
+        json_mode: bool | None = None,
+    ) -> None:
+        self._base_url = (base_url or settings.LLM_PROVIDER_BASE_URL).rstrip("/")
+        self._api_key = api_key if api_key is not None else settings.LLM_API_KEY
+        if not self._api_key:
+            # Required iff LLM_PROVIDER='k2think' (§11). Failing here keeps a keyless real provider
+            # from ever issuing a doomed authenticated call.
+            raise SettingsError("LLM_API_KEY is required when LLM_PROVIDER='k2think'")
+        self._timeout = (
+            timeout_seconds
+            if timeout_seconds is not None
+            else settings.LLM_PROVIDER_TIMEOUT_SECONDS
+        )
+        self._json_mode = settings.LLM_PROVIDER_JSON_MODE if json_mode is None else json_mode
+
+    @property
+    def endpoint(self) -> str:
+        """Callers never pass a full endpoint — the base url is appended with the chat path (§11)."""
+        return f"{self._base_url}{self._CHAT_PATH}"
+
+    def build_payload(self, rendered: RenderedPrompt, *, backend: Backend) -> dict:
+        payload: dict = {
+            "model": rendered.model_id,  # config (prompt YAML), NEVER a hardcoded id (rule 11)
+            "messages": [{"role": "user", "content": rendered.content}],
+            "max_tokens": rendered.max_tokens,
+            "temperature": 0,
+            "stream": False,
+        }
+        # Routing split (4.5c, Option A / ADR-025): the Nvidia route is requested via
+        # metadata.use_nvidia; the Cerebras route is the provider default (no metadata). We control
+        # the REQUEST route only — the served backend is not echoed (backend_route_source='requested').
+        if backend == "nvidia":
+            payload["metadata"] = {"use_nvidia": True}
+        # response_format is opt-in until the smoke confirms K2-Think-v2 honors it (§7.1); the
+        # tolerant-extract validator is the safety net either way.
+        if self._json_mode:
+            payload["response_format"] = {"type": "json_object"}
+        return payload
 
     def send(self, *, rendered: RenderedPrompt, backend: Backend) -> RawCompletion:
-        raise NotImplementedError(
-            "K2ThinkProvider.send is a 4.5a stub; the first real K2Think call lands in 4.5b (gate 2.B)"
+        headers = {
+            "Authorization": f"Bearer {self._api_key}",
+            "Content-Type": "application/json",
+        }
+        try:
+            with httpx.Client(timeout=self._timeout) as client:
+                response = client.post(
+                    self.endpoint,
+                    headers=headers,
+                    json=self.build_payload(rendered, backend=backend),
+                )
+        except httpx.TimeoutException:
+            raise ProviderTransient(
+                "provider request timed out", error_code="provider_timeout", status_code=408
+            ) from None
+        except httpx.HTTPError:
+            # Connection/transport error. No url, headers, or key in the message (§0).
+            raise ProviderTransient(
+                "provider transport error", error_code="provider_network"
+            ) from None
+
+        if response.status_code == 200:
+            return self._parse_ok(response)
+        raise self._error_for_status(response.status_code)
+
+    @staticmethod
+    def _error_for_status(status: int):
+        """Map a non-200 status to a typed error. Status code ONLY — no body, no headers (§0/§8)."""
+        if status == 400:
+            return ProviderConfigError(
+                "provider rejected the request (400)",
+                error_code="provider_400",
+                status_code=400,
+            )
+        if status in (401, 403):
+            return ProviderAuthError(
+                f"provider authentication failed ({status})",
+                error_code=f"provider_{status}",
+                status_code=status,
+            )
+        if status == 408:
+            return ProviderTransient(
+                "provider request timed out (408)",
+                error_code="provider_408",
+                status_code=408,
+            )
+        if status == 429:
+            return RateLimited(
+                "provider rate limited (429)", error_code="provider_429", status_code=429
+            )
+        if 500 <= status < 600:
+            return ProviderTransient(
+                f"provider server error ({status})",
+                error_code=f"provider_{status}",
+                status_code=status,
+            )
+        # Any other 4xx (404/422/…) is a misconfiguration, NOT transient — terminate, don't storm.
+        if 400 <= status < 500:
+            return ProviderConfigError(
+                f"provider rejected the request ({status})",
+                error_code=f"provider_{status}",
+                status_code=status,
+            )
+        return ProviderTransient(
+            f"unexpected provider status ({status})",
+            error_code=f"provider_{status}",
+            status_code=status,
         )
+
+    def _parse_ok(self, response: httpx.Response) -> RawCompletion:
+        try:
+            body = response.json()
+        except (json.JSONDecodeError, ValueError):
+            raise InvalidOutput(
+                "provider returned a non-JSON body", error_code="provider_body_not_json"
+            ) from None
+        if not isinstance(body, dict):
+            raise InvalidOutput(
+                "provider body is not a JSON object", error_code="provider_body_not_object"
+            )
+        try:
+            choice = body["choices"][0]
+            content = choice["message"]["content"]
+        except (KeyError, IndexError, TypeError):
+            raise InvalidOutput(
+                "provider response missing choices/message/content",
+                error_code="provider_no_content",
+            ) from None
+        if not isinstance(content, str) or not content.strip():
+            raise InvalidOutput(
+                "provider response content is empty", error_code="provider_empty_content"
+            )
+        request_id = body.get("id")
+        finish_reason = choice.get("finish_reason") if isinstance(choice, dict) else None
+        return RawCompletion(
+            text=content,
+            usage=self._usage(body),
+            # rule-11 model-ID echo: the live K2-Think-v2 echoes the served model; assertion is LIVE.
+            model_id_echoed=str(body.get("model") or ""),
+            provider_request_id=str(request_id) if request_id else None,
+            # reasoning_content is present-but-null on K2-Think-v2 (F-4.5-04). No confirmed request
+            # parameter, so reasoning_level is logged null and NEVER faked.
+            reasoning_level=None,
+            status_code=200,
+            finish_reason=str(finish_reason) if finish_reason else None,
+        )
+
+    @staticmethod
+    def _usage(body: dict) -> Usage:
+        raw = body.get("usage") or {}
+        prompt = int(raw.get("prompt_tokens") or 0)
+        completion = int(raw.get("completion_tokens") or 0)
+        total = int(raw.get("total_tokens") or (prompt + completion))
+        return {
+            "prompt_tokens": prompt,
+            "completion_tokens": completion,
+            "total_tokens": total,
+        }
 
     def stream_raw(self, *, rendered: RenderedPrompt, backend: Backend) -> Iterator[str]:
         raise NotImplementedError("LLM streaming transport lands in Stage 8.3")
 
 
 class DeterministicTestProvider:
-    """Boundary-only test double. ``fault`` forces a classified failure for E2E gate assertions."""
+    """Boundary-only test double. ``fault`` forces a classified failure for gate assertions — one
+    fault per §8 outcome so the error map and the in-call 429 backoff are provable without a key."""
 
     def __init__(self, *, fault: str | None = None) -> None:
         if fault is None and settings.IS_NON_PROD:
@@ -80,10 +264,7 @@ class DeterministicTestProvider:
         self.fault = fault
 
     def send(self, *, rendered: RenderedPrompt, backend: Backend) -> RawCompletion:
-        if self.fault == "provider_transient":
-            raise ProviderTransient(
-                "deterministic provider forced a 5xx", error_code="forced_transient"
-            )
+        self._maybe_raise_transport_fault()
         text = self._render_output(rendered)
         completion_tokens = _estimate(text)
         prompt_tokens = _estimate(rendered.content)
@@ -99,6 +280,30 @@ class DeterministicTestProvider:
             provider_request_id=f"det-{rendered.rendered_prompt_hash[:16]}",
             reasoning_level=rendered.reasoning_level,
         )
+
+    def _maybe_raise_transport_fault(self) -> None:
+        # ``invalid_input`` is raised by the gateway (before transport); ``invalid_output`` is a
+        # wrong-shaped success body. Everything else is a transport-boundary outcome (§8).
+        if self.fault == "provider_transient":
+            raise ProviderTransient(
+                "deterministic provider forced a 5xx", error_code="forced_transient", status_code=503
+            )
+        if self.fault == "timeout":
+            raise ProviderTransient(
+                "deterministic provider forced a timeout", error_code="forced_timeout", status_code=408
+            )
+        if self.fault == "rate_limited":
+            raise RateLimited(
+                "deterministic provider forced a 429", error_code="forced_429", status_code=429
+            )
+        if self.fault == "provider_config":
+            raise ProviderConfigError(
+                "deterministic provider forced a 400", error_code="forced_400", status_code=400
+            )
+        if self.fault == "provider_auth":
+            raise ProviderAuthError(
+                "deterministic provider forced a 403", error_code="forced_403", status_code=403
+            )
 
     def stream_raw(self, *, rendered: RenderedPrompt, backend: Backend) -> Iterator[str]:
         raise NotImplementedError("LLM streaming transport lands in Stage 8.3")

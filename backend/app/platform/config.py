@@ -164,16 +164,79 @@ class Settings:
 
     @property
     def LLM_API_KEY(self) -> str | None:
-        """Optional in 4.5a (deterministic). Required only when LLM_PROVIDER='k2think' (4.5b)."""
+        """Optional in 4.5a (deterministic). Required only when LLM_PROVIDER='k2think' (4.5b).
+
+        Provider-agnostic ``LLM_*`` namespace is the standard (spec §11): a provider-specific name
+        like ``IFM_API_KEY`` would leak the vendor into config and contradict the swappable provider
+        boundary.
+        """
         return os.environ.get("LLM_API_KEY") or None
 
     @property
+    def ENABLE_DETAILED_SUMMARY(self) -> bool:
+        """Stage 4.5c activates detailed generation (default true): the after-embed hook enqueues
+        BOTH summary jobs and a transcript can reach overallState='summarized'. 4.5b gated it OFF
+        while Think-v0 was the (inaccessible) target; 4.5c runs detailed on the verified K2-Think-v2
+        via the Nvidia route (Option A, ADR-025). Set false to suppress detailed (e.g. cost control)."""
+        return self._bool("ENABLE_DETAILED_SUMMARY", default=True)
+
+    @property
+    def LLM_PROVIDER_JSON_MODE(self) -> bool:
+        """Ask the provider for ``response_format={"type":"json_object"}`` (§7.1). Default OFF until
+        the 4.5b smoke confirms K2-Think-v2 honors it (an unsupported param could 400). The §7
+        tolerant-extract validator is the safety net regardless."""
+        return self._bool("LLM_PROVIDER_JSON_MODE", default=False)
+
+    @property
+    def LLM_PROVIDER_TIMEOUT_SECONDS(self) -> int:
+        """HTTP transport timeout for the real provider; a timeout maps to provider_transient (§8)."""
+        return self._int("LLM_PROVIDER_TIMEOUT_SECONDS", "60", minimum=1)
+
+    @property
+    def LLM_CONTEXT_FALLBACK_ENABLED(self) -> bool:
+        """Whether ContextBuilder may fall back brief Cerebras→Nvidia on over-context (§12, adr-025).
+
+        Default TRUE preserves 4.5a routing. The single-model 4.5b deviation sets this FALSE: the two
+        routes are NOT proven to share a context window, so an over-limit prompt becomes invalid_input
+        rather than silently rerouting. The fallback mechanism stays in code, dormant (F-4.5-37)."""
+        return self._bool("LLM_CONTEXT_FALLBACK_ENABLED", default=True)
+
+    # ─── rate_limited in-call backoff budgets (rule 15 / §10) ────────────────
+    @property
+    def LLM_RATE_LIMIT_MAX_BACKOFFS(self) -> int:
+        """Max in-call backoffs (limiter-full waits + provider 429s) within ONE gateway attempt
+        before it terminates as rate_limited. Bounds the loop; not an RQ retry."""
+        return self._int("LLM_RATE_LIMIT_MAX_BACKOFFS", "4", minimum=0)
+
+    @property
+    def LLM_RATE_LIMIT_BASE_DELAY_MS(self) -> int:
+        return self._int("LLM_RATE_LIMIT_BASE_DELAY_MS", "500", minimum=1)
+
+    @property
+    def LLM_RATE_LIMIT_MAX_DELAY_MS(self) -> int:
+        return self._int("LLM_RATE_LIMIT_MAX_DELAY_MS", "8000", minimum=1)
+
+    @property
+    def LLM_RATE_LIMIT_MAX_ELAPSED_MS(self) -> int:
+        """Cap on total in-call backoff wall-clock before terminal rate_limited."""
+        return self._int("LLM_RATE_LIMIT_MAX_ELAPSED_MS", "30000", minimum=1)
+
+    @property
     def LLM_BRIEF_MODEL_ID(self) -> str:
-        return os.environ.get("LLM_BRIEF_MODEL_ID", "MBZUAI-IFM/K2-V2-Instruct")
+        # 4.5b deviation (ADR-025): the intended brief model `K2-V2-Instruct` (Cerebras) is not yet
+        # accessible; only `K2-Think-v2` is verified. Kept in sync with prompts/brief_summary/v1.yaml
+        # so the model SENT, the routed fit model, and the logged provenance all name one model.
+        # Reverts to K2-V2-Instruct on access (ADR-025 switch-back; config + prompt-version bump).
+        return os.environ.get("LLM_BRIEF_MODEL_ID", "MBZUAI-IFM/K2-Think-v2")
 
     @property
     def LLM_DETAILED_MODEL_ID(self) -> str:
-        return os.environ.get("LLM_DETAILED_MODEL_ID", "MBZUAI-IFM/K2-Think-v0")
+        # 4.5c deviation (ADR-025, Option A): the intended detailed model `K2-Think-v0` (Nvidia) is
+        # not yet accessible; detailed runs on the verified `K2-Think-v2` via the Nvidia route
+        # (metadata.use_nvidia). Kept in sync with prompts/detailed_summary/v1.yaml so the model sent,
+        # the routed fit model, and the logged provenance all name one model. Reverts to K2-Think-v0
+        # on access (ADR-025 switch-back; prompt-version bump, detailed route already use_nvidia).
+        return os.environ.get("LLM_DETAILED_MODEL_ID", "MBZUAI-IFM/K2-Think-v2")
 
     @property
     def LLM_CEREBRAS_CONTEXT_WINDOW_TOKENS(self) -> int:
@@ -218,6 +281,17 @@ class Settings:
     def LLM_LEASE_TTL_SECONDS(self) -> int:
         """Concurrency-lease TTL; a crashed worker's slot is reclaimable after this."""
         return self._int("LLM_LEASE_TTL_SECONDS", "120", minimum=1)
+
+    def _bool(self, name: str, *, default: bool) -> bool:
+        raw_value = os.environ.get(name)
+        if raw_value is None or raw_value == "":
+            return default
+        normalized = raw_value.strip().lower()
+        if normalized in {"1", "true", "yes", "on"}:
+            return True
+        if normalized in {"0", "false", "no", "off"}:
+            return False
+        raise SettingsError(f"{name} must be a boolean (true/false)")
 
     def _int(self, name: str, default: str, *, minimum: int) -> int:
         raw_value = os.environ.get(name, default)

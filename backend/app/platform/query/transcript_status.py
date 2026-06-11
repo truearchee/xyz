@@ -7,6 +7,7 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.platform.config import settings
 from app.platform.db.models import (
     IngestionJob,
     Transcript,
@@ -34,7 +35,8 @@ SAFE_FAILURE_MESSAGES = {
     "summary_brief": "Summary generation failed.",
     "summary_detailed": "Summary generation failed.",
 }
-# Category-based copy for summary failures (spec §7.5).
+# Category-based copy for summary failures (spec §7.5). Student-safe — never a stack trace or
+# backend error body; provider config/auth detail is deliberately NOT leaked.
 SUMMARY_FAILURE_MESSAGES_BY_CATEGORY = {
     "invalid_input": (
         "Transcript is too long for the summary model. Replace the transcript or contact support."
@@ -42,6 +44,8 @@ SUMMARY_FAILURE_MESSAGES_BY_CATEGORY = {
     "invalid_output": "Summary generation failed. Retry available.",
     "provider_transient": "Summary generation failed. Retry available.",
     "rate_limited": "Summary generation is busy and will retry automatically.",
+    "provider_config_error": "Summary unavailable — configuration issue.",
+    "provider_auth_error": "Summary unavailable — configuration issue.",
     "failed": "Summary generation failed.",
 }
 
@@ -220,6 +224,11 @@ def _overall_state(
         if brief == "completed" and detailed == "completed":
             return "summarized"
         if "running" in (brief, detailed) or "queued" in (brief, detailed):
+            return "summarizing"
+        # 4.5b: detailed generation is gated off (§5), so no detailed job exists. With brief done and
+        # detailed intentionally deferred to 4.5c, the transcript rests at 'summarizing' (not
+        # 'embedded' — summarization has begun, and not 'summarized' — detailed is still pending).
+        if brief == "completed" and not settings.ENABLE_DETAILED_SUMMARY:
             return "summarizing"
         return "embedded"
     if steps["embed"].status in {"queued", "running"} or transcript.status == "embedding":

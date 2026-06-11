@@ -10,12 +10,22 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+import json
+
 from app.platform.db.models import AIRequestLog, IngestionJob
-from app.platform.llm.errors import InvalidInput, InvalidOutput, ProviderTransient
+from app.platform.llm.errors import (
+    InvalidInput,
+    InvalidOutput,
+    ProviderAuthError,
+    ProviderConfigError,
+    ProviderTransient,
+    RateLimited,
+)
 from app.platform.llm.gateway import ContextRefs, LLMGateway
+from app.platform.llm.limiter import BackoffPolicy
 from app.platform.llm.models.prompt import PromptKey
 from app.platform.llm.models.summary import BriefSummary
-from app.platform.llm.provider import DeterministicTestProvider
+from app.platform.llm.provider import DeterministicTestProvider, RawCompletion
 from tests.test_transcript_worker import _create_worker_transcript, _session_factory
 
 pytestmark = pytest.mark.anyio
@@ -206,3 +216,200 @@ async def test_each_attempt_opens_a_new_row(db_session: AsyncSession):
     logs = await _logs(factory, job.id)
     assert [log.attempt_number for log in logs] == [1, 2]
     assert all(log.status == "succeeded" for log in logs)
+
+
+# --- 4.5b: in-row transport-retry provenance (§9) + rate_limited backoff (§10) ----------------
+
+async def _no_sleep(_seconds: float) -> None:
+    return None
+
+
+def _fast_backoff(*, max_backoffs: int) -> BackoffPolicy:
+    # tiny delays + huge elapsed cap → the loop terminates on the backoff COUNT, deterministically.
+    return BackoffPolicy(
+        max_backoffs=max_backoffs, base_delay_ms=1, max_delay_ms=1, max_elapsed_ms=10_000
+    )
+
+
+def _backoff_gateway(factory, provider, *, max_backoffs: int = 2) -> LLMGateway:
+    return LLMGateway(
+        provider=provider,
+        limiter=_FakeLimiter(),
+        backoff=_fast_backoff(max_backoffs=max_backoffs),
+        sleep=_no_sleep,
+        session_factory=factory,
+    )
+
+
+class _FlakyConcurrencyLimiter:
+    """Denies with ``limiter_concurrency`` ``deny_times`` then grants — exercises the limiter-full
+    backpressure source (source 1 of §10), distinct from a provider HTTP 429 (source 2)."""
+
+    def __init__(self, *, deny_times: int) -> None:
+        self._remaining = deny_times
+        self.acquired: list[tuple] = []
+
+    async def acquire(self, *, backend, estimated_tokens, priority):
+        if self._remaining > 0:
+            self._remaining -= 1
+            raise RateLimited("limiter full", error_code="limiter_concurrency")
+        self.acquired.append((backend, estimated_tokens, priority))
+        return _FakeLease()
+
+
+class _FlakyRateLimitProvider:
+    """429s ``fail_times`` then returns a valid brief — proves backoff recovery within one row."""
+
+    def __init__(self, *, fail_times: int) -> None:
+        self._remaining = fail_times
+        self.fault = None  # gateway introspects provider.fault for the invalid_input E2E hook
+
+    def send(self, *, rendered, backend):
+        if self._remaining > 0:
+            self._remaining -= 1
+            raise RateLimited("provider 429", error_code="provider_429", status_code=429)
+        return RawCompletion(
+            text=json.dumps({"text": "A valid brief summary paragraph for this lecture session."}),
+            usage={"prompt_tokens": 5, "completion_tokens": 5, "total_tokens": 10},
+            model_id_echoed="MBZUAI-IFM/K2-Think-v2",
+            provider_request_id="flaky-ok",
+            status_code=200,
+        )
+
+
+async def test_happy_path_records_in_row_provenance(db_session: AsyncSession):
+    factory = _session_factory(db_session)
+    _, job = await _setup(db_session)
+
+    await _gateway(factory).complete(
+        prompt_key=BRIEF_KEY,
+        output_schema=BriefSummary,
+        context_refs=_refs(job),
+        priority="background",
+        feature="summary_brief",
+    )
+
+    log = (await _logs(factory, job.id))[0]
+    assert log.status == "succeeded"
+    assert log.provider_attempt_count == 1
+    assert log.rate_limit_backoff_count == 0
+    assert log.retry_events_json is None  # no retries → no events
+    assert log.backend_route_source == "requested"  # request-asserted, never provider-echoed (§6)
+
+
+async def test_rate_limited_backoff_terminates_after_budget(db_session: AsyncSession):
+    factory = _session_factory(db_session)
+    _, job = await _setup(db_session)
+    gateway = _backoff_gateway(
+        factory, DeterministicTestProvider(fault="rate_limited"), max_backoffs=2
+    )
+
+    with pytest.raises(RateLimited):
+        await gateway.complete(
+            prompt_key=BRIEF_KEY,
+            output_schema=BriefSummary,
+            context_refs=_refs(job),
+            priority="background",
+            feature="summary_brief",
+        )
+
+    log = (await _logs(factory, job.id))[0]
+    assert log.status == "rate_limited"  # ONE row, terminal on exhaustion — not RQ-retried here
+    assert log.provider_attempt_count == 3  # max_backoffs(2) + the final exhausting POST
+    assert log.rate_limit_backoff_count == 3
+    assert log.last_provider_status_code == 429
+    assert log.retry_events_json is not None and len(log.retry_events_json) == 3
+    assert log.retry_events_json[0]["statusCode"] == 429
+
+
+async def test_rate_limited_backoff_recovers_and_succeeds_in_one_row(db_session: AsyncSession):
+    factory = _session_factory(db_session)
+    _, job = await _setup(db_session)
+    gateway = _backoff_gateway(factory, _FlakyRateLimitProvider(fail_times=2), max_backoffs=4)
+
+    result = await gateway.complete(
+        prompt_key=BRIEF_KEY,
+        output_schema=BriefSummary,
+        context_refs=_refs(job),
+        priority="background",
+        feature="summary_brief",
+    )
+    assert isinstance(result["parsed"], BriefSummary)
+
+    logs = await _logs(factory, job.id)
+    assert len(logs) == 1  # backoff retries live IN the row, not as new rows (§9)
+    log = logs[0]
+    assert log.status == "succeeded"
+    assert log.provider_attempt_count == 3  # 2 × 429 + 1 success
+    assert log.rate_limit_backoff_count == 2
+    assert log.last_provider_status_code == 200
+    assert len(log.retry_events_json) == 2
+
+
+async def test_limiter_full_backs_off_then_acquires(db_session: AsyncSession):
+    factory = _session_factory(db_session)
+    _, job = await _setup(db_session)
+    gateway = LLMGateway(
+        provider=DeterministicTestProvider(),
+        limiter=_FlakyConcurrencyLimiter(deny_times=2),
+        backoff=_fast_backoff(max_backoffs=4),
+        sleep=_no_sleep,
+        session_factory=factory,
+    )
+
+    result = await gateway.complete(
+        prompt_key=BRIEF_KEY,
+        output_schema=BriefSummary,
+        context_refs=_refs(job),
+        priority="background",
+        feature="summary_brief",
+    )
+    assert isinstance(result["parsed"], BriefSummary)
+
+    log = (await _logs(factory, job.id))[0]
+    assert log.status == "succeeded"
+    assert log.provider_attempt_count == 1  # only one transport POST, after capacity freed
+    assert log.rate_limit_backoff_count == 2  # two limiter-full waits (source 1)
+    assert log.retry_events_json is not None and len(log.retry_events_json) == 2
+    assert log.retry_events_json[0]["statusCode"] is None  # limiter wait, not a provider HTTP status
+
+
+async def test_provider_config_error_is_terminal_and_recorded(db_session: AsyncSession):
+    factory = _session_factory(db_session)
+    _, job = await _setup(db_session)
+    gateway = _backoff_gateway(factory, DeterministicTestProvider(fault="provider_config"))
+
+    with pytest.raises(ProviderConfigError):
+        await gateway.complete(
+            prompt_key=BRIEF_KEY,
+            output_schema=BriefSummary,
+            context_refs=_refs(job),
+            priority="background",
+            feature="summary_brief",
+        )
+
+    log = (await _logs(factory, job.id))[0]
+    assert log.status == "provider_config_error"  # terminal 4xx, never retried (§8)
+    assert log.last_provider_status_code == 400
+    assert log.provider_attempt_count == 1
+    assert log.retry_events_json is None  # config error does not back off
+
+
+async def test_provider_auth_error_is_terminal_and_recorded(db_session: AsyncSession):
+    factory = _session_factory(db_session)
+    _, job = await _setup(db_session)
+    gateway = _backoff_gateway(factory, DeterministicTestProvider(fault="provider_auth"))
+
+    with pytest.raises(ProviderAuthError):
+        await gateway.complete(
+            prompt_key=BRIEF_KEY,
+            output_schema=BriefSummary,
+            context_refs=_refs(job),
+            priority="background",
+            feature="summary_brief",
+        )
+
+    log = (await _logs(factory, job.id))[0]
+    assert log.status == "provider_auth_error"
+    assert log.last_provider_status_code == 403
+    assert log.provider_attempt_count == 1

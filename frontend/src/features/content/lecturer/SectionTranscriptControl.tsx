@@ -6,6 +6,7 @@ import { ApiError, type TranscriptMeta } from "../../../lib/api";
 import { uploadTranscript } from "../../../lib/api/upload";
 import { api } from "../../../lib/api/wrapper";
 import { TranscriptStatusBadge } from "./TranscriptStatusBadge";
+import { TranscriptSummaryPanel } from "./TranscriptSummaryPanel";
 
 type SectionTranscriptControlProps = {
   disabled?: boolean;
@@ -134,6 +135,12 @@ export function SectionTranscriptControl({
             sectionId={sectionId}
             sectionKey={sectionKey}
             transcript={transcript}
+          />
+          <TranscriptSummaryPanel
+            moduleId={moduleId}
+            sectionId={sectionId}
+            sectionKey={sectionKey}
+            transcriptId={transcript.id}
           />
         </div>
       ) : (

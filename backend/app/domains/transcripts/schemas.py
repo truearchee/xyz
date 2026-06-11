@@ -56,3 +56,34 @@ class TranscriptProcessingStatus(CamelModel):
     embedded_chunk_count: int
     safe_failure_message: str | None
     updated_at: datetime
+
+
+# Summary read shapes (Stage 4.5d). These mirror the stored contentJson (already camelCase via
+# model_dump(by_alias=True)); a typed API contract lets the lecturer UI render detailed by section.
+class BriefSummaryContent(CamelModel):
+    text: str
+
+
+class SummaryDefinition(CamelModel):
+    term: str
+    definition: str
+
+
+class DetailedSummaryContent(CamelModel):
+    overview: str
+    key_concepts: list[str]
+    important_definitions: list[SummaryDefinition]
+    main_explanations: list[str]
+    examples: list[str]
+    exam_relevant_points: list[str]
+    lab_notes: list[str] | None = None
+
+
+class TranscriptSummariesRead(CamelModel):
+    # The projection is the doneness authority (NOT transcript.status); brief/detailed are null until
+    # generated (or when detailed is suppressed / on pre-4.5 transcripts → UI maps gracefully).
+    status: TranscriptProcessingStatus
+    brief: BriefSummaryContent | None
+    detailed: DetailedSummaryContent | None
+    brief_generated_at: datetime | None
+    detailed_generated_at: datetime | None

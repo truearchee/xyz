@@ -73,6 +73,11 @@ async def close_request_log(
     error_class: str | None = None,
     error_code: str | None = None,
     debug_text: str | None = None,
+    provider_attempt_count: int | None = None,
+    rate_limit_backoff_count: int | None = None,
+    last_provider_status_code: int | None = None,
+    retry_events_json: list | None = None,
+    backend_route_source: str | None = None,
     session_factory: async_sessionmaker[AsyncSession] | None = None,
 ) -> None:
     factory = _factory(session_factory)
@@ -104,3 +109,13 @@ async def close_request_log(
                 log.error_code = error_code
             if debug_text is not None:
                 log.debug_text_truncated = debug_text
+            if provider_attempt_count is not None:
+                log.provider_attempt_count = provider_attempt_count
+            if rate_limit_backoff_count is not None:
+                log.rate_limit_backoff_count = rate_limit_backoff_count
+            if last_provider_status_code is not None:
+                log.last_provider_status_code = last_provider_status_code
+            if retry_events_json is not None:
+                log.retry_events_json = retry_events_json
+            if backend_route_source is not None:
+                log.backend_route_source = backend_route_source

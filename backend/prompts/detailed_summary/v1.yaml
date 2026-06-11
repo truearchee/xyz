@@ -1,9 +1,13 @@
 name: detailed_summary
 version: v1
-model: MBZUAI-IFM/K2-Think-v0
+model: MBZUAI-IFM/K2-Think-v2
 backend: nvidia
-max_tokens: 4000
-# reasoning_level intentionally omitted until confirmed real with IFM (spec D4 — never faked).
+# Room for inline reasoning + the full structured answer on a reasoning model (F-4.5-48); 4000 risked
+# truncating the closing braces of the JSON after the model thought in `content`.
+max_tokens: 8000
+# Model is the verified IFM deployment (ADR-025 deviation, Option A): the intended K2-Think-v0 is not
+# yet accessible. backend 'nvidia' = the REQUESTED route (provider sends metadata.use_nvidia;
+# backend_route_source='requested'). reasoning_level intentionally omitted — never faked (D4 / F-4.5-04).
 content: |
   You are producing a detailed, structured study summary of a single university lecture or lab
   session, to help a student revise thoroughly.
@@ -13,8 +17,10 @@ content: |
   administrative announcements (deadlines, room changes, attendance), and closing remarks. Do not
   mention that you ignored anything.
 
-  Return ONLY a single JSON object, with no markdown fences and no extra keys, of exactly this
-  shape (camelCase keys):
+  Output contract — follow EXACTLY:
+  - Reply with a single JSON object and NOTHING else.
+  - No preamble, no explanation, no reasoning, no markdown code fences, no extra keys.
+  - Use these camelCase keys exactly, of this shape:
   {
     "overview": "<2-4 sentence overview of the session>",
     "keyConcepts": ["<concept>", ...],

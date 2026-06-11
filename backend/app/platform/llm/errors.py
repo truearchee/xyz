@@ -14,9 +14,19 @@ class GatewayError(RuntimeError):
     status: str = "failed"
     retryable: bool = False
 
-    def __init__(self, message: str, *, error_code: str | None = None) -> None:
+    def __init__(
+        self,
+        message: str,
+        *,
+        error_code: str | None = None,
+        status_code: int | None = None,
+    ) -> None:
         super().__init__(message)
         self.error_code = error_code
+        # HTTP status seen at the provider boundary, when there was one (None for non-transport
+        # failures and the deterministic provider). Recorded in AIRequestLog.last_provider_status_code
+        # and retry_events_json. Never carries a body, header, or key — status code only (§0/§8).
+        self.status_code = status_code
 
     @property
     def error_class(self) -> str:
@@ -42,6 +52,23 @@ class ProviderTransient(GatewayError):
 
     status = "provider_transient"
     retryable = True
+
+
+class ProviderConfigError(GatewayError):
+    """Provider 400 — invalid model id / malformed request. A misconfiguration, NOT transient:
+    retrying a bad model id burns the request budget for nothing. Terminal, non-retryable (§8).
+    The response body is never logged (redacted to nothing); only the status code is kept."""
+
+    status = "provider_config_error"
+    retryable = False
+
+
+class ProviderAuthError(GatewayError):
+    """Provider 401/403 — bad/expired key or forbidden. Terminal, non-retryable: retrying a bad key
+    is a denial-of-wallet strategy (§8). Body and headers are never logged (§0); status code only."""
+
+    status = "provider_auth_error"
+    retryable = False
 
 
 class InvalidOutput(GatewayError):

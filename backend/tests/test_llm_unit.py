@@ -9,6 +9,8 @@ import pytest
 
 from app.platform.llm.context import ContextBuilder, estimate_tokens
 from app.platform.llm.errors import InvalidInput, InvalidOutput
+from app.platform.llm.gateway import reconcile_token_estimate
+from app.platform.llm.limiter import BackoffPolicy, effective_limit
 from app.platform.llm.models.prompt import PromptKey, RenderedPrompt
 from app.platform.llm.models.summary import BriefSummary, DetailedSummary
 from app.platform.llm.registry import (
@@ -184,6 +186,17 @@ def test_detailed_tolerates_code_fences():
     assert isinstance(parsed, DetailedSummary)
 
 
+def test_detailed_extracts_object_after_reasoning_preamble():
+    # 4.5c: detailed runs on the reasoning-lineage K2-Think-v2; the validator must extract the
+    # structured object even if the model prefixes reasoning despite instructions (§4/§7).
+    raw = "Let me organize the key sections of the lecture first.\n\n" + _good_detailed()
+    parsed = _validator().validate(
+        raw_text=raw, output_schema=DetailedSummary, section_type="lecture"
+    )
+    assert isinstance(parsed, DetailedSummary)
+    assert parsed.exam_relevant_points == ["p1"]
+
+
 # --- ContextBuilder ---------------------------------------------------------
 
 def _rendered(backend: str, content: str, max_tokens: int) -> RenderedPrompt:
@@ -228,3 +241,128 @@ def test_fit_detailed_has_no_fallback(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("LLM_NVIDIA_CONTEXT_WINDOW_TOKENS", "10")
     with pytest.raises(InvalidInput):
         ContextBuilder().fit(_rendered("nvidia", "word " * 100, 50))
+
+
+def test_fit_fallback_disabled_makes_over_limit_invalid_input(monkeypatch: pytest.MonkeyPatch):
+    # §12 / F-4.5-37: under the single-model deviation the Cerebras→Nvidia fallback is OFF, so a brief
+    # over the (configured) Cerebras window becomes invalid_input — it does NOT reroute onto an
+    # unverified window. The same inputs WOULD fall back with the flag default-on (test above).
+    monkeypatch.setenv("LLM_CONTEXT_FALLBACK_ENABLED", "false")
+    monkeypatch.setenv("LLM_CEREBRAS_CONTEXT_WINDOW_TOKENS", "10")
+    monkeypatch.setenv("LLM_NVIDIA_CONTEXT_WINDOW_TOKENS", "100000")
+    with pytest.raises(InvalidInput):
+        ContextBuilder().fit(_rendered("cerebras", "word " * 100, 50))
+
+
+# --- BackoffPolicy (§10) ----------------------------------------------------
+
+def test_backoff_delay_is_capped_exponential():
+    policy = BackoffPolicy(max_backoffs=5, base_delay_ms=100, max_delay_ms=400, max_elapsed_ms=9999)
+    assert policy.delay_ms(1) == 100
+    assert policy.delay_ms(2) == 200
+    assert policy.delay_ms(3) == 400
+    assert policy.delay_ms(4) == 400  # capped at max_delay_ms
+
+
+def test_backoff_exhausts_on_count_or_elapsed():
+    policy = BackoffPolicy(max_backoffs=2, base_delay_ms=1, max_delay_ms=1, max_elapsed_ms=1000)
+    assert policy.is_exhausted(backoffs_done=2, elapsed_ms=10) is False
+    assert policy.is_exhausted(backoffs_done=3, elapsed_ms=10) is True  # over the count
+    assert policy.is_exhausted(backoffs_done=1, elapsed_ms=1000) is True  # over the elapsed cap
+
+
+# --- estimate-vs-actual reconciliation (§3.8) -------------------------------
+
+def test_reconcile_returns_none_without_real_usage():
+    assert (
+        reconcile_token_estimate(
+            content_chars=100, estimated_prompt_tokens=29, actual_prompt_tokens=None
+        )
+        is None
+    )
+    assert (
+        reconcile_token_estimate(
+            content_chars=100, estimated_prompt_tokens=29, actual_prompt_tokens=0
+        )
+        is None
+    )
+
+
+def test_reconcile_computes_ratio_and_observed_chars_per_token():
+    result = reconcile_token_estimate(
+        content_chars=350, estimated_prompt_tokens=100, actual_prompt_tokens=80
+    )
+    assert result["estimatedPromptTokens"] == 100
+    assert result["actualPromptTokens"] == 80
+    assert result["estimateRatio"] == 1.25
+    assert result["observedCharsPerToken"] == round(350 / 80, 4)
+
+
+# --- headroom reservation math (§3.12) --------------------------------------
+
+def test_interactive_headroom_reserves_capacity_from_background():
+    # Background traffic is capped to leave a reservation for interactive Stage-8 traffic.
+    assert effective_limit(100, "interactive", 20) == 100  # interactive uses the full limit
+    assert effective_limit(100, "background", 20) == 80  # background capped to 80%
+    reserved_for_interactive = 100 - effective_limit(100, "background", 20)
+    assert reserved_for_interactive == 20
+    assert effective_limit(1, "background", 90) == 1  # never below 1
+
+
+# --- tolerant extract + strict shape, brief (§7) ----------------------------
+
+def test_brief_extracts_object_after_reasoning_preamble():
+    raw = (
+        "Let me think about the key points first. Okay, here is the summary:\n"
+        '{"text": "This lecture introduced the core ideas and worked a clear example."}'
+    )
+    parsed = _validator().validate(raw_text=raw, output_schema=BriefSummary, section_type="lecture")
+    assert parsed.text.startswith("This lecture introduced")
+
+
+def test_brief_extracts_object_from_json_code_fence():
+    raw = '```json\n{"text": "A concise paragraph summarizing the session content for a student."}\n```'
+    parsed = _validator().validate(raw_text=raw, output_schema=BriefSummary, section_type="lecture")
+    assert "concise paragraph" in parsed.text
+
+
+def test_brief_stores_only_text_when_extra_keys_present():
+    # Strict shape reads only `text`; surrounding chatter/extra keys never reach the student (§7).
+    raw = '{"reasoning": "internal chain of thought", "text": "The student-facing summary paragraph."}'
+    parsed = _validator().validate(raw_text=raw, output_schema=BriefSummary, section_type="lecture")
+    assert parsed.text == "The student-facing summary paragraph."
+
+
+def test_brief_with_no_object_anywhere_is_invalid_output():
+    with pytest.raises(InvalidOutput):
+        _validator().validate(
+            raw_text="No JSON here at all, just chatter.",
+            output_schema=BriefSummary,
+            section_type="lecture",
+        )
+
+
+def test_brief_selects_real_answer_after_inline_reasoning():
+    # F-4.5-48 (actual failure shape): K2-Think-v2 reasons inline in `content` for a long stretch —
+    # containing a brace-bearing fragment {x: f(x)} and a narrated `Output exactly:\n\n{"text":
+    # "<your paragraph>"}` example — then places the real answer LAST. Neither "first" nor "longest"
+    # is safe; the validator must select the LAST object that fully validates.
+    reasoning = (
+        "We need to produce a JSON object with a single key 'text'. Let me think about the lecture. "
+        "It covered supervised learning, the loss function, overfitting, and regularisation. "
+        "Set-builder notation like {x: f(x)} shows up in my notes here. I should aim for 60-120 words. "
+        'The format example says Output exactly:\n\n{"text": "<your paragraph>"}\n\n'
+        "Let me draft it... that is about 100 words, within 60-120. Good. Now produce JSON.\n\n"
+    )
+    real = (
+        '{"text": "This session introduced supervised learning, where a model learns a mapping from '
+        "inputs to outputs using labelled examples. The loss function measures prediction error, and "
+        "training minimises the average loss by gradient descent. Overfitting means fitting noise and "
+        "failing to generalise, seen as a gap between training and validation error; regularisation "
+        'penalises large weights to improve generalisation. A worked example fits a line by least squares."}'
+    )
+    parsed = _validator().validate(
+        raw_text=reasoning + real, output_schema=BriefSummary, section_type="lecture"
+    )
+    assert "supervised learning" in parsed.text
+    assert "<your paragraph>" not in parsed.text

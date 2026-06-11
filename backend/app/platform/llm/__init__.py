@@ -10,11 +10,13 @@ from app.platform.llm.errors import (
     GatewayFailed,
     InvalidInput,
     InvalidOutput,
+    ProviderAuthError,
+    ProviderConfigError,
     ProviderTransient,
     RateLimited,
 )
 from app.platform.llm.gateway import CompletionResult, ContextRefs, LLMGateway
-from app.platform.llm.limiter import RedisRateLimiter, get_rate_limiter
+from app.platform.llm.limiter import BackoffPolicy, RedisRateLimiter, get_rate_limiter
 from app.platform.llm.models.prompt import (
     Backend,
     Priority,
@@ -46,11 +48,14 @@ __all__ = [
     "GatewayFailed",
     "InvalidInput",
     "InvalidOutput",
+    "ProviderAuthError",
+    "ProviderConfigError",
     "ProviderTransient",
     "RateLimited",
     "CompletionResult",
     "ContextRefs",
     "LLMGateway",
+    "BackoffPolicy",
     "RedisRateLimiter",
     "get_rate_limiter",
     "Backend",

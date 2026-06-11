@@ -422,7 +422,7 @@ async function expectCompletedProof(
   expect(Number(chunkJob?.resultMetadata?.chunk_count ?? 0)).toBeGreaterThan(0);
 
   await expect(rowForSection(page, section).locator('[data-testid^="section-transcript-status-"]')).toContainText(
-    /Chunked|Embedding|Embedded/,
+    /Chunked|Embedding|Embedded|Generating summaries|Summaries ready/,
     { timeout: 65_000 },
   );
   await expectNoRawMarkers(page);
@@ -488,7 +488,7 @@ test('4.3.5e Stage 4.1-4.3 transcript browser gate', async ({ browser }) => {
     const reloadedLectureRow = rowForSection(lecturerPage, setup.lecture);
     await expect(reloadedLectureRow.getByText('ensemble-methods.vtt')).toBeVisible();
     await expect(reloadedLectureRow.locator('[data-testid^="section-transcript-status-"]')).toContainText(
-      /Chunked|Embedding|Embedded/,
+      /Chunked|Embedding|Embedded|Generating summaries|Summaries ready/,
     );
     await expect(reloadedLectureRow.locator('[data-testid^="section-transcript-upload-"]')).toHaveCount(0);
     await expectNoRawMarkers(lecturerPage);

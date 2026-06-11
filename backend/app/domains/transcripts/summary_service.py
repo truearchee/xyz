@@ -33,6 +33,7 @@ from app.platform.db.models import (
     Transcript,
     TranscriptSegment,
 )
+from app.platform.config import settings
 from app.platform.db.session import async_session
 from app.platform.llm.errors import GatewayError
 from app.platform.llm.gateway import ContextRefs, LLMGateway
@@ -47,8 +48,17 @@ from app.platform.llm.models.summary import (
 logger = logging.getLogger(__name__)
 
 # Failures that warrant an RQ retry (rule 15: reserved for transient + bounded invalid_output).
+# provider_config_error / provider_auth_error are deliberately ABSENT — a bad model id or key is
+# terminal; retrying it is a denial-of-wallet strategy (§8).
 RQ_RETRY_STATUSES = {"provider_transient", "invalid_output"}
-_FAILURE_CATEGORIES = {"provider_transient", "rate_limited", "invalid_output", "invalid_input"}
+_FAILURE_CATEGORIES = {
+    "provider_transient",
+    "rate_limited",
+    "invalid_output",
+    "invalid_input",
+    "provider_config_error",
+    "provider_auth_error",
+}
 
 
 class SummaryGenerationError(RuntimeError):
@@ -121,14 +131,23 @@ async def insert_summary_jobs(
     session: AsyncSession,
     *,
     transcript: Transcript,
+    enable_detailed: bool | None = None,
 ) -> list[tuple[str, UUID]]:
-    """Create the two summary jobs (queued) within the caller's transaction (the embed txn).
+    """Create the summary jobs (queued) within the caller's transaction (the embed txn).
 
-    Returns the (job_type, job_id) pairs that should be enqueued. Idempotent: an already-active or
-    completed job is not duplicated; a previously failed job is reset to queued.
+    Brief is always created. Detailed is created ONLY when ``ENABLE_DETAILED_SUMMARY`` (§5) — gated
+    at CREATION, not enqueue, so under 4.5b no detailed IngestionJob row exists for the 4.6 sweeper to
+    misread and the inaccessible Think-v0 is never called. ``enable_detailed`` overrides the setting
+    (used by tests of the detailed mechanism, which lands in 4.5c). Returns the (job_type, job_id)
+    pairs to enqueue. Idempotent: an already-active or completed job is not duplicated; a previously
+    failed job is reset to queued.
     """
+    detailed_enabled = (
+        settings.ENABLE_DETAILED_SUMMARY if enable_detailed is None else enable_detailed
+    )
+    specs = [BRIEF] + ([DETAILED] if detailed_enabled else [])
     to_enqueue: list[tuple[str, UUID]] = []
-    for spec in SUMMARY_SPECS.values():
+    for spec in specs:
         job_id = await _ensure_summary_job(session, transcript=transcript, spec=spec)
         if job_id is not None:
             to_enqueue.append((spec.job_type, job_id))

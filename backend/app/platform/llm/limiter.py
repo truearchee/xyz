@@ -75,6 +75,41 @@ return 0
 
 
 @dataclass(frozen=True)
+class BackoffPolicy:
+    """Bounds the gateway's in-call ``rate_limited`` backoff (rule 15 / §10).
+
+    One gateway attempt may back off on two backpressure sources — our own limiter having no free
+    slot, and a provider HTTP 429 — but always within ONE AIRequestLog row. ``max_backoffs`` and
+    ``max_elapsed_ms`` cap the loop; on exhaustion the attempt terminates as ``rate_limited`` (NOT an
+    RQ retry). Delays grow exponentially from ``base_delay_ms``, capped at ``max_delay_ms``; the
+    caller adds jitter. Pure + frozen so the budget math is unit-testable without sleeping.
+    """
+
+    max_backoffs: int
+    base_delay_ms: int
+    max_delay_ms: int
+    max_elapsed_ms: int
+
+    @classmethod
+    def from_settings(cls) -> BackoffPolicy:
+        return cls(
+            max_backoffs=settings.LLM_RATE_LIMIT_MAX_BACKOFFS,
+            base_delay_ms=settings.LLM_RATE_LIMIT_BASE_DELAY_MS,
+            max_delay_ms=settings.LLM_RATE_LIMIT_MAX_DELAY_MS,
+            max_elapsed_ms=settings.LLM_RATE_LIMIT_MAX_ELAPSED_MS,
+        )
+
+    def delay_ms(self, backoff_number: int) -> int:
+        """Capped exponential delay for the ``backoff_number``-th backoff (1-based)."""
+        exponent = max(0, backoff_number - 1)
+        return min(self.max_delay_ms, self.base_delay_ms * (2**exponent))
+
+    def is_exhausted(self, *, backoffs_done: int, elapsed_ms: int) -> bool:
+        """True when no further backoff is permitted → terminal ``rate_limited``."""
+        return backoffs_done > self.max_backoffs or elapsed_ms >= self.max_elapsed_ms
+
+
+@dataclass(frozen=True)
 class BackendLimits:
     rpm: int
     tpm: int

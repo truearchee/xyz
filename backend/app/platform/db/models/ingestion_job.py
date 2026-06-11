@@ -25,7 +25,8 @@ class IngestionJob(Base):
         CheckConstraint("attempts >= 0", name="ck_ingestion_jobs_attempts"),
         CheckConstraint(
             "failure_category IS NULL OR failure_category IN "
-            "('provider_transient', 'rate_limited', 'invalid_output', 'invalid_input', 'failed')",
+            "('provider_transient', 'rate_limited', 'invalid_output', 'invalid_input', "
+            "'provider_config_error', 'provider_auth_error', 'failed')",
             name="ck_ingestion_jobs_failure_category",
         ),
         Index("uq_ingestion_jobs_idempotency_key", "idempotency_key", unique=True),

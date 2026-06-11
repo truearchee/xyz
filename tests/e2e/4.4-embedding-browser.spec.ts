@@ -272,9 +272,13 @@ async function waitForEmbeddedProjectionResponse(
     const body = (await candidate.json().catch(() => null)) as
       | Partial<TranscriptProcessingProjection>
       | null;
+    // Embed completion is the signal. Since 4.5a the summary pipeline runs after embed, so the
+    // projection moves embedded → summarizing → summarized; we key off the embed STEP, not the
+    // overallState, which no longer rests at 'embedded'.
     return (
-      body?.overallState === 'embedded' &&
-      body.steps?.embed?.status === 'completed' &&
+      body?.steps?.embed?.status === 'completed' &&
+      typeof body.chunkCount === 'number' &&
+      body.chunkCount > 0 &&
       body.embeddedChunkCount === body.chunkCount &&
       body.safeFailureMessage === null
     );
@@ -346,12 +350,16 @@ test('4.4 transcript embedding browser gate', async ({ browser }) => {
       recordManifestValue(runId, 'storageKeys', artifacts.transcript.storageKey);
     }
 
-    expect(projection.overallState).toBe('embedded');
+    // 'embedded' or any later (summary) state — the embed step is what this gate proves.
+    expect(['embedded', 'summarizing', 'summarized']).toContain(projection.overallState);
     expect(projection.steps.embed.status).toBe('completed');
     expect(projection.embeddedChunkCount).toBe(projection.chunkCount);
     expect(projection.safeFailureMessage).toBeNull();
 
-    await expect(status).toContainText('Embedded', { timeout: 95_000 });
+    // The badge passes through "Embedded" then on to the summary states; accept any of them.
+    await expect(status).toContainText(/Embedded|Generating summaries|Summaries ready/, {
+      timeout: 95_000,
+    });
 
     const verification = getTranscriptEmbeddingVerification(labTranscriptId);
     expect(verification.embedJobStatus).toBe('completed');

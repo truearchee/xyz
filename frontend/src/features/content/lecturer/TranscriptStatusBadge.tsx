@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import {
   ApiError,
@@ -9,9 +9,14 @@ import {
 } from "../../../lib/api";
 import { api } from "../../../lib/api/wrapper";
 
-const TERMINAL_STATES = new Set(["embedded", "failed"]);
-const POLL_INTERVAL_MS = 2500;
-const POLL_TIMEOUT_MS = 60_000;
+// Stage 4.5d: backoff polling, NO hard timeout. The pipeline now runs through summary generation
+// (brief then detailed); detailed + queue wait + provider 429 backoff routinely exceed 60s, so a
+// 60s "stuck" timeout was wrong. We poll with a growing-but-capped interval until the pipeline is
+// quiescent, and show a passive "Generating…" state rather than a spinner that implies stuck.
+const POLL_INITIAL_MS = 1500;
+const POLL_MAX_MS = 15_000;
+const POLL_BACKOFF = 1.5;
+const ACTIVE_STEP_STATES = new Set(["queued", "running"]);
 
 type TranscriptStatusBadgeProps = {
   moduleId: string;
@@ -28,78 +33,58 @@ export function TranscriptStatusBadge({
   sectionKey,
   transcript,
 }: TranscriptStatusBadgeProps) {
-  const [hasTimedOut, setHasTimedOut] = useState(false);
   const [processingStatus, setProcessingStatus] =
     useState<TranscriptProcessingStatus | null>(null);
+  // Keep the missing-callback in a ref so its identity changing never restarts polling.
+  const onMissingRef = useRef(onTranscriptMissing);
+  onMissingRef.current = onTranscriptMissing;
 
   useEffect(() => {
-    setHasTimedOut(false);
     setProcessingStatus(null);
 
     let isMounted = true;
-    const startedAt = Date.now();
+    let timeoutId = 0;
+    let delay = POLL_INITIAL_MS;
 
-    const loadStatus = async (): Promise<boolean> => {
-      if (Date.now() - startedAt >= POLL_TIMEOUT_MS) {
-        if (isMounted) {
-          setHasTimedOut(true);
-        }
-        return true;
-      }
-
+    const tick = async (): Promise<void> => {
+      let settled = false;
       try {
-        const updatedStatus = await api.transcripts.getProcessingStatus(
+        const status = await api.transcripts.getProcessingStatus(
           moduleId,
           sectionId,
         );
         if (!isMounted) {
-          return true;
+          return;
         }
-        setProcessingStatus(updatedStatus);
-        return TERMINAL_STATES.has(updatedStatus.overallState);
+        setProcessingStatus(status);
+        settled = isSettled(status);
       } catch (caught) {
         if (isTranscriptNotFound(caught)) {
           if (isMounted) {
-            onTranscriptMissing();
+            onMissingRef.current();
           }
-          return true;
+          return;
         }
-
-        if (isMounted) {
-          setHasTimedOut(true);
-        }
-        return true;
+        // Transient error: keep polling with backoff (no hard timeout). Last known status stays.
       }
+
+      if (!isMounted || settled) {
+        return;
+      }
+      delay = Math.min(Math.round(delay * POLL_BACKOFF), POLL_MAX_MS);
+      timeoutId = window.setTimeout(() => void tick(), delay);
     };
 
-    void loadStatus();
-    const intervalId = window.setInterval(() => {
-      void loadStatus().then((shouldStop) => {
-        if (shouldStop) {
-          window.clearInterval(intervalId);
-        }
-      });
-    }, POLL_INTERVAL_MS);
+    void tick();
 
     return () => {
       isMounted = false;
-      window.clearInterval(intervalId);
+      window.clearTimeout(timeoutId);
     };
-  }, [
-    moduleId,
-    onTranscriptMissing,
-    sectionId,
-    transcript.id,
-  ]);
+  }, [moduleId, sectionId, transcript.id]);
 
-  const text = hasTimedOut
-    ? "Processing is taking longer than expected. Refresh to check again."
-    : statusText(processingStatus, transcript.status);
-  const statusKind = statusStyleKind(
-    hasTimedOut,
-    processingStatus,
-    transcript.status,
-  );
+  const text = statusText(processingStatus, transcript.status);
+  const statusKind = statusStyleKind(processingStatus, transcript.status);
 
   return (
     <p
@@ -121,6 +106,23 @@ function isTranscriptNotFound(caught: unknown): boolean {
   );
 }
 
+// The pipeline is quiescent (stop polling) when it has failed, fully summarized, or reached the
+// brief-only resting state: 'summarizing' with no summary step still queued/running (detailed is
+// either disabled — not_started — or already done). Earlier phases keep polling.
+function isSettled(status: TranscriptProcessingStatus): boolean {
+  if (status.overallState === "failed" || status.overallState === "summarized") {
+    return true;
+  }
+  if (status.overallState === "summarizing") {
+    const { summaryBrief, summaryDetailed } = status.steps;
+    const stillWorking =
+      ACTIVE_STEP_STATES.has(summaryBrief.status) ||
+      ACTIVE_STEP_STATES.has(summaryDetailed.status);
+    return !stillWorking;
+  }
+  return false;
+}
+
 function statusText(
   processingStatus: TranscriptProcessingStatus | null,
   fallbackTranscriptStatus: string,
@@ -131,6 +133,12 @@ function statusText(
 
   if (processingStatus.overallState === "failed") {
     return processingStatus.safeFailureMessage ?? "Failed";
+  }
+  if (processingStatus.overallState === "summarized") {
+    return "Summaries ready";
+  }
+  if (processingStatus.overallState === "summarizing") {
+    return "Generating summaries…";
   }
   if (isEmbedded(processingStatus)) {
     return "Embedded";
@@ -179,21 +187,17 @@ function transcriptStatusText(status: string): string {
 }
 
 function statusStyleKind(
-  hasTimedOut: boolean,
   processingStatus: TranscriptProcessingStatus | null,
   fallbackTranscriptStatus: string,
 ): keyof typeof styles {
-  if (hasTimedOut) {
-    return "timeout";
-  }
-  if (processingStatus !== null && isEmbedded(processingStatus)) {
-    return "completed";
-  }
   if (
     processingStatus?.overallState === "failed" ||
     fallbackTranscriptStatus === "failed"
   ) {
     return "failed";
+  }
+  if (processingStatus !== null && processingStatus.overallState === "summarized") {
+    return "completed";
   }
   if (processingStatus === null && fallbackTranscriptStatus === "completed") {
     return "completed";
@@ -246,11 +250,5 @@ const styles = {
     background: "#eff6ff",
     border: "1px solid #bfdbfe",
     color: "#1d4ed8",
-  },
-  timeout: {
-    ...statusBase,
-    background: "#fffbeb",
-    border: "1px solid #fde68a",
-    color: "#92400e",
   },
 } satisfies Record<string, React.CSSProperties>;

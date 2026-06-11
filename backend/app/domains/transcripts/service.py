@@ -9,7 +9,12 @@ from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from uuid6 import uuid7
 
-from app.domains.transcripts.schemas import TranscriptProcessingStatus
+from app.domains.transcripts.schemas import (
+    BriefSummaryContent,
+    DetailedSummaryContent,
+    TranscriptProcessingStatus,
+    TranscriptSummariesRead,
+)
 from app.domains.transcripts.validators import (
     InvalidTranscriptError,
     TranscriptUploadTooLargeError,
@@ -22,6 +27,7 @@ from app.platform.query.section_context import (
     AuthorizedSectionContext,
     get_authorized_lecturer_section_context,
 )
+from app.platform.query.summary_read import get_latest_transcript_summaries
 from app.platform.query.transcript_status import get_transcript_processing_status_read
 from app.platform.storage.base import (
     StorageProvider,
@@ -267,6 +273,47 @@ async def get_transcript_processing_status(
     )
     projection = await get_transcript_processing_status_read(db, transcript=transcript)
     return TranscriptProcessingStatus.model_validate(projection)
+
+
+async def get_transcript_summaries(
+    db: AsyncSession,
+    *,
+    current_user: CurrentUserContext,
+    module_id: UUID,
+    section_id: UUID,
+) -> TranscriptSummariesRead:
+    """Lecturer read surface (Stage 4.5d): the projection status + the brief and detailed summaries.
+
+    Authz is identical to the other transcript reads (assigned lecturer → 200; non-lecturer → 403;
+    unassigned/cross-tenant → 404) — ``get_active_transcript`` enforces it. ``brief``/``detailed`` are
+    null until generated (or when detailed is suppressed / for pre-4.5 transcripts); the UI maps that
+    gracefully rather than erroring.
+    """
+    transcript = await get_active_transcript(
+        db,
+        current_user=current_user,
+        module_id=module_id,
+        section_id=section_id,
+    )
+    projection = await get_transcript_processing_status_read(db, transcript=transcript)
+    brief_row, detailed_row = await get_latest_transcript_summaries(
+        db, transcript_id=transcript.id
+    )
+    return TranscriptSummariesRead(
+        status=TranscriptProcessingStatus.model_validate(projection),
+        brief=(
+            BriefSummaryContent.model_validate(brief_row.content_json)
+            if brief_row is not None
+            else None
+        ),
+        detailed=(
+            DetailedSummaryContent.model_validate(detailed_row.content_json)
+            if detailed_row is not None
+            else None
+        ),
+        brief_generated_at=(brief_row.generated_at if brief_row is not None else None),
+        detailed_generated_at=(detailed_row.generated_at if detailed_row is not None else None),
+    )
 
 
 async def _enqueue_parse_job(db: AsyncSession, *, transcript_id: UUID) -> None:

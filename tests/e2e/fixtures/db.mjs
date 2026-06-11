@@ -327,3 +327,83 @@ export async function waitForTranscriptEmbedded(transcriptId, timeoutMs = 90_000
     })}`,
   );
 }
+
+// --- Stage 4.5d: generated lecture summaries -------------------------------------------------
+export function getGeneratedSummariesForTranscript(transcriptId) {
+  assertUuid(transcriptId, 'transcriptId');
+  return runPsqlJson(`
+SELECT coalesce(json_agg(json_build_object(
+  'summaryType', summary_type,
+  'backendUsed', backend_used,
+  'modelId', model_id,
+  'contentSchemaVersion', content_schema_version,
+  'aiRequestLogId', ai_request_log_id
+) ORDER BY summary_type), '[]'::json)::text
+FROM generated_lecture_summaries
+WHERE transcript_id = ${sqlLiteral(transcriptId)};
+`);
+}
+
+export function getSummaryJobStatuses(transcriptId) {
+  assertUuid(transcriptId, 'transcriptId');
+  return runPsqlJson(`
+SELECT coalesce(json_object_agg(job_type, status), '{}'::json)::text
+FROM ingestion_jobs
+WHERE transcript_id = ${sqlLiteral(transcriptId)}
+  AND job_type IN ('generate_brief_summary', 'generate_detailed_summary');
+`);
+}
+
+// Poll until both summary jobs reach a terminal state (completed/failed). Returns the job-status map.
+export async function waitForSummariesSettled(transcriptId, timeoutMs = 120_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const statuses = getSummaryJobStatuses(transcriptId) ?? {};
+    const values = Object.values(statuses);
+    const settled =
+      values.length >= 2 && values.every((status) => status === 'completed' || status === 'failed');
+    if (settled) {
+      return statuses;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+  }
+  throw new Error(
+    `Timed out waiting for summaries to settle for transcript ${transcriptId}: ${JSON.stringify(
+      getSummaryJobStatuses(transcriptId),
+    )}`,
+  );
+}
+
+// Stage 4.5d Gate 2 — AIRequestLog rows for a transcript (fault-path proof).
+export function getAiRequestLogsForTranscript(transcriptId) {
+  assertUuid(transcriptId, 'transcriptId');
+  return runPsqlJson(`
+SELECT coalesce(json_agg(json_build_object(
+  'feature', arl.feature,
+  'status', arl.status,
+  'errorCode', arl.error_code,
+  'attemptNumber', arl.attempt_number
+) ORDER BY arl.attempt_number), '[]'::json)::text
+FROM ai_request_logs arl
+JOIN ingestion_jobs ij ON ij.id = arl.ingestion_job_id
+WHERE ij.transcript_id = ${sqlLiteral(transcriptId)};
+`);
+}
+
+// Poll until the brief summary job reaches the given terminal failure_category (Gate 2).
+export async function waitForSummaryFailure(transcriptId, category, timeoutMs = 90_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const row = runPsqlJson(`
+SELECT coalesce(json_agg(json_build_object('jobType', job_type, 'status', status, 'failureCategory', failure_category)), '[]'::json)::text
+FROM ingestion_jobs
+WHERE transcript_id = ${sqlLiteral(transcriptId)} AND job_type IN ('generate_brief_summary','generate_detailed_summary');
+`) ?? [];
+    const failed = row.find((j) => j.status === 'failed' && j.failureCategory === category);
+    if (failed) {
+      return row;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+  }
+  throw new Error(`Timed out waiting for summary failure_category=${category} on ${transcriptId}`);
+}

@@ -5,10 +5,15 @@ from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, stat
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.datastructures import UploadFile as StarletteUploadFile
 
-from app.domains.transcripts.schemas import TranscriptMeta, TranscriptProcessingStatus
+from app.domains.transcripts.schemas import (
+    TranscriptMeta,
+    TranscriptProcessingStatus,
+    TranscriptSummariesRead,
+)
 from app.domains.transcripts.service import (
     get_active_transcript,
     get_transcript_processing_status,
+    get_transcript_summaries,
     prepare_transcript_upload,
     upload_transcript,
 )
@@ -127,6 +132,25 @@ async def get_section_transcript_processing_status(
     current_user: CurrentUser,
 ) -> TranscriptProcessingStatus:
     return await get_transcript_processing_status(
+        db,
+        current_user=current_user,
+        module_id=module_id,
+        section_id=section_id,
+    )
+
+
+@router.get(
+    "/modules/{module_id}/sections/{section_id}/transcript-summaries",
+    response_model=TranscriptSummariesRead,
+    operation_id="getSectionTranscriptSummaries",
+)
+async def get_section_transcript_summaries(
+    module_id: UUID,
+    section_id: UUID,
+    db: DbSession,
+    current_user: CurrentUser,
+) -> TranscriptSummariesRead:
+    return await get_transcript_summaries(
         db,
         current_user=current_user,
         module_id=module_id,

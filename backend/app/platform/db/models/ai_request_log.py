@@ -12,7 +12,7 @@ from sqlalchemy import (
     Text,
     text,
 )
-from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID as PostgresUUID
 from sqlalchemy.orm import Mapped, mapped_column
 from uuid6 import uuid7
 
@@ -42,8 +42,14 @@ class AIRequestLog(Base):
         ),
         CheckConstraint(
             "status IN ('running', 'succeeded', 'rate_limited', 'provider_transient', "
-            "'invalid_output', 'invalid_input', 'failed')",
+            "'invalid_output', 'invalid_input', 'provider_config_error', "
+            "'provider_auth_error', 'failed')",
             name="ck_ai_request_logs_status",
+        ),
+        CheckConstraint(
+            "backend_route_source IS NULL OR "
+            "backend_route_source IN ('requested', 'provider_echoed')",
+            name="ck_ai_request_logs_backend_route_source",
         ),
         Index("ix_ai_request_logs_feature_created_at", "feature", "created_at"),
         Index("ix_ai_request_logs_ingestion_job_id", "ingestion_job_id"),
@@ -85,6 +91,16 @@ class AIRequestLog(Base):
     provider_request_id: Mapped[str | None] = mapped_column(Text)
     error_class: Mapped[str | None] = mapped_column(Text)
     error_code: Mapped[str | None] = mapped_column(Text)
+    # Transport-retry provenance — ONE gateway attempt may issue several transport POSTs (in-call 429
+    # backoff, §9/§10); they are recorded IN THIS ROW, not as new rows. retry_events_json holds only
+    # {attempt, statusCode, errorClass, latencyMs, atOffsetMs} — NO headers, key, prompt, or
+    # transcript text. backend_route_source is the honesty bit on backend_used: 'requested' until the
+    # provider ever echoes the served route (§6); always 'requested' in 4.5b.
+    provider_attempt_count: Mapped[int | None] = mapped_column(Integer)
+    rate_limit_backoff_count: Mapped[int | None] = mapped_column(Integer)
+    last_provider_status_code: Mapped[int | None] = mapped_column(Integer)
+    retry_events_json: Mapped[list | None] = mapped_column(JSONB)
+    backend_route_source: Mapped[str | None] = mapped_column(Text)
     # Non-prod only; never populated from transcript or prompt text (error bodies / provider
     # metadata only). Truncated transcript text is still student PII.
     debug_text_truncated: Mapped[str | None] = mapped_column(Text)

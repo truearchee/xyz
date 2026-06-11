@@ -339,6 +339,17 @@ async function teardown(identifier) {
     manifest: path,
     runId: manifest.runId,
     storageObjects: await deleteStorageKeys(env, storageKeys),
+    // Stage 4.5: generated summaries reference ai_request_logs (RESTRICT). They must be removed
+    // BEFORE deleting ingestion_jobs (whose delete cascades ai_request_logs), or the cascade hits
+    // the RESTRICT FK. Scoped by the run's transcripts/sections.
+    generatedSummaries: deleteWhere('generated_lecture_summaries', [
+      manifest.transcriptIds.length > 0
+        ? `transcript_id IN (${uuidList(manifest.transcriptIds)})`
+        : '',
+      manifest.sectionIds.length > 0
+        ? `module_section_id IN (${uuidList(manifest.sectionIds)})`
+        : '',
+    ]),
     transcriptChunks: deleteWhere('transcript_chunks', [
       manifest.transcriptChunkIds.length > 0
         ? `id IN (${uuidList(manifest.transcriptChunkIds)})`

@@ -1,9 +1,13 @@
 name: brief_summary
 version: v1
-model: MBZUAI-IFM/K2-V2-Instruct
+model: MBZUAI-IFM/K2-Think-v2
 backend: cerebras
-max_tokens: 600
-# reasoning_level intentionally omitted until confirmed real with IFM (spec D4 — never faked).
+# K2-Think-v2 is a reasoning model that thinks inline in `content` before the answer; 600 clipped the
+# final JSON (finish_reason=length). 2000 leaves room for reasoning + the ~60-120 word answer (F-4.5-48).
+max_tokens: 2000
+# Model is the only verified IFM deployment (ADR-025 deviation): the intended K2-V2-Instruct is not
+# yet accessible. backend stays 'cerebras' = the REQUESTED route (backend_route_source='requested'),
+# not a proven serving backend. reasoning_level intentionally omitted — never faked (D4 / F-4.5-04).
 content: |
   You are writing a brief study summary of a single university lecture or lab session for a
   student who wants a quick orientation before studying in depth.
@@ -16,7 +20,12 @@ content: |
   Write ONE short, self-contained paragraph of roughly 60-120 words that captures what the session
   was about and its most important takeaways. Plain prose, no lists, no headings.
 
-  Return ONLY a JSON object of exactly this shape, with no markdown fences and no extra keys:
+  Output contract — follow EXACTLY:
+  - Reply with a single JSON object and NOTHING else.
+  - No preamble, no explanation, no reasoning, no markdown code fences.
+  - The object has exactly one key, "text", whose value is your paragraph. No other keys.
+
+  Return exactly:
   {"text": "<your paragraph>"}
 
   Section type: {{section_type}}

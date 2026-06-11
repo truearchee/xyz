@@ -20,6 +20,7 @@ from app.platform.db.models import (
 )
 from app.platform.llm.errors import ProviderTransient
 from app.platform.llm.gateway import LLMGateway
+from app.platform.llm.limiter import BackoffPolicy
 from app.platform.llm.provider import DeterministicTestProvider
 from app.platform.query.transcript_status import (
     TranscriptProcessingStepRead,
@@ -41,11 +42,13 @@ def _gateway(factory, *, fault: str | None = None) -> LLMGateway:
     )
 
 
-async def _make_summary_jobs(db_session: AsyncSession, factory):
+async def _make_summary_jobs(db_session: AsyncSession, factory, *, enable_detailed: bool = False):
     transcript, _ = await _create_parsed_transcript(db_session, texts=TEXTS)
     async with factory() as session:
         async with session.begin():
-            jobs = await insert_summary_jobs(session, transcript=transcript)
+            jobs = await insert_summary_jobs(
+                session, transcript=transcript, enable_detailed=enable_detailed
+            )
     return transcript, dict(jobs)
 
 
@@ -54,13 +57,17 @@ async def _make_summary_jobs(db_session: AsyncSession, factory):
 @pytest.mark.anyio
 async def test_insert_summary_jobs_creates_two_queued_jobs_idempotently(db_session: AsyncSession):
     factory = _session_factory(db_session)
-    transcript, jobs = await _make_summary_jobs(db_session, factory)
+    # The two-job creation mechanism is exercised with detailed enabled (the 4.5c regime); 4.5b
+    # default-off behavior is covered by test_detailed_enqueue_gated_off below (§5).
+    transcript, jobs = await _make_summary_jobs(db_session, factory, enable_detailed=True)
     assert set(jobs) == {"generate_brief_summary", "generate_detailed_summary"}
 
     # Idempotent: a second call returns the same job ids and does not duplicate.
     async with factory() as session:
         async with session.begin():
-            again = dict(await insert_summary_jobs(session, transcript=transcript))
+            again = dict(
+                await insert_summary_jobs(session, transcript=transcript, enable_detailed=True)
+            )
     assert again == jobs
 
     async with factory() as session:
@@ -113,7 +120,7 @@ async def test_brief_handler_stores_artifact_with_full_provenance(db_session: As
 @pytest.mark.anyio
 async def test_detailed_handler_stores_structured_summary(db_session: AsyncSession):
     factory = _session_factory(db_session)
-    transcript, jobs = await _make_summary_jobs(db_session, factory)
+    transcript, jobs = await _make_summary_jobs(db_session, factory, enable_detailed=True)
     detailed_id = jobs["generate_detailed_summary"]
 
     await generate_detailed_summary_async(
@@ -189,6 +196,155 @@ async def test_invalid_input_is_non_retryable_and_writes_no_artifact(db_session:
             )
         ).scalar_one()
         assert log.status == "invalid_input"
+
+
+# --- 4.5c: detailed activated by default + routing split made live -------------------------
+
+@pytest.mark.anyio
+async def test_detailed_enabled_by_default_creates_both_jobs(db_session: AsyncSession):
+    # 4.5c default ENABLE_DETAILED_SUMMARY=true: insert_summary_jobs (no override) creates BOTH.
+    factory = _session_factory(db_session)
+    transcript, _ = await _create_parsed_transcript(db_session, texts=TEXTS)
+    async with factory() as session:
+        async with session.begin():
+            jobs = dict(await insert_summary_jobs(session, transcript=transcript))
+    assert set(jobs) == {"generate_brief_summary", "generate_detailed_summary"}
+
+
+@pytest.mark.anyio
+async def test_both_summaries_complete_with_separate_route_budgets(db_session: AsyncSession):
+    factory = _session_factory(db_session)
+    transcript, jobs = await _make_summary_jobs(db_session, factory, enable_detailed=True)
+
+    # One shared limiter across both jobs proves each acquires its OWN backend budget (rule 15).
+    limiter = _FakeLimiter()
+
+    def gateway():
+        return LLMGateway(
+            provider=DeterministicTestProvider(), limiter=limiter, session_factory=factory
+        )
+
+    await generate_brief_summary_async(
+        jobs["generate_brief_summary"], gateway=gateway(), session_factory=factory
+    )
+    await generate_detailed_summary_async(
+        jobs["generate_detailed_summary"], gateway=gateway(), session_factory=factory
+    )
+
+    # Routing split exercised end-to-end: brief→cerebras budget, detailed→nvidia budget.
+    assert {backend for backend, _tokens, _priority in limiter.acquired} == {"cerebras", "nvidia"}
+
+    async with factory() as session:
+        for job_type in ("generate_brief_summary", "generate_detailed_summary"):
+            job = (
+                await session.execute(
+                    select(IngestionJob).where(
+                        IngestionJob.transcript_id == transcript.id,
+                        IngestionJob.job_type == job_type,
+                    )
+                )
+            ).scalar_one()
+            assert job.status == "completed"
+
+        summaries = (
+            await session.execute(
+                select(GeneratedLectureSummary).where(
+                    GeneratedLectureSummary.transcript_id == transcript.id
+                )
+            )
+        ).scalars().all()
+        by_type = {s.summary_type: s for s in summaries}
+        assert set(by_type) == {"brief", "detailed_study"}
+        assert by_type["brief"].backend_used == "cerebras"
+        assert by_type["detailed_study"].backend_used == "nvidia"  # detailed on the Nvidia route
+        assert "overview" in by_type["detailed_study"].content_json
+
+
+# --- 4.5b: detailed gated off (§5) + terminal provider categories (§8) ----------------------
+
+async def _no_sleep(_seconds: float) -> None:
+    return None
+
+
+@pytest.mark.anyio
+async def test_detailed_enqueue_gated_off_creates_no_detailed_row_or_log(db_session: AsyncSession):
+    factory = _session_factory(db_session)
+    # Default (ENABLE_DETAILED_SUMMARY off): only the brief job is created — gated at CREATION (§5).
+    transcript, jobs = await _make_summary_jobs(db_session, factory)
+    assert set(jobs) == {"generate_brief_summary"}
+
+    async with factory() as session:
+        detailed_rows = (
+            await session.execute(
+                select(IngestionJob).where(
+                    IngestionJob.transcript_id == transcript.id,
+                    IngestionJob.job_type == "generate_detailed_summary",
+                )
+            )
+        ).scalars().all()
+    assert detailed_rows == []  # no detailed IngestionJob row for the 4.6 sweeper to misread
+
+    await generate_brief_summary_async(
+        jobs["generate_brief_summary"], gateway=_gateway(factory), session_factory=factory
+    )
+
+    async with factory() as session:
+        brief_job = await session.get(IngestionJob, jobs["generate_brief_summary"])
+        assert brief_job.status == "completed"
+        detailed_logs = (
+            await session.execute(
+                select(AIRequestLog).where(AIRequestLog.feature == "summary_detailed")
+            )
+        ).scalars().all()
+    assert detailed_logs == []  # Think-v0 is never called; no detailed AIRequestLog
+
+
+@pytest.mark.anyio
+async def test_provider_config_error_is_terminal_category_no_retry(db_session: AsyncSession):
+    factory = _session_factory(db_session)
+    transcript, jobs = await _make_summary_jobs(db_session, factory)
+    brief_id = jobs["generate_brief_summary"]
+
+    # Terminal 4xx: the handler swallows it (NO RQ retry) and records the precise category (§8).
+    await generate_brief_summary_async(
+        brief_id, gateway=_gateway(factory, fault="provider_config"), session_factory=factory
+    )
+
+    async with factory() as session:
+        job = await session.get(IngestionJob, brief_id)
+        assert job.status == "failed"
+        assert job.failure_category == "provider_config_error"
+        summaries = (
+            await session.execute(
+                select(GeneratedLectureSummary).where(
+                    GeneratedLectureSummary.transcript_id == transcript.id
+                )
+            )
+        ).scalars().all()
+        assert summaries == []
+
+
+@pytest.mark.anyio
+async def test_rate_limited_exhaustion_is_terminal_not_retried(db_session: AsyncSession):
+    factory = _session_factory(db_session)
+    transcript, jobs = await _make_summary_jobs(db_session, factory)
+    brief_id = jobs["generate_brief_summary"]
+
+    # Fast backoff + no-op sleep so exhaustion is deterministic and instant.
+    gateway = LLMGateway(
+        provider=DeterministicTestProvider(fault="rate_limited"),
+        limiter=_FakeLimiter(),
+        backoff=BackoffPolicy(max_backoffs=1, base_delay_ms=1, max_delay_ms=1, max_elapsed_ms=10_000),
+        sleep=_no_sleep,
+        session_factory=factory,
+    )
+    # rate_limited is NOT in RQ_RETRY_STATUSES (rule 15) → the handler returns without raising.
+    await generate_brief_summary_async(brief_id, gateway=gateway, session_factory=factory)
+
+    async with factory() as session:
+        job = await session.get(IngestionJob, brief_id)
+        assert job.status == "failed"
+        assert job.failure_category == "rate_limited"
 
 
 @pytest.mark.anyio
@@ -268,6 +424,21 @@ def test_overall_state_embedded_when_no_summary_jobs_yet():
         embedded_chunk_count=1,
     )
     assert state == "embedded"
+
+
+def test_overall_state_summarizing_when_brief_done_and_detailed_deferred(monkeypatch):
+    # When detailed is explicitly suppressed (ENABLE_DETAILED_SUMMARY=false — the 4.5b regime, still a
+    # supported cost-control config in 4.5c) there is no detailed job, and brief-complete rests at
+    # 'summarizing' (not 'embedded', not 'summarized'). 4.5c default is true (both run → 'summarized').
+    monkeypatch.setenv("ENABLE_DETAILED_SUMMARY", "false")
+    state = _overall_state(
+        transcript=SimpleNamespace(status="completed"),
+        steps=_embedded_steps(summary_brief="completed", summary_detailed="not_started"),
+        segment_count=3,
+        chunk_count=1,
+        embedded_chunk_count=1,
+    )
+    assert state == "summarizing"
 
 
 def test_overall_state_failed_is_representable_per_step():
