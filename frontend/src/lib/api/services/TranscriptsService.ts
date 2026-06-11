@@ -2,6 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { ActiveSummaryPreviewRead } from '../models/ActiveSummaryPreviewRead';
 import type { TranscriptMeta } from '../models/TranscriptMeta';
 import type { TranscriptProcessingStatus } from '../models/TranscriptProcessingStatus';
 import type { TranscriptSummariesRead } from '../models/TranscriptSummariesRead';
@@ -146,6 +147,34 @@ export class TranscriptsService {
         return __request(OpenAPI, {
             method: 'GET',
             url: '/modules/{module_id}/sections/{section_id}/transcript-summaries',
+            path: {
+                'module_id': moduleId,
+                'section_id': sectionId,
+            },
+            headers: {
+                'Authorization': authorization,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Get Section Active Summary Preview
+     * @param moduleId
+     * @param sectionId
+     * @param authorization
+     * @returns ActiveSummaryPreviewRead Successful Response
+     * @throws ApiError
+     */
+    public static getSectionActiveSummaryPreview(
+        moduleId: string,
+        sectionId: string,
+        authorization?: (string | null),
+    ): CancelablePromise<ActiveSummaryPreviewRead> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/modules/{module_id}/sections/{section_id}/transcript-active-summary-preview',
             path: {
                 'module_id': moduleId,
                 'section_id': sectionId,

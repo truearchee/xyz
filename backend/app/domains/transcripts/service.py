@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from uuid6 import uuid7
 
 from app.domains.transcripts.schemas import (
+    ActiveSummaryPreviewRead,
     BriefSummaryContent,
     DetailedSummaryContent,
     TranscriptProcessingStatus,
@@ -32,6 +33,9 @@ from app.domains.transcripts.retry import (
     apply_retry,
     enqueue_retry_jobs,
     resolve_retry_scope,
+)
+from app.platform.query.active_transcript_summary_resolver import (
+    ActiveTranscriptSummaryResolver,
 )
 from app.platform.query.summary_read import get_latest_transcript_summaries
 from app.platform.query.transcript_status import get_transcript_processing_status_read
@@ -437,6 +441,56 @@ async def get_transcript_summaries(
         ),
         brief_generated_at=(brief_row.generated_at if brief_row is not None else None),
         detailed_generated_at=(detailed_row.generated_at if detailed_row is not None else None),
+    )
+
+
+async def get_active_summary_preview(
+    db: AsyncSession,
+    *,
+    current_user: CurrentUserContext,
+    module_id: UUID,
+    section_id: UUID,
+) -> ActiveSummaryPreviewRead:
+    """Lecturer-only preview of what the ACTIVE transcript currently surfaces (ADR-46-E, Stage 4.6d).
+
+    Read-only over ``ActiveTranscriptSummaryResolver`` — exposes the eligibility flags (a summary bound
+    to THIS active transcript by id+checksum) and whether a pending replacement is processing, so the UI
+    can show "new version processing" and the browser gate can prove replacement continuity (the active
+    id flips atomically on swap; the resolver never combines v1 identity with v2 content). NOT the
+    student contract (Stage 4.7).
+    """
+    transcript = await get_active_transcript(
+        db,
+        current_user=current_user,
+        module_id=module_id,
+        section_id=section_id,
+    )
+    view = await ActiveTranscriptSummaryResolver().resolve(db, active_transcript=transcript)
+    pending_exists = (
+        await db.execute(
+            select(Transcript.id)
+            .where(
+                Transcript.module_section_id == transcript.module_section_id,
+                Transcript.lifecycle_state == "pending",
+            )
+            .limit(1)
+        )
+    ).first() is not None
+    return ActiveSummaryPreviewRead(
+        active_transcript_id=transcript.id,
+        brief=(
+            BriefSummaryContent.model_validate(view.brief.content_json)
+            if view.brief is not None
+            else None
+        ),
+        detailed=(
+            DetailedSummaryContent.model_validate(view.detailed.content_json)
+            if view.detailed is not None
+            else None
+        ),
+        brief_eligible=view.brief_eligible,
+        detailed_eligible=view.detailed_eligible,
+        has_pending_replacement=pending_exists,
     )
 
 

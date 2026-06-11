@@ -1,6 +1,7 @@
 'use client';
 
 import {
+  type ActiveSummaryPreviewRead,
   AdminService,
   ApiError,
   type AssignMemberRequest,
@@ -228,6 +229,25 @@ export const api = {
     ): Promise<TranscriptSummariesRead> =>
       withAuthRecovery(() =>
         TranscriptsService.getSectionTranscriptSummaries(moduleId, sectionId),
+      ),
+    getActiveSummaryPreview: (
+      moduleId: string,
+      sectionId: string,
+    ): Promise<ActiveSummaryPreviewRead> =>
+      withAuthRecovery(() =>
+        TranscriptsService.getSectionActiveSummaryPreview(moduleId, sectionId),
+      ),
+    retry: (
+      moduleId: string,
+      sectionId: string,
+      transcriptId: string,
+    ): Promise<TranscriptProcessingStatus> =>
+      withAuthRecovery(() =>
+        TranscriptsService.retrySectionTranscriptProcessing(
+          moduleId,
+          sectionId,
+          transcriptId,
+        ),
       ),
   },
 };

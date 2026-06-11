@@ -6,11 +6,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.datastructures import UploadFile as StarletteUploadFile
 
 from app.domains.transcripts.schemas import (
+    ActiveSummaryPreviewRead,
     TranscriptMeta,
     TranscriptProcessingStatus,
     TranscriptSummariesRead,
 )
 from app.domains.transcripts.service import (
+    get_active_summary_preview,
     get_active_transcript,
     get_transcript_processing_status,
     get_transcript_summaries,
@@ -173,6 +175,25 @@ async def get_section_transcript_summaries(
     current_user: CurrentUser,
 ) -> TranscriptSummariesRead:
     return await get_transcript_summaries(
+        db,
+        current_user=current_user,
+        module_id=module_id,
+        section_id=section_id,
+    )
+
+
+@router.get(
+    "/modules/{module_id}/sections/{section_id}/transcript-active-summary-preview",
+    response_model=ActiveSummaryPreviewRead,
+    operation_id="getSectionActiveSummaryPreview",
+)
+async def get_section_active_summary_preview(
+    module_id: UUID,
+    section_id: UUID,
+    db: DbSession,
+    current_user: CurrentUser,
+) -> ActiveSummaryPreviewRead:
+    return await get_active_summary_preview(
         db,
         current_user=current_user,
         module_id=module_id,

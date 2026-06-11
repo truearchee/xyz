@@ -95,3 +95,18 @@ class TranscriptSummariesRead(CamelModel):
     detailed: DetailedSummaryContent | None
     brief_generated_at: datetime | None
     detailed_generated_at: datetime | None
+
+
+class ActiveSummaryPreviewRead(CamelModel):
+    # Stage 4.6d (ADR-46-E): the lecturer-scoped "active-summary preview" over
+    # ActiveTranscriptSummaryResolver — confirms what the active transcript currently surfaces (the
+    # browser gate polls it to prove replacement continuity). `*Eligible` flags are the resolver's
+    # identity+checksum predicate (a row bound to THIS active transcript). `hasPendingReplacement` drives
+    # the "new version processing" indicator. NOT the student contract (that is Stage 4.7); no
+    # checksum/storageKey is exposed.
+    active_transcript_id: UUID
+    brief: BriefSummaryContent | None
+    detailed: DetailedSummaryContent | None
+    brief_eligible: bool
+    detailed_eligible: bool
+    has_pending_replacement: bool

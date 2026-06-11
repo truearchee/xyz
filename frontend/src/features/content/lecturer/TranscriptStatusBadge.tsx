@@ -35,9 +35,33 @@ export function TranscriptStatusBadge({
 }: TranscriptStatusBadgeProps) {
   const [processingStatus, setProcessingStatus] =
     useState<TranscriptProcessingStatus | null>(null);
+  const [isRetrying, setIsRetrying] = useState(false);
+  const [retryError, setRetryError] = useState<string | null>(null);
+  const [retryNonce, setRetryNonce] = useState(0);
   // Keep the missing-callback in a ref so its identity changing never restarts polling.
   const onMissingRef = useRef(onTranscriptMissing);
   onMissingRef.current = onTranscriptMissing;
+
+  async function onRetry() {
+    if (processingStatus === null) {
+      return;
+    }
+    setIsRetrying(true);
+    setRetryError(null);
+    try {
+      const status = await api.transcripts.retry(
+        moduleId,
+        sectionId,
+        processingStatus.activeTranscriptId,
+      );
+      setProcessingStatus(status);
+      setRetryNonce((nonce) => nonce + 1); // restart polling on the resumed pipeline
+    } catch (caught) {
+      setRetryError(errorMessage(caught));
+    } finally {
+      setIsRetrying(false);
+    }
+  }
 
   useEffect(() => {
     setProcessingStatus(null);
@@ -81,21 +105,114 @@ export function TranscriptStatusBadge({
       isMounted = false;
       window.clearTimeout(timeoutId);
     };
-  }, [moduleId, sectionId, transcript.id]);
+  }, [moduleId, sectionId, transcript.id, retryNonce]);
 
   const text = statusText(processingStatus, transcript.status);
   const statusKind = statusStyleKind(processingStatus, transcript.status);
+  const canRetry =
+    processingStatus !== null &&
+    processingStatus.overallState === "failed" &&
+    processingStatus.retryable;
 
   return (
-    <p
-      aria-live="polite"
-      data-testid={`section-transcript-status-${sectionKey}`}
-      role="status"
-      style={styles[statusKind]}
-    >
-      {text}
-    </p>
+    <div style={styles.container}>
+      <p
+        aria-live="polite"
+        data-testid={`section-transcript-status-${sectionKey}`}
+        role="status"
+        style={styles[statusKind]}
+      >
+        {text}
+      </p>
+      {processingStatus !== null ? (
+        <StepStates
+          failedStep={processingStatus.failedStep}
+          sectionKey={sectionKey}
+          steps={processingStatus.steps}
+        />
+      ) : null}
+      {canRetry ? (
+        <button
+          data-testid={`section-transcript-retry-${sectionKey}`}
+          disabled={isRetrying}
+          onClick={() => void onRetry()}
+          style={isRetrying ? styles.disabledButton : styles.retryButton}
+          type="button"
+        >
+          {isRetrying ? "Retrying…" : "Retry failed processing"}
+        </button>
+      ) : null}
+      {retryError ? (
+        <p role="alert" style={styles.failed}>
+          {retryError}
+        </p>
+      ) : null}
+    </div>
   );
+}
+
+const STEP_LABELS: Array<{ key: keyof TranscriptProcessingStatus["steps"]; label: string }> = [
+  { key: "parse", label: "Parse" },
+  { key: "chunk", label: "Chunk" },
+  { key: "embed", label: "Embed" },
+  { key: "summaryBrief", label: "Brief" },
+  { key: "summaryDetailed", label: "Detailed" },
+];
+
+function StepStates({
+  failedStep,
+  sectionKey,
+  steps,
+}: {
+  failedStep: string | null;
+  sectionKey: string;
+  steps: TranscriptProcessingStatus["steps"];
+}) {
+  return (
+    <ul
+      data-testid={`section-transcript-steps-${sectionKey}`}
+      style={styles.steps}
+    >
+      {STEP_LABELS.map(({ key, label }) => {
+        const status = steps[key].status;
+        return (
+          <li key={key} style={styles.step}>
+            <span style={styles.stepLabel}>{label}</span>
+            <span style={stepStatusStyle(status)}>{stepStatusText(status)}</span>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+function stepStatusText(status: string): string {
+  if (status === "completed") return "completed";
+  if (status === "failed") return "failed";
+  if (status === "running") return "running";
+  if (status === "queued") return "retrying";
+  return "—";
+}
+
+function stepStatusStyle(status: string): React.CSSProperties {
+  if (status === "failed") return styles.stepFailed;
+  if (status === "completed") return styles.stepCompleted;
+  if (status === "running" || status === "queued") return styles.stepActive;
+  return styles.stepIdle;
+}
+
+function errorMessage(caught: unknown): string {
+  if (caught instanceof ApiError) {
+    const detail = caught.body?.detail;
+    if (typeof detail === "string") {
+      return detail;
+    }
+    return caught.message;
+  }
+  if (caught instanceof Error) {
+    return caught.message;
+  }
+  return "Unexpected error";
 }
 
 function isTranscriptNotFound(caught: unknown): boolean {
@@ -232,7 +349,19 @@ const statusBase = {
   padding: "8px 10px",
 } satisfies React.CSSProperties;
 
+const buttonBase = {
+  borderRadius: 6,
+  fontSize: 14,
+  fontWeight: 700,
+  minHeight: 38,
+  padding: "0 14px",
+} satisfies React.CSSProperties;
+
 const styles = {
+  container: {
+    display: "grid",
+    gap: 8,
+  },
   completed: {
     ...statusBase,
     background: "#ecfdf5",
@@ -251,4 +380,46 @@ const styles = {
     border: "1px solid #bfdbfe",
     color: "#1d4ed8",
   },
+  retryButton: {
+    ...buttonBase,
+    background: "#174a63",
+    border: "1px solid #174a63",
+    color: "#ffffff",
+    cursor: "pointer",
+    justifySelf: "start",
+  },
+  disabledButton: {
+    ...buttonBase,
+    background: "#e5e7eb",
+    border: "1px solid #d1d5db",
+    color: "#6b7280",
+    cursor: "not-allowed",
+    justifySelf: "start",
+  },
+  steps: {
+    display: "flex",
+    flexWrap: "wrap",
+    gap: 8,
+    listStyle: "none",
+    margin: 0,
+    padding: 0,
+  },
+  step: {
+    alignItems: "center",
+    background: "#f8fafc",
+    border: "1px solid #e2e8f0",
+    borderRadius: 6,
+    display: "flex",
+    fontSize: 12,
+    gap: 6,
+    padding: "4px 8px",
+  },
+  stepLabel: {
+    color: "#334155",
+    fontWeight: 700,
+  },
+  stepCompleted: { color: "#047857", fontWeight: 700 },
+  stepFailed: { color: "#7f1d1d", fontWeight: 700 },
+  stepActive: { color: "#1d4ed8", fontWeight: 700 },
+  stepIdle: { color: "#94a3b8", fontWeight: 700 },
 } satisfies Record<string, React.CSSProperties>;

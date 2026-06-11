@@ -10,6 +10,7 @@ import {
   getIngestionJobsForTranscript,
   getMembershipsForModule,
   getSectionsForModule,
+  getTranscriptById,
   waitForTranscriptCompleted,
 } from './fixtures/db.mjs';
 
@@ -493,14 +494,22 @@ test('4.3.5e Stage 4.1-4.3 transcript browser gate', async ({ browser }) => {
     await expect(reloadedLectureRow.locator('[data-testid^="section-transcript-upload-"]')).toHaveCount(0);
     await expectNoRawMarkers(lecturerPage);
 
-    const duplicate = await apiMultipart(
+    // Stage 4.6a: a second upload no longer 409s — it creates a PENDING replacement that processes
+    // alongside the still-active transcript (the active is untouched until the replacement completes).
+    const replacement = await apiMultipart(
       apiLecturer,
       `/modules/${setup.moduleId}/sections/${setup.lecture.id}/transcript`,
       'ensemble-methods.vtt',
       'text/vtt',
     );
-    expect(duplicate.status).toBe(409);
-    expect(duplicate.body).toMatchObject({ detail: 'TRANSCRIPT_ALREADY_EXISTS' });
+    expect(replacement.status).toBe(201);
+    expect(replacement.body).toMatchObject({ lifecycleState: 'pending' });
+    const replacementId = (replacement.body as { id: string }).id;
+    recordTranscriptId(runId, replacementId);
+    const replacementRow = getTranscriptById(replacementId);
+    if (replacementRow?.storageKey) {
+      recordStorageKey(runId, replacementRow.storageKey);
+    }
     expect(getActiveTranscriptForSection(setup.lecture.id)?.id).toBe(lectureTranscriptId);
     expect(getActiveTranscriptCountForSection(setup.lecture.id)).toBe(1);
 

@@ -1,8 +1,27 @@
 # Status
 
-_Last updated: 2026-06-11 - Stage 4.6c recovery BACKEND VERIFIED. Stuck-row reaper (step-aware, RQ-registry/age liveness, fenced `crashed` producer, singleton advisory lock, worker-startup + admin trigger) + loss-safe storage reconciliation (report-only default, grace window, prefix-scoped, deletion-capped, superseded retained, missing reported never auto-fixed) + MaintenanceRun table (migration 0012) + admin maintenance endpoints. Backend 344 passed (+15), migration 0012 fresh-DB round-trip, frontend tsc exit 0. 4.6a/4.6b/4.5 unchanged. Only 4.6d (lecturer UI + active-summary preview endpoint + browser gate) remains to close Stage 4.6._
+_Last updated: 2026-06-11 - Stage 4.6d lecturer UI + preview endpoint BUILT (Stage 4.6 backend+UI complete; live browser gate pending). Active-summary preview endpoint (lecturer-only, over the resolver, hasPendingReplacement, NO student surface) + lecturer Replace (inline confirm + double-replacement warning) / Retry / per-step states / sanitized reason / "new version processing" badge on the 4.5d surface. Browser-gate spec (4.6d-replace-retry: retry flow + replacement continuity) + deterministic fencing pytest. Fixed cross-stage e2e breaks (4.3.5e 409→pending, db.mjs lifecycle_state). Backend 349 passed (+4), frontend tsc exit 0, client regen, 9 e2e specs compile. The LIVE browser gate + full active suite (developer-run: rebuild images, apply 0010→0012, restart, npx playwright) is the acceptance that marks Stage 4.6 FULLY VERIFIED. Next → 4.7 (student surface)._
 
 ## Stage 4.6 — Replacement / Retry / Supersession (IN PROGRESS)
+
+**4.6d Lecturer UI + active-summary preview endpoint — BUILT (live browser gate pending):**
+- **Preview endpoint** `GET .../transcript-active-summary-preview` (lecturer-only, over `ActiveTranscriptSummaryResolver`):
+  `activeTranscriptId` + brief/detailed content + `briefEligible`/`detailedEligible` + `hasPendingReplacement`.
+  NO student surface (4.7). No checksum/storageKey exposed.
+- **Lecturer UI** (4.5d surface): Replace (file input + inline confirm; **double-replacement warning** when a
+  pending exists) reusing the upload endpoint (creates pending); Retry (on `failed` && `retryable`, targets
+  the active transcript) via the 4.6b retry endpoint; per-step states strip + sanitized reason; **"new version
+  processing"** badge from a preview poll that also detects the atomic swap and refreshes to the new active.
+- **Browser gate** `tests/e2e/4.6d-replace-retry.spec.ts`: RETRY FLOW (forced step fail → retry → summarized,
+  no duplicates; embed failure doesn't block summaries) + REPLACEMENT CONTINUITY (preview stays on the active
+  while pending → flips to v2 on swap; old superseded with lineage). Fencing = deterministic pytest
+  (`test_stale_worker_aborts_after_reaper_then_retry`).
+- **Cross-stage e2e fixes (rule 14):** 4.3.5e duplicate-upload `409`→`201` pending; `db.mjs` `is_active`→`lifecycle_state`
+  + `getTranscriptsBySection`.
+- **Deviations (approved):** live browser gate deferred to the developer; minimal pending UI (badge only).
+- Verified: `pytest` **349 passed** (+4: 3 preview + 1 fencing); `tsc --noEmit` exit 0; client regen
+  (`getSectionActiveSummaryPreview` + `ActiveSummaryPreviewRead`); `npx playwright test --list` 9 specs.
+  Report: [[steps/stage-04/4.6d-lecturer-ui-browser-gate]].
 
 **4.6c Recovery — BACKEND VERIFIED (browser gate → 4.6d):**
 - `app/domains/recovery/`: **stuck-row reaper** + **loss-safe storage reconciliation**, both idempotent,
@@ -114,7 +133,7 @@ Stage 4.2  Transcript parsing           FULLY VERIFIED  (browser gate: 4.3.5e)
 Stage 4.3  Transcript chunk persistence FULLY VERIFIED  (browser gate: 4.3.5e)
 Stage 4.4  Embeddings                   FULLY VERIFIED  (browser gate: 4.4)
 Stage 4.5  AI infra + summaries          FULLY VERIFIED  (gate: 4.5d browser gate + full E2E + real-provider smoke)
-Stage 4.6  Replacement / retry / superse. IN PROGRESS — 4.6a + 4.6b + 4.6c BACKEND VERIFIED (gate → 4.6d); only 4.6d remains
+Stage 4.6  Replacement / retry / superse. IN PROGRESS — 4.6a–d BUILT + pytest/tsc/compile-VERIFIED; only the live browser gate (developer-run) remains → FULLY VERIFIED
 
 Client Edge Recovery Block (4.3.5): COMPLETE
   Stages 1, 2, 3, 4.1, 4.2, 4.3 all FULLY VERIFIED.
@@ -195,11 +214,12 @@ Required next:
 - Session 1.1b: Stage 1 browser gate satisfied. Docker-backed automated checks passed (`3 passed` config tests, `4 passed` health/CORS tests, full backend `136 passed`, frontend type-check exited 0), browser polling showed `ok -> unreachable -> ok`, and human DevTools Network confirmed direct `http://localhost:8000/health` with `Access-Control-Allow-Origin: http://localhost:3000` - completed 2026-06-03 13:58.
 
 ## In progress
-- Stage 4.6 — 4.6a + 4.6b + 4.6c done; **4.6d (lecturer replace/retry UI + active-summary preview endpoint + browser gate) is next — it closes Stage 4.6.**
+- Stage 4.6 — 4.6a–d all BUILT + pytest/tsc/compile-verified. **The live browser gate (developer-run) is the only remaining step to mark Stage 4.6 FULLY VERIFIED.**
 
 ## Next up
-- 4.6d lecturer replace/retry UI (off `retryable`/`failureCategory`) + active-summary preview endpoint (over the `ActiveTranscriptSummaryResolver`) + the full browser gate (the UI proof obligation: retry + replacement continuity + fencing).
-- Apply migrations `0010` + `0011` + `0012` to the dev/hosted DB with the next backend deploy (dev `xyz_lms` is intentionally still at `0009`).
+- **Stage 4.6 live browser gate (developer):** rebuild backend+frontend images, `alembic upgrade head` (0010→0012), restart, regen client (committed), `node tests/e2e/fixtures/seed.mjs` → `npx playwright test` (full active suite — rule 14 — + the 4.6d retry/continuity gate; the retry spec recreates `embedding_worker` to clear the fault mid-run) → teardown. A human sees a crashed transcript retried to "Summaries ready" + a replacement swap in without a content gap.
+- 4.7 — student summary HTTP surface + content-visibility + 404-not-403.
+- Apply migrations `0010` + `0011` + `0012` to the dev/hosted DB with the live-gate deploy (dev `xyz_lms` is intentionally still at `0009`).
 - 11.1: point a cron at `run_stuck_row_reaper` / `run_storage_reconciliation` (one-line wiring).
 
 ## Known issues / blockers

@@ -8,6 +8,7 @@ export { OpenAPI } from './core/OpenAPI';
 export type { OpenAPIConfig } from './core/OpenAPI';
 
 export { ActiveModuleMembership } from './models/ActiveModuleMembership';
+export type { ActiveSummaryPreviewRead } from './models/ActiveSummaryPreviewRead';
 export type { AssetDownloadUrl } from './models/AssetDownloadUrl';
 export { AssignMemberRequest } from './models/AssignMemberRequest';
 export type { BriefSummaryContent } from './models/BriefSummaryContent';

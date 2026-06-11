@@ -123,7 +123,18 @@ async def _create_summary_row(
         transcript_id=transcript.id,
         module_section_id=transcript.module_section_id,
         summary_type=summary_type,
-        content_json={"text": "brief"} if summary_type == "brief" else {"overview": "o"},
+        content_json=(
+            {"text": "brief"}
+            if summary_type == "brief"
+            else {
+                "overview": "o",
+                "keyConcepts": [],
+                "importantDefinitions": [],
+                "mainExplanations": [],
+                "examples": [],
+                "examRelevantPoints": [],
+            }
+        ),
         content_schema_version="v1",
         model_id="m",
         prompt_version=prompt_version,
@@ -540,3 +551,83 @@ async def test_seed_failed_ingestion_job(
     assert job.status == "failed"
     assert job.job_type == "embed"
     assert job.failure_category == "provider_transient"
+
+
+# ───────────────────────── active-summary preview endpoint (4.6d) ─────────────────────────
+
+
+@pytest.mark.anyio
+async def test_active_summary_preview_returns_eligible(
+    auth_client, db_session: AsyncSession, jwt_factory, mock_jwks_client
+) -> None:
+    section, lecturer = await _section_with_lecturer(db_session)
+    module_id, section_id = section.course_module_id, section.id
+    active = _transcript(section_id, lecturer.id, lifecycle_state="active")
+    db_session.add(active)
+    await db_session.flush()
+    await _make_summarized(db_session, active)
+    active_id = active.id
+    await db_session.commit()
+
+    response = await auth_client.get(
+        f"/modules/{module_id}/sections/{section_id}/transcript-active-summary-preview",
+        headers=_headers(lecturer, jwt_factory),
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["activeTranscriptId"] == str(active_id)
+    assert body["briefEligible"] is True
+    assert body["detailedEligible"] is True
+    assert body["hasPendingReplacement"] is False
+    # Internal provenance is never exposed.
+    assert not {"checksum", "storageKey", "sourceTranscriptChecksum"} & set(body)
+
+
+@pytest.mark.anyio
+async def test_active_summary_preview_flags_pending_replacement(
+    auth_client, db_session: AsyncSession, jwt_factory, mock_jwks_client
+) -> None:
+    section, lecturer = await _section_with_lecturer(db_session)
+    module_id, section_id = section.course_module_id, section.id
+    active = _transcript(section_id, lecturer.id, lifecycle_state="active")
+    db_session.add(active)
+    await db_session.flush()
+    await _make_summarized(db_session, active)
+    pending = _transcript(
+        section_id, lecturer.id, lifecycle_state="pending", replacement_of=active.id
+    )
+    db_session.add(pending)
+    active_id = active.id
+    await db_session.commit()
+
+    response = await auth_client.get(
+        f"/modules/{module_id}/sections/{section_id}/transcript-active-summary-preview",
+        headers=_headers(lecturer, jwt_factory),
+    )
+    assert response.status_code == 200
+    body = response.json()
+    # Continuity: the preview still surfaces the ACTIVE (v1) while a replacement processes.
+    assert body["activeTranscriptId"] == str(active_id)
+    assert body["hasPendingReplacement"] is True
+
+
+@pytest.mark.anyio
+async def test_active_summary_preview_authz(
+    auth_client, db_session: AsyncSession, jwt_factory, mock_jwks_client
+) -> None:
+    section, lecturer = await _section_with_lecturer(db_session)
+    module_id, section_id = section.course_module_id, section.id
+    active = _transcript(section_id, lecturer.id, lifecycle_state="active")
+    db_session.add(active)
+    await db_session.flush()
+    await _make_summarized(db_session, active)
+    student = await _create_user(db_session, email=f"prev-stu-{uuid4()}@example.com", role="student")
+    await _create_membership(db_session, user_id=student.id, module_id=module_id, role="student")
+    other = await _create_user(db_session, email=f"prev-oth-{uuid4()}@example.com", role="lecturer")
+    await db_session.commit()
+
+    path = f"/modules/{module_id}/sections/{section_id}/transcript-active-summary-preview"
+    student_resp = await auth_client.get(path, headers=_headers(student, jwt_factory))
+    other_resp = await auth_client.get(path, headers=_headers(other, jwt_factory))
+    assert student_resp.status_code == 403
+    assert other_resp.status_code == 404

@@ -57,7 +57,7 @@ DONE             — governance stages where no browser gate applies (Stage 0 on
 ✅ Stage 4.3.5 Client Edge Recovery                       COMPLETE
 ✅ Stage 4.4   Embeddings                                 FULLY VERIFIED  (gate: 4.4 embedding browser run)
 ✅ Stage 4.5   AI infrastructure + summary generation   FULLY VERIFIED  (gate: 4.5d browser gate + full E2E + real-provider smoke)
-Stage 4.6   Replacement / retry / supersession         IN PROGRESS — 4.6a + 4.6b + 4.6c BACKEND VERIFIED (gate → 4.6d); only 4.6d (UI + browser gate) remains  ← next: 4.6d
+Stage 4.6   Replacement / retry / supersession         IN PROGRESS — 4.6a–d BUILT + pytest/tsc/compile-VERIFIED; only the live browser gate (developer-run) remains to mark Stage 4.6 FULLY VERIFIED  ← next: 4.6 live gate, then 4.7
 Stage 4.7   Student-facing summaries                   NOT STARTED
 Stage 4.8   First hosted deploy (staging)              NOT STARTED  (new in v3)
 Stage 4.9   Frontend foundation + platform hygiene     NOT STARTED  (new in v3)
@@ -290,8 +290,15 @@ never auto-fixed) + `MaintenanceRun` table (migration 0012) + admin maintenance 
 passed, fresh-DB round-trip, tsc clean. See [[specs/stage-04/4.6c-recovery-reaper-reconciliation]] /
 [[steps/stage-04/4.6c-recovery-reaper-reconciliation]], [[decisions/adr-032-stuck-row-reaper-singleton]],
 [[decisions/adr-033-storage-reconciliation-loss-safe]].
-Remaining: **4.6d** lecturer replace/retry UI (off `retryable`/`failureCategory`) + active-summary preview
-endpoint + browser gate (the UI proof obligation below) — this closes Stage 4.6.
+**4.6d lecturer UI + preview endpoint BUILT** (2026-06-11): active-summary preview endpoint (lecturer-only,
+over the resolver, `hasPendingReplacement`, NO student surface) + lecturer Replace (inline confirm +
+double-replacement warning) / Retry / per-step states / sanitized reason / "new version processing" badge on
+the 4.5d surface; browser-gate spec (`4.6d-replace-retry.spec.ts`: retry flow + replacement continuity) +
+the deterministic fencing pytest; fixed the cross-stage e2e breaks (4.3.5e 409→pending, db.mjs
+lifecycle_state). Verified: backend 349 passed, frontend tsc clean, client regen, 9 e2e specs compile.
+See [[specs/stage-04/4.6d-lecturer-ui-browser-gate]] / [[steps/stage-04/4.6d-lecturer-ui-browser-gate]].
+Remaining for Stage 4.6: the **live browser gate** (developer-run — rebuild images, apply 0010→0012,
+restart, `npx playwright`) + full active suite green → marks Stage 4.6 FULLY VERIFIED.
 
 **Goal:** make transcript replacement and failed-processing recovery safe and observable.
 
