@@ -22,6 +22,7 @@ from app.domains.transcripts.embedding_encoder import (
     EmbeddingEncoder,
     SentenceTransformersEmbeddingEncoder,
 )
+from app.domains.transcripts.activation import attempt_pending_activation
 from app.domains.transcripts.fencing import can_commit_step
 from app.platform.config import settings
 from app.platform.db.models import IngestionJob, Transcript, TranscriptChunk
@@ -179,6 +180,10 @@ async def embed_transcript_async(
     # 4.6b (ADR-46-B): summaries fork from PARSE, not embed — embed no longer creates/enqueues them,
     # so an embed failure cannot block summaries. Embed still gates overall_state=='summarized' via the
     # projection (embed + brief + detailed all completed).
+    # 4.6b-F2 (F-4.6b-2): embed is a pipeline LEAF that can finish last (it runs parallel to summaries),
+    # so it too must attempt activation of a completed pending replacement — otherwise an embed-finishes-
+    # last race leaves the pending stuck. Idempotent + best-effort; no-op until fully summarized.
+    await attempt_pending_activation(factory, transcript_id=transcript_id)
 
 
 async def mark_embed_enqueue_failed(

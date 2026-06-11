@@ -297,16 +297,11 @@ async def _try_activate_after_summary(
     *,
     transcript_id: UUID,
 ) -> None:
-    from app.domains.transcripts.activation import try_activate_pending_transcript
+    # Delegates to the shared best-effort hook (also called by the embed leaf — F-4.6b-2). Local import
+    # keeps the summary_service ⇄ activation cycle broken.
+    from app.domains.transcripts.activation import attempt_pending_activation
 
-    try:
-        async with factory() as session:
-            await try_activate_pending_transcript(session, transcript_id=transcript_id)
-    except Exception:  # pragma: no cover - defensive; activation never breaks summary completion
-        logger.warning(
-            "Pending-transcript activation attempt failed after summary completion; left pending",
-            extra={"transcript_id": str(transcript_id)},
-        )
+    await attempt_pending_activation(factory, transcript_id=transcript_id)
 
 
 async def _claim_summary_job(

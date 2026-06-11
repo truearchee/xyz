@@ -71,9 +71,13 @@ pending the product fix; Stage 4.6 stays **BACKEND VERIFIED + UI BUILT, gate pen
 
 ## F-4.6b-2 — BLOCKER — a fully-processed pending replacement never activates (4.6a activation trigger ↔ 4.6b DAG decouple)
 
-**Status:** open · **Severity:** blocker (replacement continuity — the priority gate) · **Found by:**
-4.6c-F1 gate re-run (after F-4.6c-1 fixed) · **Resolution:** deferred to a named follow-up task —
-out of scope for 4.6c-F1 (startup-recovery fix only). NOT fixed here.
+**Status:** FIXED (Task 4.6b-F2, 2026-06-11) · **Severity:** blocker (replacement continuity — the
+priority gate) · **Found by:** 4.6c-F1 gate re-run (after F-4.6c-1 fixed) · **Resolution:** structural —
+`activation.attempt_pending_activation` is now called by EVERY pipeline leaf on success (embed via
+`embedding_service`, brief/detailed via `summary_service`); whichever finishes last fires the swap, the
+readiness gate no-ops the rest. Regression tests in `test_transcript_lifecycle.py`: embed-after-summaries
+activates (fails on unfixed code), embed-before-summaries (summary leaf last) activates, two concurrent
+leaf attempts → exactly one swap. Backend `pytest` 353 passed. Gate re-run tracked below.
 
 ### Symptom
 4.6d replacement-continuity gate: the replacement (v2) processes fully — **all 5 jobs completed,
@@ -129,3 +133,19 @@ The earlier continuity assertions (preview holds on v1, `hasPendingReplacement=t
   stays *BACKEND VERIFIED + UI BUILT, gate pending*.
 - Retry flow + 4.5d-summary-fault specs: not yet characterized (the priority assertion outranks; stopped
   per the category-(b) rule).
+
+## Cross-stage-seam pattern (Step 4 of Task 4.6b-F2 — record before 4.7 stacks on this)
+The Stage 4.6 live gate surfaced **two** category-(b) bugs that per-session verification structurally
+**could not** catch, because both lived in the **seam between** verified sessions, not inside any one:
+- **F-4.6c-1** — 4.6c's startup hook + the fork-per-job worker model: the module engine pool, fine until
+  something connected it pre-fork.
+- **F-4.6b-2** — 4.6a's activation trigger + 4.6b's DAG decouple: the after-summary trigger, correct while
+  summaries ran after embed, orphaned once they ran in parallel.
+Each session was "backend verified" and genuinely correct in isolation; the bugs are in the *integration*.
+Both were invisible to unit tests that **inject** dependencies or **mock** ordering — the very seams the
+injection hides are where these live. Evidence, not blame: **"backend verified per session" means
+"correct in isolation," not "integrates"** — the walking-skeleton live gate (real workers, real fork, real
+DAG race, real browser) is carrying that weight and earning its cost. 4.7 should NOT inherit the assumption
+that green-per-session ⇒ integrated; budget for a live integration pass when a new stage touches the
+worker/DAG/activation seam. Structural fixes (isolated engine; every-leaf trigger) beat instance fixes
+(dispose-in-the-right-order; trigger-after-the-one-step-we-saw-last) precisely because the seam shifts.
