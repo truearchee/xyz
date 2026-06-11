@@ -57,7 +57,7 @@ DONE             — governance stages where no browser gate applies (Stage 0 on
 ✅ Stage 4.3.5 Client Edge Recovery                       COMPLETE
 ✅ Stage 4.4   Embeddings                                 FULLY VERIFIED  (gate: 4.4 embedding browser run)
 ✅ Stage 4.5   AI infrastructure + summary generation   FULLY VERIFIED  (gate: 4.5d browser gate + full E2E + real-provider smoke)
-Stage 4.6   Replacement / retry / supersession         IN PROGRESS — 4.6a–d BUILT + pytest/tsc/compile-VERIFIED; only the live browser gate (developer-run) remains to mark Stage 4.6 FULLY VERIFIED  ← next: 4.6 live gate, then 4.7
+Stage 4.6   Replacement / retry / supersession         FULLY VERIFIED — live browser gate GREEN (full active suite 9/9); two cross-stage-seam regressions found+fixed (F-4.6c-1, F-4.6b-2)  ← next: 4.7
 Stage 4.7   Student-facing summaries                   NOT STARTED
 Stage 4.8   First hosted deploy (staging)              NOT STARTED  (new in v3)
 Stage 4.9   Frontend foundation + platform hygiene     NOT STARTED  (new in v3)
@@ -297,8 +297,16 @@ the 4.5d surface; browser-gate spec (`4.6d-replace-retry.spec.ts`: retry flow + 
 the deterministic fencing pytest; fixed the cross-stage e2e breaks (4.3.5e 409→pending, db.mjs
 lifecycle_state). Verified: backend 349 passed, frontend tsc clean, client regen, 9 e2e specs compile.
 See [[specs/stage-04/4.6d-lecturer-ui-browser-gate]] / [[steps/stage-04/4.6d-lecturer-ui-browser-gate]].
-Remaining for Stage 4.6: the **live browser gate** (developer-run — rebuild images, apply 0010→0012,
-restart, `npx playwright`) + full active suite green → marks Stage 4.6 FULLY VERIFIED.
+**Stage 4.6 FULLY VERIFIED** (2026-06-11): the live browser gate ran GREEN — full active Playwright suite
+**9/9** (4.3.5b/c/e, 4.4, 4.5d-summary-browser, 4.5d-summary-fault ×2, 4.6d replacement-continuity + retry)
+against a backend image content-hash-verified against branch HEAD. The gate caught + fixed **two
+cross-stage-seam regressions** that per-session "backend verified" structurally could not (both lived
+between sessions): **F-4.6c-1** (4.6c startup recovery poisoned the fork-per-job module engine pool →
+isolated NullPool engine + `tests/test_worker_startup_recovery.py`) and **F-4.6b-2** (4.6a activation
+trigger orphaned by the 4.6b DAG decouple → every leaf attempts idempotent activation + 3 ordering tests).
+Deferred: **F-4.6d-3** (C-lite read-contract violation in the post-retry status path → owner 4.6d-P1;
+production-masked). See [[findings-4.6-gate]] + [[decisions/adr-032-stuck-row-reaper-singleton]]
+(pre-fork connection-clean invariant). Dev `xyz_lms` migrated 0009→0012 at cutover. Closes Stage 4.6.
 
 **Goal:** make transcript replacement and failed-processing recovery safe and observable.
 

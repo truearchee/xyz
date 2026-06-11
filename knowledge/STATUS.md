@@ -1,8 +1,8 @@
 # Status
 
-_Last updated: 2026-06-11 - Stage 4.6d lecturer UI + preview endpoint BUILT (Stage 4.6 backend+UI complete; live browser gate pending). Active-summary preview endpoint (lecturer-only, over the resolver, hasPendingReplacement, NO student surface) + lecturer Replace (inline confirm + double-replacement warning) / Retry / per-step states / sanitized reason / "new version processing" badge on the 4.5d surface. Browser-gate spec (4.6d-replace-retry: retry flow + replacement continuity) + deterministic fencing pytest. Fixed cross-stage e2e breaks (4.3.5e 409→pending, db.mjs lifecycle_state). Backend 349 passed (+4), frontend tsc exit 0, client regen, 9 e2e specs compile. The LIVE browser gate + full active suite (developer-run: rebuild images, apply 0010→0012, restart, npx playwright) is the acceptance that marks Stage 4.6 FULLY VERIFIED. Next → 4.7 (student surface)._
+_Last updated: 2026-06-11 - **Stage 4.6 FULLY VERIFIED.** The live browser gate ran GREEN — full active Playwright suite 9/9 (4.3.5b/c/e, 4.4, 4.5d-summary-browser, 4.5d-summary-fault ×2, 4.6d replacement-continuity + retry) against a backend image freshly built from branch HEAD (verified by content-hash vs git). The gate surfaced + fixed TWO cross-stage-seam regressions: F-4.6c-1 (startup recovery poisoned the fork-per-job module engine pool → isolated NullPool engine, `tests/test_worker_startup_recovery.py`) and F-4.6b-2 (orphaned activation trigger after the 4.6b DAG decouple → every leaf attempts idempotent activation, 3 ordering regression tests). Backend 353 passed; frontend tsc clean. dev `xyz_lms` migrated 0009→0012. Deferred: F-4.6d-3 (C-lite read-contract violation in the post-retry status path → owner Task 4.6d-P1; production-masked). On branch `stage/4.6-replacement-retry`. Next → 4.7 (student surface) — inherits a resolver proven correct in a real browser._
 
-## Stage 4.6 — Replacement / Retry / Supersession (IN PROGRESS)
+## Stage 4.6 — Replacement / Retry / Supersession (FULLY VERIFIED)
 
 **4.6d Lecturer UI + active-summary preview endpoint — BUILT (live browser gate pending):**
 - **Preview endpoint** `GET .../transcript-active-summary-preview` (lecturer-only, over `ActiveTranscriptSummaryResolver`):
@@ -133,7 +133,7 @@ Stage 4.2  Transcript parsing           FULLY VERIFIED  (browser gate: 4.3.5e)
 Stage 4.3  Transcript chunk persistence FULLY VERIFIED  (browser gate: 4.3.5e)
 Stage 4.4  Embeddings                   FULLY VERIFIED  (browser gate: 4.4)
 Stage 4.5  AI infra + summaries          FULLY VERIFIED  (gate: 4.5d browser gate + full E2E + real-provider smoke)
-Stage 4.6  Replacement / retry / superse. IN PROGRESS — 4.6a–d BUILT + pytest/tsc/compile-VERIFIED; only the live browser gate (developer-run) remains → FULLY VERIFIED
+Stage 4.6  Replacement / retry / superse. FULLY VERIFIED — live browser gate GREEN (full active suite 9/9); F-4.6c-1 + F-4.6b-2 fixed; on branch stage/4.6-replacement-retry
 
 Client Edge Recovery Block (4.3.5): COMPLETE
   Stages 1, 2, 3, 4.1, 4.2, 4.3 all FULLY VERIFIED.
@@ -214,13 +214,12 @@ Required next:
 - Session 1.1b: Stage 1 browser gate satisfied. Docker-backed automated checks passed (`3 passed` config tests, `4 passed` health/CORS tests, full backend `136 passed`, frontend type-check exited 0), browser polling showed `ok -> unreachable -> ok`, and human DevTools Network confirmed direct `http://localhost:8000/health` with `Access-Control-Allow-Origin: http://localhost:3000` - completed 2026-06-03 13:58.
 
 ## In progress
-- Stage 4.6 — 4.6a–d all BUILT + pytest/tsc/compile-verified. **The live browser gate (developer-run) is the only remaining step to mark Stage 4.6 FULLY VERIFIED.**
+- **Stage 4.6 — FULLY VERIFIED** (live gate green 9/9; F-4.6c-1 + F-4.6b-2 fixed). On branch `stage/4.6-replacement-retry`, merged to `main` at the close-out.
 
 ## Next up
-- **Stage 4.6 live browser gate (developer):** rebuild backend+frontend images, `alembic upgrade head` (0010→0012), restart, regen client (committed), `node tests/e2e/fixtures/seed.mjs` → `npx playwright test` (full active suite — rule 14 — + the 4.6d retry/continuity gate; the retry spec recreates `embedding_worker` to clear the fault mid-run) → teardown. A human sees a crashed transcript retried to "Summaries ready" + a replacement swap in without a content gap.
-- 4.7 — student summary HTTP surface + content-visibility + 404-not-403.
-- Apply migrations `0010` + `0011` + `0012` to the dev/hosted DB with the live-gate deploy (dev `xyz_lms` is intentionally still at `0009`).
-- 11.1: point a cron at `run_stuck_row_reaper` / `run_storage_reconciliation` (one-line wiring).
+- **4.7 — student summary HTTP surface + content-visibility + 404-not-403** (now unblocked — inherits the resolver, proven correct in a real browser).
+- **4.6d-P1** (polish, owner of F-4.6d-3): fix the C-lite read-contract violation in the post-retry status path (reset `transcript.status` in `apply_retry` or drop the raw-status short-circuit in `_overall_state`) + remove the `reload()` workaround in `4.6d-replace-retry.spec.ts`.
+- Dev `xyz_lms` is **migrated to 0012** (done at the gate cutover). 11.1: point a cron at `run_stuck_row_reaper` / `run_storage_reconciliation`.
 
 ## Known issues / blockers
 - Hosted Postgres extension bootstrap is not covered by the local Docker init script; handle `vector` and `pgcrypto` explicitly before first hosted deployment.
@@ -234,5 +233,5 @@ Required next:
 - Chunk text is not exposed through any user-facing DTO yet; future 4.7 surfaces must preserve the no-raw-key and role-aware visibility boundaries.
 - Transcript parse recovery is intentionally deferred to Session 4.6c (reaper): enqueue failure can leave `uploaded`, and mid-parse crash can leave `parsing` plus a `running` job. (4.6a built the state model + provenance the reaper keys off; the reaper itself is 4.6c.)
 - Transcript chunk recovery is intentionally deferred to Session 4.6c (reaper): parse-to-chunk enqueue failure can leave a queued chunk job, and mid-chunk crash can leave a `running` chunk job.
-- **Dev/hosted DB drift (4.6a/4.6b/4.6c):** migrations `0010` (lifecycle_state) + `0011` (failure-category enum + parse index) + `0012` (maintenance_runs table) are applied to `xyz_lms_test` only. Dev DB `xyz_lms` is intentionally left at `0009` so the running pre-4.6 containers keep working. Apply `0010`+`0011`+`0012` together with the next backend rebuild+deploy — not before.
+- **Dev DB drift RESOLVED (4.6 close-out):** migrations `0010`+`0011`+`0012` were applied to dev `xyz_lms` at the live-gate cutover (after a pre-flight on a pg_dump copy: backfill correct, all three partial-unique indexes built clean). Dev `xyz_lms` is now at `0012` with images rebuilt from the 4.6 branch. Hosted/prod still needs the same `0010→0012` apply at its next deploy (pre-flight on a data copy first).
 - Superseded pending transcripts leave orphaned storage objects until the 4.6c reconciliation job reclaims them (by design).

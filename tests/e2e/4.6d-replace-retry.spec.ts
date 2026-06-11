@@ -266,10 +266,12 @@ test('4.6d retry flow — forced step failure, lecturer retries to summarized, n
     await expect.poll(() => jobStatus(transcriptId, 'embed'), { timeout: 360_000, intervals: [2000] }).toBe(
       'completed',
     );
-    // Reload so the status badge re-polls from a clean state. (The badge stops polling once it sees the
-    // transient 'failed' overall_state after retry — apply_retry leaves transcript.status='failed' until
-    // the worker claims the re-enqueued job; with this run's minutes-slow recreated worker the badge
-    // settles before the swap. Latent only under a slow worker — see F-4.6d-3.)
+    // WORKAROUND for F-4.6d-3 (C-lite read-contract violation in the post-retry status path): after retry,
+    // apply_retry leaves transcript.status='failed', the shared projection _overall_state short-circuits on
+    // it, and the badge settles on the stale overallState='failed' and stops polling. Production-masked
+    // (live worker claims in ~100ms); exposed here by the recreated worker's minutes-long model boot. This
+    // reload re-polls from a clean state to observe the correct end-state. *** REMOVE THIS RELOAD when
+    // F-4.6d-3 is fixed (owner: Task 4.6d-P1) — see knowledge/findings-4.6-gate.md#F-4.6d-3. ***
     await lecturerPage.reload();
     const labRowAfter = rowForSection(lecturerPage, setup.lab);
     await expect(labRowAfter.locator('[data-testid^="section-transcript-status-"]')).toContainText(

@@ -151,20 +151,35 @@ The earlier continuity assertions (preview holds on v1, `hasPendingReplacement=t
 - Backend `pytest` **353 passed** (the F-4.6c-1 + 3 F-4.6b-2 regression tests included).
 - **Gate is GREEN.** Pending only the human's go: Stage 4.6 → FULLY VERIFIED + branch → main merge.
 
-## F-4.6d-3 — MINOR / latent — status badge stops polling on the transient post-retry "failed" state
-**Status:** open (deferred — UI polish; not a correctness defect) · **Severity:** minor, latent ·
-**Found by:** 4.6b-F2 retry-flow gate run.
-`apply_retry` resets the failed JOB to `queued` but leaves `transcript.status='failed'` until the worker
-claims the re-enqueued job (`retry.py:118-122`). The lecturer status badge's `isSettled` returns true on
-`overall_state=='failed'`, so a poll that lands in that transient window settles and **stops** — the badge
-then misses the eventual `summarized` and shows the stale failure until a reload. **Masked in production**
-(a live worker claims in ~100ms, before the badge's 1500ms first poll → it sees `embedding`, keeps polling);
-**exposed** here only because the test recreates the embedding_worker and its minutes-long model-snapshot
-boot holds the job unclaimed past the badge's settle. The retry itself is correct (DB: `summarized`,
-embed `attempts=2`, no duplicate rows). **Proposed fix (follow-up, NOT this task):** reset
-`transcript.status` off `failed` in `apply_retry` (e.g. to `queued`) so the projection shows "retrying"
-immediately, or keep the badge polling for a grace period after a retry click. The retry-flow gate reloads
-after a DB-confirmed embed completion to assert the lecturer-visible `Summaries ready`.
+## F-4.6d-3 — C-LITE CONTRACT VIOLATION (4.4) in the post-retry status path — deferred, owner: 4.6d-P1
+**Status:** open · deferred · **Owner:** **Task 4.6d-P1** (standalone polish — see below for why not 4.7) ·
+**Severity:** minor / latent (data correct; lecturer-only; production-masked) · **Found by:** 4.6b-F2 retry-flow gate run.
+
+**Re-framed (Task 4.6-CLOSE Gate 2).** Original wording blamed the badge's poll timing; the precise root
+cause is a **C-lite read-contract violation (4.4: `overallState`/the projection is the SOLE doneness
+authority; raw `transcript.status` is a low-fidelity breadcrumb).** After a lecturer retry, `apply_retry`
+resets the failed job to `queued` but **leaves `transcript.status='failed'`** (`retry.py:118-122`); the
+shared projection `_overall_state` then returns `'failed'` **because of its `transcript.status == 'failed'`
+short-circuit** (`transcript_status.py:281`) even though every step now says queued/completed — i.e. the
+projection itself trusts the demoted breadcrumb over the step states. The lecturer badge faithfully
+consumes `overallState` (`TranscriptStatusBadge.tsx:230`, C-lite-correct) and so settles on the wrong
+`failed`, stops polling, and shows the stale failure until a reload. **Production-masked** (a live worker
+claims the re-enqueued job in ~100ms, before the badge's 1500ms first poll, so `transcript.status` is
+already `embedding`); **exposed** only by this gate's recreated embedding_worker, whose minutes-long
+model-snapshot boot holds the job unclaimed. Retry is otherwise correct (DB: `summarized`, embed
+`attempts=2`, no duplicate rows).
+
+**Proposed fix (4.6d-P1, NOT this task):** the C-lite-aligned fix is in the **shared backend**, not the
+badge — either reset `transcript.status` off `failed` in `apply_retry`, or make `_overall_state` derive
+"failed" purely from step states (drop the raw-`transcript.status` short-circuit). Both touch the shared
+projection/retry, which is **why this is a standalone 4.6d-P1 and NOT folded into 4.7**: it is not
+student-surface scope, and bending a shared-projection fix into 4.7 would be a lecturer↔student scope smear.
+(4.7 nonetheless inherits the same C-lite contract and should not re-introduce raw-status reads.)
+
+**e2e workaround cross-link (bidirectional):** `tests/e2e/4.6d-replace-retry.spec.ts` (retry flow) does a
+`lecturerPage.reload()` after a DB-confirmed embed completion to observe the correct `Summaries ready`,
+with an inline comment referencing **F-4.6d-3**. Fixing this finding must **remove that reload**; the
+reload must not silently become permanent.
 
 ## Cross-stage-seam pattern (Step 4 of Task 4.6b-F2 — record before 4.7 stacks on this)
 The Stage 4.6 live gate surfaced **two** category-(b) bugs that per-session verification structurally
