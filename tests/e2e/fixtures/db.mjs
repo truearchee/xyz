@@ -434,3 +434,17 @@ WHERE transcript_id = ${sqlLiteral(transcriptId)} AND job_type IN ('generate_bri
   }
   throw new Error(`Timed out waiting for summary failure_category=${category} on ${transcriptId}`);
 }
+
+// Stage 4.7 G2 — deterministic SEED of the brief-first state (§14): from a fully-summarized transcript,
+// remove the detailed summary artifact and re-open its job to 'running'. The student surface then shows
+// brief READY + detailed GENERATING with no timing race. E2E-only.
+export function seedDetailedSummaryGenerating(transcriptId) {
+  assertUuid(transcriptId, 'transcriptId');
+  runPsqlRows(`
+DELETE FROM generated_lecture_summaries
+WHERE transcript_id = ${sqlLiteral(transcriptId)} AND summary_type = 'detailed_study';
+UPDATE ingestion_jobs
+SET status = 'running', completed_at = NULL
+WHERE transcript_id = ${sqlLiteral(transcriptId)} AND job_type = 'generate_detailed_summary';
+`);
+}
