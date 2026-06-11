@@ -1,0 +1,76 @@
+---
+type: findings
+stage: "04"
+relates_to: ["4.6d-G1", "4.6c"]
+status: open
+created: 2026-06-11
+---
+
+# Stage 4.6 live-gate findings (Task 4.6d-G1)
+
+## F-4.6c-1 — BLOCKER — startup recovery hook breaks ALL worker job processing (asyncpg cross-loop / fork-inherited dirty pool)
+
+**Status:** open · **Severity:** blocker (default config) · **Found by:** 4.6d-G1 live gate ·
+**Resolution:** deferred to a named follow-up task (4.6c regression fix) — NOT fixed in the gate task
+(category (b); product-code changes are out of scope for the gate).
+
+### Symptom
+Every e2e spec that runs a transcript through the workers fails. In the no-fault success batch:
+**4.3.5e, 4.4, 4.5d-summary-browser FAILED** at `waitForTranscriptCompleted`/processing waits; only
+**4.3.5c** (admin UI, no transcript processing) passed. Worker log:
+```
+ERROR rq.worker: job ...: exception raised while executing (app.domains.transcripts.jobs.parse_transcript)
+  File ".../parse_service.py", line 132, in _claim_parse_job
+RuntimeError: Task <...parse_transcript_async()...> got Future <...> attached to a different loop
+```
+
+### Root cause
+- `app/platform/db/session.py`: `engine = create_async_engine(DATABASE_URL)` is a **module-level
+  singleton with the default connection pool** (not NullPool). Unchanged since Session 2.2.
+- RQ's default worker **forks a child process per job**; each job runs `asyncio.run(...)`
+  (`app/domains/transcripts/jobs.py`). Pre-4.6c the parent never touched the engine, so each forked
+  child got a pristine engine + fresh pool — fine.
+- **4.6c added** `worker.py::_run_startup_recovery()` → `asyncio.run(run_stuck_row_reaper())` **in the
+  parent**, before `worker.work()`. `run_stuck_row_reaper()` (no args) uses the **module engine**;
+  `maintenance_advisory_lock(engine)` does `engine.connect()`, populating the module pool with asyncpg
+  connections bound to the **startup event loop**. `asyncio.run` then closes that loop, but the pooled
+  connections remain (bound to the dead loop, sockets owned by the parent).
+- RQ forks job children that **inherit the parent's dirty pool**. The first DB call in a forked job
+  (`_claim_parse_job`) reuses an inherited connection bound to the parent's closed loop →
+  `got Future attached to a different loop`. Affects parse/chunk/embed/summary equally (all workers run
+  `_run_startup_recovery`; the reaper is singleton-locked, but **every** worker still opens the
+  advisory-lock connection via `engine.connect()` regardless of `acquired`).
+
+### Why unit tests missed it
+The 4.6c reaper tests inject `session_factory` + `engine=db_session.bind` (the test engine) and never
+exercise the real worker's *parent runs asyncio.run, then forks a job* path. The integration only
+manifests in the live RQ worker process — exactly what this gate exists to catch. **329→349 green unit
+tests did not (could not) cover it.**
+
+### Evidence / confirmation
+- Default config (`REAPER_RUN_AT_STARTUP=true`): 3/4 processing specs fail; worker log shows the loop error.
+- Diagnostic: recreated all 3 workers with `REAPER_RUN_AT_STARTUP=false` (existing flag; throwaway
+  override, no tracked-config change) → **4.4-embedding PASSED (16.8s), 0 "different loop" errors.**
+  Stack then restored to canonical reaper-on. The flag toggle isolates the cause unambiguously.
+
+### Proposed fix (for the follow-up task — keeps the reaper-at-startup feature)
+Ensure the module engine's pool is **not left populated in the parent before `worker.work()` forks**.
+Minimal: `await engine.dispose()` at the end of `_startup_recovery_async` (or in `_run_startup_recovery`'s
+`finally`). Alternatives: run startup recovery against a throwaway `NullPool` engine instead of the module
+engine; or move startup recovery into a subprocess. After the fix, **re-run the full gate** (this task's
+Step 3 onward) — the migration/cutover work is already done and need not repeat.
+
+### Not papering over
+Leaving `REAPER_RUN_AT_STARTUP=false` would make the gate *appear* green by disabling a 4.6c feature —
+rejected. The stack is restored to canonical reaper-on (the real, broken state). The gate is **BLOCKED**
+pending the product fix; Stage 4.6 stays **BACKEND VERIFIED + UI BUILT, gate pending**.
+
+## Gate progress recorded (4.6d-G1)
+- Step 1 ✓ branch `stage/4.6-replacement-retry`, 4.6d committed (43dd2cf); main untouched.
+- Step 2 ✓ migration pre-flight on a pg_dump copy of dev data: backfill correct (7→active, 0 NULL), all
+  three partial-unique indexes built clean, `maintenance_runs` + provenance present. No data finding.
+- Step 3 cutover ✓ images rebuilt; `xyz_lms` migrated 0009→0012 (backfill verified on the live DB);
+  e2e stack up (hooks + local Supabase); seed OK; **4.3.5b PASSED, 4.3.5c PASSED**.
+- Step 3 BLOCKED by F-4.6c-1 — transcript-processing specs (4.3.5e/4.4/4.5d) + the 4.6d gates cannot run
+  to green until the reaper-startup defect is fixed. **4.6d replacement-continuity (priority assertion)
+  NOT YET PROVEN** — it requires the workers to process a replacement, which the defect blocks.
