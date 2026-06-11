@@ -454,7 +454,7 @@ def test_overall_state_failed_is_representable_per_step():
 
 def test_summary_failure_message_uses_category_copy():
     jobs = {"summary_detailed": SimpleNamespace(status="failed", failure_category="invalid_input")}
-    failed = _failed_step(transcript=SimpleNamespace(status="completed"), jobs=jobs)
+    failed = _failed_step(jobs=jobs)  # F-4.6d-3: derived from step states, no transcript breadcrumb
     assert failed == "summary_detailed"
     message = _safe_failure_message(failed_step=failed, jobs=jobs)
     assert "too long" in message

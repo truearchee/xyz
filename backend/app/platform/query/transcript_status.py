@@ -110,7 +110,7 @@ async def get_transcript_processing_status_read(
     )
     jobs = await _latest_jobs_by_type(db, transcript_id=transcript.id)
     steps = _steps(transcript=transcript, jobs=jobs)
-    failed_step = _failed_step(transcript=transcript, jobs=jobs)
+    failed_step = _failed_step(jobs=jobs)
     safe_failure_message = _safe_failure_message(failed_step=failed_step, jobs=jobs)
     failure_category = _sanitized_failure_category(failed_step=failed_step, jobs=jobs)
     retryable = _retryable(failed_step=failed_step, jobs=jobs)
@@ -193,15 +193,17 @@ def _steps(
 
 def _failed_step(
     *,
-    transcript: Transcript,
     jobs: dict[str, IngestionJob],
 ) -> str | None:
+    # C-lite (4.4) + F-4.6d-3: a failed step is derived from the STEP/job states, never from the
+    # `transcript.status` breadcrumb. Every path that sets `transcript.status='failed'` also fails the
+    # owning job, so the breadcrumb adds nothing here — and after a retry it is a stale lie (the job is
+    # re-queued while the breadcrumb still reads 'failed'). Trusting it surfaced "Transcript upload failed"
+    # on a transcript that was actually retrying.
     for step_key in ("summary_detailed", "summary_brief", "embed", "chunk", "parse"):
         job = jobs.get(step_key)
         if job is not None and job.status == "failed":
             return step_key
-    if transcript.status == "failed":
-        return "upload"
     return None
 
 
@@ -278,9 +280,11 @@ def _overall_state(
     chunk_count: int,
     embedded_chunk_count: int,
 ) -> str:
-    if transcript.status == "failed" or any(
-        step.status == "failed" for step in steps.values()
-    ):
+    # C-lite (4.4) + F-4.6d-3: doneness derives from STEP states, never from the `transcript.status`
+    # breadcrumb. Every genuine failure also fails a step (so this still catches it); a step re-enqueued
+    # by retry is queued/running, not failed, so overallState correctly reflects in-progress instead of a
+    # stale 'failed' — the lecturer badge no longer settles on a transcript that is actually retrying.
+    if any(step.status == "failed" for step in steps.values()):
         return "failed"
     if (
         steps["embed"].status == "completed"
