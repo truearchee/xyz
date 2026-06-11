@@ -55,3 +55,24 @@ since Stage 4.3. Recovery must be idempotent, safe under N concurrent workers, a
 - **Row-lock-only "singleton"** — doesn't prevent two reapers scanning the whole table at once; the advisory
   lock is the right granularity.
 - **One giant transaction** — holds row locks too long and is all-or-nothing; each action is its own fenced txn.
+
+## Amendment 2026-06-11 — startup recovery must run on an ISOLATED engine (F-4.6c-1)
+The live gate (4.6d-G1) caught a blocker: running startup recovery on the **module-level async engine**
+in the worker parent process poisons every job. The worker model is **fork-per-job** (RQ default): the
+parent runs `_run_startup_recovery()` → `asyncio.run(run_stuck_row_reaper())` before `worker.work()`. The
+reaper's `engine.connect()` (advisory lock) leaves a pooled asyncpg connection **bound to the startup
+event loop** in the module engine. RQ then forks a child per job that **inherits that dirty pool**; the
+child's first DB call raises `got Future attached to a different loop`. All transcript processing dies
+under the default `REAPER_RUN_AT_STARTUP=true`.
+
+**Invariant (record + carry):** in the fork-per-job worker model, **the parent process must stay
+connection-clean before fork** — nothing may leave a pooled connection on the module engine pre-`work()`.
+Fix: `_startup_recovery_async` builds its **own `NullPool` engine**, runs recovery on it
+(`session_factory`/`engine` injected), and disposes it; the module singleton is never connected in the
+parent. The injected-engine reaper unit tests could not catch this (they never run the
+parent-`asyncio.run`-then-fork path) — covered now by `tests/test_worker_startup_recovery.py`.
+
+**Flag for 11.1:** the scheduler is the next thing likely to run a **parent-side hook** (cron pointing at
+`run_stuck_row_reaper` / `run_storage_reconciliation`). It must follow the same rule — isolated engine,
+never touch the module engine in a process that later forks (or in any short-lived `asyncio.run`).
+See [[findings-4.6-gate]].

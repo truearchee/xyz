@@ -31,6 +31,8 @@ export function SectionTranscriptControl({
   const [isLoading, setIsLoading] = useState(true);
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [confirmingReplace, setConfirmingReplace] = useState(false);
+  const [hasPendingReplacement, setHasPendingReplacement] = useState(false);
 
   const fileInputId = `section-transcript-file-${sectionKey}`;
 
@@ -58,6 +60,39 @@ export function SectionTranscriptControl({
   useEffect(() => {
     void loadActiveTranscript();
   }, [loadActiveTranscript]);
+
+  // Poll the active-summary preview while a transcript exists: surfaces whether a replacement is
+  // processing ("new version processing" badge) and detects the atomic swap (the active id flips →
+  // refresh to the new active). The active summaries themselves stay on the summary panel.
+  const activeTranscriptId = transcript?.id ?? null;
+  useEffect(() => {
+    if (activeTranscriptId === null) {
+      setHasPendingReplacement(false);
+      return;
+    }
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const preview = await api.transcripts.getActiveSummaryPreview(
+          moduleId,
+          sectionId,
+        );
+        if (cancelled) return;
+        setHasPendingReplacement(preview.hasPendingReplacement);
+        if (preview.activeTranscriptId !== activeTranscriptId) {
+          void loadActiveTranscript(); // a replacement swapped in → show the new active
+        }
+      } catch {
+        // transient / transcript missing — keep the last known state
+      }
+    };
+    void poll();
+    const intervalId = window.setInterval(() => void poll(), 3000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [activeTranscriptId, loadActiveTranscript, moduleId, sectionId]);
 
   function selectFile(file: File | null) {
     setError(null);
@@ -93,18 +128,21 @@ export function SectionTranscriptControl({
         moduleId,
         sectionId,
       });
-      setTranscript(uploadedTranscript);
+      if (uploadedTranscript.lifecycleState === "pending") {
+        // A replacement is processing alongside the still-active transcript — keep showing the
+        // active; the preview poll flips the "new version processing" badge and the swap.
+        setHasPendingReplacement(true);
+        await loadActiveTranscript();
+      } else {
+        setTranscript(uploadedTranscript);
+      }
       setSelectedFile(null);
+      setConfirmingReplace(false);
       if (inputRef.current) {
         inputRef.current.value = "";
       }
     } catch (caught) {
-      if (isTranscriptAlreadyExists(caught)) {
-        await loadActiveTranscript();
-        setError("This section already has an active transcript.");
-      } else {
-        setError(errorMessage(caught));
-      }
+      setError(errorMessage(caught));
     } finally {
       setIsUploading(false);
     }
@@ -136,12 +174,87 @@ export function SectionTranscriptControl({
             sectionKey={sectionKey}
             transcript={transcript}
           />
+          {hasPendingReplacement ? (
+            <p
+              data-testid={`section-transcript-pending-${sectionKey}`}
+              role="status"
+              style={styles.pending}
+            >
+              New version processing… the current summaries stay until it completes.
+            </p>
+          ) : null}
           <TranscriptSummaryPanel
             moduleId={moduleId}
             sectionId={sectionId}
             sectionKey={sectionKey}
             transcriptId={transcript.id}
           />
+          <div
+            data-testid={`section-transcript-replace-control-${sectionKey}`}
+            style={styles.fields}
+          >
+            <label htmlFor={fileInputId} style={styles.label}>
+              Replace transcript for {sectionTitle}
+            </label>
+            <input
+              accept=".vtt,.txt"
+              data-testid={`section-transcript-replace-upload-${sectionKey}`}
+              disabled={disabled || isUploading}
+              id={fileInputId}
+              onChange={(event) => {
+                setConfirmingReplace(false);
+                selectFile(event.currentTarget.files?.[0] ?? null);
+              }}
+              ref={inputRef}
+              style={styles.input}
+              type="file"
+            />
+            {confirmingReplace ? (
+              <div style={styles.confirm}>
+                <p role="status" style={styles.confirmText}>
+                  {hasPendingReplacement
+                    ? "A replacement is already processing. Uploading a new one will discard the pending version and restart processing."
+                    : "Replacing supersedes the current transcript and regenerates its summaries."}
+                </p>
+                <div style={styles.confirmActions}>
+                  <button
+                    data-testid={`section-transcript-replace-confirm-${sectionKey}`}
+                    disabled={isUploading}
+                    onClick={() => void submitUpload()}
+                    style={isUploading ? styles.disabledButton : styles.button}
+                    type="button"
+                  >
+                    {isUploading ? "Replacing..." : "Confirm replace"}
+                  </button>
+                  <button
+                    disabled={isUploading}
+                    onClick={() => setConfirmingReplace(false)}
+                    style={styles.secondaryButton}
+                    type="button"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                data-testid={`section-transcript-replace-${sectionKey}`}
+                disabled={disabled || isUploading || !selectedFile}
+                onClick={() => setConfirmingReplace(true)}
+                style={
+                  disabled || isUploading || !selectedFile
+                    ? styles.disabledButton
+                    : styles.button
+                }
+                type="button"
+              >
+                Replace transcript
+              </button>
+            )}
+            {selectedFile ? (
+              <p style={styles.selected}>Selected: {selectedFile.name}</p>
+            ) : null}
+          </div>
         </div>
       ) : (
         <div style={styles.empty}>
@@ -217,14 +330,6 @@ function isTranscriptNotFound(caught: unknown): boolean {
     caught instanceof ApiError &&
     caught.status === 404 &&
     detailCode(caught) === "TRANSCRIPT_NOT_FOUND"
-  );
-}
-
-function isTranscriptAlreadyExists(caught: unknown): boolean {
-  return (
-    caught instanceof ApiError &&
-    caught.status === 409 &&
-    detailCode(caught) === "TRANSCRIPT_ALREADY_EXISTS"
   );
 }
 
@@ -347,6 +452,38 @@ const styles = {
     border: "1px solid #d1d5db",
     color: "#6b7280",
     cursor: "not-allowed",
+  },
+  secondaryButton: {
+    ...buttonBase,
+    background: "#ffffff",
+    border: "1px solid #cbd5e1",
+    color: "#374151",
+    cursor: "pointer",
+  },
+  pending: {
+    background: "#eff6ff",
+    border: "1px solid #bfdbfe",
+    borderRadius: 6,
+    color: "#1d4ed8",
+    fontSize: 13,
+    fontWeight: 700,
+    margin: 0,
+    padding: "8px 10px",
+  },
+  confirm: {
+    display: "grid",
+    gap: 8,
+    gridColumn: "1 / -1",
+  },
+  confirmText: {
+    color: "#374151",
+    fontSize: 13,
+    lineHeight: 1.45,
+    margin: 0,
+  },
+  confirmActions: {
+    display: "flex",
+    gap: 8,
   },
   selected: {
     color: "#374151",

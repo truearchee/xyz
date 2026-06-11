@@ -21,8 +21,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domains.transcripts.activation import (
     ActivationOutcome,
+    attempt_pending_activation,
     try_activate_pending_transcript,
 )
+from app.domains.transcripts.embedding_encoder import DeterministicEmbeddingEncoder
+from app.domains.transcripts.embedding_service import embed_transcript_async
 from app.domains.transcripts.summary_eligibility import (
     get_activation_ready_summaries,
     is_summary_eligible,
@@ -123,7 +126,18 @@ async def _create_summary_row(
         transcript_id=transcript.id,
         module_section_id=transcript.module_section_id,
         summary_type=summary_type,
-        content_json={"text": "brief"} if summary_type == "brief" else {"overview": "o"},
+        content_json=(
+            {"text": "brief"}
+            if summary_type == "brief"
+            else {
+                "overview": "o",
+                "keyConcepts": [],
+                "importantDefinitions": [],
+                "mainExplanations": [],
+                "examples": [],
+                "examRelevantPoints": [],
+            }
+        ),
         content_schema_version="v1",
         model_id="m",
         prompt_version=prompt_version,
@@ -540,3 +554,284 @@ async def test_seed_failed_ingestion_job(
     assert job.status == "failed"
     assert job.job_type == "embed"
     assert job.failure_category == "provider_transient"
+
+
+# ───────────────────────── active-summary preview endpoint (4.6d) ─────────────────────────
+
+
+@pytest.mark.anyio
+async def test_active_summary_preview_returns_eligible(
+    auth_client, db_session: AsyncSession, jwt_factory, mock_jwks_client
+) -> None:
+    section, lecturer = await _section_with_lecturer(db_session)
+    module_id, section_id = section.course_module_id, section.id
+    active = _transcript(section_id, lecturer.id, lifecycle_state="active")
+    db_session.add(active)
+    await db_session.flush()
+    await _make_summarized(db_session, active)
+    active_id = active.id
+    await db_session.commit()
+
+    response = await auth_client.get(
+        f"/modules/{module_id}/sections/{section_id}/transcript-active-summary-preview",
+        headers=_headers(lecturer, jwt_factory),
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["activeTranscriptId"] == str(active_id)
+    assert body["briefEligible"] is True
+    assert body["detailedEligible"] is True
+    assert body["hasPendingReplacement"] is False
+    # Internal provenance is never exposed.
+    assert not {"checksum", "storageKey", "sourceTranscriptChecksum"} & set(body)
+
+
+@pytest.mark.anyio
+async def test_active_summary_preview_flags_pending_replacement(
+    auth_client, db_session: AsyncSession, jwt_factory, mock_jwks_client
+) -> None:
+    section, lecturer = await _section_with_lecturer(db_session)
+    module_id, section_id = section.course_module_id, section.id
+    active = _transcript(section_id, lecturer.id, lifecycle_state="active")
+    db_session.add(active)
+    await db_session.flush()
+    await _make_summarized(db_session, active)
+    pending = _transcript(
+        section_id, lecturer.id, lifecycle_state="pending", replacement_of=active.id
+    )
+    db_session.add(pending)
+    active_id = active.id
+    await db_session.commit()
+
+    response = await auth_client.get(
+        f"/modules/{module_id}/sections/{section_id}/transcript-active-summary-preview",
+        headers=_headers(lecturer, jwt_factory),
+    )
+    assert response.status_code == 200
+    body = response.json()
+    # Continuity: the preview still surfaces the ACTIVE (v1) while a replacement processes.
+    assert body["activeTranscriptId"] == str(active_id)
+    assert body["hasPendingReplacement"] is True
+
+
+@pytest.mark.anyio
+async def test_active_summary_preview_authz(
+    auth_client, db_session: AsyncSession, jwt_factory, mock_jwks_client
+) -> None:
+    section, lecturer = await _section_with_lecturer(db_session)
+    module_id, section_id = section.course_module_id, section.id
+    active = _transcript(section_id, lecturer.id, lifecycle_state="active")
+    db_session.add(active)
+    await db_session.flush()
+    await _make_summarized(db_session, active)
+    student = await _create_user(db_session, email=f"prev-stu-{uuid4()}@example.com", role="student")
+    await _create_membership(db_session, user_id=student.id, module_id=module_id, role="student")
+    other = await _create_user(db_session, email=f"prev-oth-{uuid4()}@example.com", role="lecturer")
+    await db_session.commit()
+
+    path = f"/modules/{module_id}/sections/{section_id}/transcript-active-summary-preview"
+    student_resp = await auth_client.get(path, headers=_headers(student, jwt_factory))
+    other_resp = await auth_client.get(path, headers=_headers(other, jwt_factory))
+    assert student_resp.status_code == 403
+    assert other_resp.status_code == 404
+
+
+# ───────── F-4.6b-2: every pipeline leaf triggers activation (ordering-independent) ─────────
+
+
+async def _summarized_except_embed(session: AsyncSession, transcript: Transcript):
+    """Build a pending whose summaries are DONE but embed is still pending: one un-embedded chunk + a
+    QUEUED embed job + completed brief/detailed jobs + summary rows. Returns the embed job id. Lets the
+    real embed worker be the LAST leaf to complete (the exact F-4.6b-2 ordering)."""
+    now = _now()
+    segment = TranscriptSegment(
+        transcript_id=transcript.id, sequence_number=0, start_ms=0, end_ms=1000, text="hello"
+    )
+    session.add(segment)
+    await session.flush()
+    session.add(
+        TranscriptChunk(
+            transcript_id=transcript.id,
+            chunk_index=0,
+            start_segment_id=segment.id,
+            end_segment_id=segment.id,
+            start_sequence_number=0,
+            end_sequence_number=0,
+            text="hello",
+            token_count=1,
+            token_count_method="words",
+            normalization_version="norm-v1-structural",
+            chunking_version="chunk-v1-no-overlap-180w",
+        )  # NO embedding — the embed worker fills it
+    )
+    embed_job = IngestionJob(
+        transcript_id=transcript.id,
+        job_type="embed",
+        status="queued",
+        idempotency_key=f"{transcript.id}:embed:{uuid4()}",
+    )
+    brief_job = IngestionJob(
+        transcript_id=transcript.id,
+        job_type="generate_brief_summary",
+        status="completed",
+        idempotency_key=f"{transcript.id}:brief:{uuid4()}",
+        completed_at=now,
+    )
+    detailed_job = IngestionJob(
+        transcript_id=transcript.id,
+        job_type="generate_detailed_summary",
+        status="completed",
+        idempotency_key=f"{transcript.id}:detailed:{uuid4()}",
+        completed_at=now,
+    )
+    session.add_all([embed_job, brief_job, detailed_job])
+    await session.flush()
+    await _create_summary_row(
+        session, transcript, summary_type="brief", feature="summary_brief", job=brief_job
+    )
+    await _create_summary_row(
+        session, transcript, summary_type="detailed_study", feature="summary_detailed", job=detailed_job
+    )
+    return embed_job.id
+
+
+@pytest.mark.anyio
+async def test_pending_activates_when_embed_completes_after_summaries(db_session: AsyncSession) -> None:
+    """F-4.6b-2: embed is a leaf that can finish LAST (parallel to summaries). Its completion must
+    trigger the swap — proven through the REAL embed worker."""
+    section, lecturer = await _section_with_lecturer(db_session)
+    active = _transcript(section.id, lecturer.id, lifecycle_state="active")
+    db_session.add(active)
+    await db_session.flush()
+    await _make_summarized(db_session, active)
+    pending = _transcript(
+        section.id, lecturer.id, lifecycle_state="pending", replacement_of=active.id
+    )
+    db_session.add(pending)
+    await db_session.flush()
+    embed_job_id = await _summarized_except_embed(db_session, pending)
+    active_id, pending_id, section_id = active.id, pending.id, section.id
+    await db_session.commit()
+
+    # Embed finishes last → the embed-leaf activation hook must fire the swap.
+    await embed_transcript_async(
+        embed_job_id,
+        encoder=DeterministicEmbeddingEncoder(),
+        session_factory=_session_factory(db_session),
+    )
+    db_session.expire_all()
+    assert (await db_session.get(Transcript, pending_id)).lifecycle_state == "active"
+    active_ref = await db_session.get(Transcript, active_id)
+    assert active_ref.lifecycle_state == "superseded"
+    assert active_ref.superseded_by_transcript_id == pending_id
+    actives = (
+        await db_session.execute(
+            select(Transcript).where(
+                Transcript.module_section_id == section_id,
+                Transcript.lifecycle_state == "active",
+            )
+        )
+    ).scalars().all()
+    assert [t.id for t in actives] == [pending_id]
+
+
+@pytest.mark.anyio
+async def test_pending_activates_when_summary_completes_after_embed(db_session: AsyncSession) -> None:
+    """Symmetric case: embed + brief finish FIRST, the detailed summary leaf finishes last → the
+    summary-leaf hook fires the swap. (Whichever leaf is last activates — ordering-independent.)"""
+    section, lecturer = await _section_with_lecturer(db_session)
+    active = _transcript(section.id, lecturer.id, lifecycle_state="active")
+    db_session.add(active)
+    await db_session.flush()
+    await _make_summarized(db_session, active)
+    # Pending with embed + brief done but detailed still pending (embed finished first here).
+    pending = _transcript(
+        section.id, lecturer.id, lifecycle_state="pending", replacement_of=active.id
+    )
+    db_session.add(pending)
+    await db_session.flush()
+    await _make_summarized(db_session, pending)
+    pending_id, active_id = pending.id, active.id
+    detailed_job = (
+        await db_session.execute(
+            select(IngestionJob).where(
+                IngestionJob.transcript_id == pending_id,
+                IngestionJob.job_type == "generate_detailed_summary",
+            )
+        )
+    ).scalar_one()
+    detailed_job.status = "queued"
+    detailed_job.completed_at = None
+    detailed_job_id = detailed_job.id  # capture before commit expires the instance
+    detailed_row = (
+        await db_session.execute(
+            select(GeneratedLectureSummary).where(
+                GeneratedLectureSummary.transcript_id == pending_id,
+                GeneratedLectureSummary.summary_type == "detailed_study",
+            )
+        )
+    ).scalar_one()
+    await db_session.delete(detailed_row)
+    await db_session.commit()
+
+    factory = _session_factory(db_session)
+    await attempt_pending_activation(factory, transcript_id=pending_id)  # not ready → no-op
+    db_session.expire_all()
+    assert (await db_session.get(Transcript, pending_id)).lifecycle_state == "pending"
+
+    # The detailed summary leaf now completes last → its hook fires the swap.
+    async with factory() as session:
+        job = await session.get(IngestionJob, detailed_job_id)
+        job.status = "completed"
+        job.completed_at = _now()
+        pending_ref = await session.get(Transcript, pending_id)
+        await _create_summary_row(
+            session,
+            pending_ref,
+            summary_type="detailed_study",
+            feature="summary_detailed",
+            job=job,
+        )
+        await session.commit()
+    await attempt_pending_activation(factory, transcript_id=pending_id)
+    db_session.expire_all()
+    assert (await db_session.get(Transcript, pending_id)).lifecycle_state == "active"
+    assert (await db_session.get(Transcript, active_id)).lifecycle_state == "superseded"
+
+
+@pytest.mark.anyio
+async def test_concurrent_leaf_activations_swap_exactly_once(db_session: AsyncSession) -> None:
+    """Two leaves finishing near-simultaneously each call activation → EXACTLY ONE swap (the section
+    lock + flush-before-promote + one-active index hold). No double-activation, no index violation."""
+    section, lecturer = await _section_with_lecturer(db_session)
+    active = _transcript(section.id, lecturer.id, lifecycle_state="active")
+    db_session.add(active)
+    await db_session.flush()
+    await _make_summarized(db_session, active)
+    pending = _transcript(
+        section.id, lecturer.id, lifecycle_state="pending", replacement_of=active.id
+    )
+    db_session.add(pending)
+    await db_session.flush()
+    await _make_summarized(db_session, pending)
+    active_id, pending_id, section_id = active.id, pending.id, section.id
+    await db_session.commit()
+
+    factory = _session_factory(db_session)
+    async with factory() as s1:
+        o1 = await try_activate_pending_transcript(s1, transcript_id=pending_id)
+    async with factory() as s2:
+        o2 = await try_activate_pending_transcript(s2, transcript_id=pending_id)
+    assert {o1, o2} == {ActivationOutcome.ACTIVATED, ActivationOutcome.NOT_PENDING}
+
+    db_session.expire_all()
+    actives = (
+        await db_session.execute(
+            select(Transcript).where(
+                Transcript.module_section_id == section_id,
+                Transcript.lifecycle_state == "active",
+            )
+        )
+    ).scalars().all()
+    assert [t.id for t in actives] == [pending_id]  # exactly one active
+    assert (await db_session.get(Transcript, active_id)).lifecycle_state == "superseded"

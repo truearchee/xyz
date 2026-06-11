@@ -17,14 +17,18 @@ from app.domains.recovery import reaper as reaper_module
 from app.domains.recovery.locks import maintenance_advisory_lock
 from app.domains.recovery.reaper import run_stuck_row_reaper
 from app.domains.recovery.reconciliation import run_storage_reconciliation
+from app.domains.transcripts import parse_service
 from app.domains.transcripts.embedding_encoder import DeterministicEmbeddingEncoder
 from app.domains.transcripts.embedding_service import embed_transcript_async
+from app.domains.transcripts.parse_service import ParseClaim
+from app.domains.transcripts.parsers import ParsedSegment
 from app.domains.transcripts.retry import apply_retry, resolve_retry_scope
 from app.platform.db.models import (
     GeneratedLectureSummary,
     IngestionJob,
     MaintenanceRun,
     Transcript,
+    TranscriptSegment,
 )
 from app.platform.query.transcript_status import get_transcript_processing_status_read
 from tests.test_content import FakeStorageProvider
@@ -360,6 +364,74 @@ async def test_reaper_crashed_job_projects_retryable_then_retries(db_session: As
         ).scalars().all()
     )
     assert summaries_after == summaries_before
+
+
+@pytest.mark.anyio
+async def test_stale_worker_aborts_after_reaper_then_retry(db_session: AsyncSession) -> None:
+    """Browser-gate fencing flow (deterministic): seed a stale running parse job → the reaper marks it
+    crashed → retry resets it and a NEW attempt claims it → the OLD stale worker tries to commit and
+    ABORTS (attempt-token fence), writing nothing. (A backend race, proven here, not in the browser.)"""
+    transcript = await _create_worker_transcript(db_session, raw=VTT_BYTES)
+    transcript.status = "parsing"
+    idempotency_key = parse_service._idempotency_key(transcript)
+    parse_job = IngestionJob(
+        transcript_id=transcript.id,
+        job_type="parse",
+        status="running",
+        idempotency_key=idempotency_key,
+        processor_version=parse_service.PARSE_PROCESSOR_VERSION,
+        attempts=1,
+        started_at=_now() - timedelta(hours=1),  # stale
+    )
+    db_session.add(parse_job)
+    await db_session.flush()
+    transcript_id, parse_job_id = transcript.id, parse_job.id
+    # The OLD worker's claim (attempt 1) — captured before the reaper/retry bump the attempt.
+    stale_claim = ParseClaim(
+        transcript_id=transcript_id,
+        storage_key=transcript.storage_key,
+        mime_type=transcript.mime_type,
+        idempotency_key=idempotency_key,
+        claimed_attempt=1,
+        job_id=parse_job_id,
+    )
+    await db_session.commit()
+
+    factory = _session_factory(db_session)
+    # Reaper marks the stale running parse job crashed.
+    await run_stuck_row_reaper(
+        session_factory=factory, engine=db_session.bind, rq_liveness=_NOT_LIVE, now=_now()
+    )
+    db_session.expire_all()
+    assert (await db_session.get(IngestionJob, parse_job_id)).failure_category == "crashed"
+
+    # Retry resets the parse job, then a NEW worker claims it (attempt → 2).
+    transcript = await db_session.get(Transcript, transcript_id)
+    projection = await get_transcript_processing_status_read(db_session, transcript=transcript)
+    assert resolve_retry_scope(projection) == ["parse"]
+    await apply_retry(db_session, transcript=transcript, scope=["parse"])
+    await db_session.commit()
+    async with factory() as session:
+        new_claim = await parse_service._claim_parse_job(session, transcript_id=transcript_id)
+    assert new_claim is not None and new_claim.claimed_attempt == 2
+
+    # The OLD stale worker (attempt 1) tries to commit → fenced, writes nothing.
+    async with factory() as session:
+        result = await parse_service._persist_success(
+            session,
+            claim=stale_claim,
+            segments=[ParsedSegment(text="stale", start_ms=0, end_ms=1000, speaker_name=None)],
+        )
+    assert result is None
+    db_session.expire_all()
+    segment_count = len(
+        (
+            await db_session.execute(
+                select(TranscriptSegment).where(TranscriptSegment.transcript_id == transcript_id)
+            )
+        ).scalars().all()
+    )
+    assert segment_count == 0  # the stale attempt wrote nothing
 
 
 # ───────────────────────── storage reconciliation ─────────────────────────

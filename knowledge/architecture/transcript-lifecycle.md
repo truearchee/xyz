@@ -44,8 +44,10 @@ second replacement upload     → prior pending → superseded (discarded_pendin
 - `app/domains/transcripts/summary_specs.py` — `SummarySpec`/`BRIEF`/`DETAILED` + expected prompt
   versions, extracted to break the `summary_service ⇄ activation` import cycle.
 - `app/platform/query/active_transcript_summary_resolver.py` — `ActiveTranscriptSummaryResolver`:
-  read-only wrapper over the SAME predicate (lecturer preview in 4.6d; student authz in 4.7). No
-  write/authz decision.
+  read-only wrapper over the SAME predicate. Consumed by the **lecturer active-summary preview**
+  (4.6d: `GET .../transcript-active-summary-preview` → `service.get_active_summary_preview`, exposing
+  eligibility flags + `hasPendingReplacement` + `activeTranscriptId`, NO student surface); student authz
+  is 4.7. No write/authz decision.
 
 ## Provenance (4.6 fencing/audit)
 Each artifact records the job that produced it (FK → `ingestion_jobs.id`, ON DELETE SET NULL):
@@ -98,6 +100,7 @@ connection, `locks.py`), MaintenanceRun-logged (`maintenance_run_log.py`) units:
 ## Boundaries / deferred
 - one-active "current job" indexes: **embed/summary (0007/0008) + parse (0011)**. **chunk** stays WITHOUT one.
 - `crashed` failure category is produced by the 4.6c reaper (mapped in the projection since 4.6b).
-- Lecturer UI + active-summary preview endpoint + browser gate → **4.6d (closes Stage 4.6)**. Student surface
+- Lecturer UI + active-summary preview endpoint + browser-gate spec → **BUILT in 4.6d** (live browser gate
+  developer-run → FULLY VERIFIED). Student surface
   → 4.7. Cron pointing at the reaper/reconciliation entrypoints → 11.1. Targeted `?jobType=` retry + RQ
   scheduler (F-4.5-47) → not 4.6. Heartbeat columns → not built (RQ-registry + age instead).

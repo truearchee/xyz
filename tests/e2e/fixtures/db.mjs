@@ -91,12 +91,13 @@ SELECT json_build_object(
   'id', id,
   'moduleSectionId', module_section_id,
   'status', status,
+  'lifecycleState', lifecycle_state,
   'storageKey', storage_key,
   'originalFileName', original_file_name
 )::text
 FROM transcripts
 WHERE module_section_id = ${sqlLiteral(sectionId)}::uuid
-  AND is_active = true
+  AND lifecycle_state = 'active'
 LIMIT 1;
 `);
 }
@@ -107,9 +108,32 @@ export function getActiveTranscriptCountForSection(sectionId) {
 SELECT count(*)::int
 FROM transcripts
 WHERE module_section_id = ${sqlLiteral(sectionId)}::uuid
-  AND is_active = true;
+  AND lifecycle_state = 'active';
 `);
   return Number(rows.at(-1) ?? 0);
+}
+
+// Stage 4.6: full lifecycle/lineage view of every transcript in a section (active + pending +
+// superseded), for replacement-continuity + supersession assertions.
+export function getTranscriptsBySection(sectionId) {
+  assertUuid(sectionId, 'sectionId');
+  return runPsqlJson(`
+SELECT coalesce(json_agg(row ORDER BY created_at), '[]'::json)::text
+FROM (
+  SELECT json_build_object(
+    'id', id,
+    'lifecycleState', lifecycle_state,
+    'status', status,
+    'supersededByTranscriptId', superseded_by_transcript_id,
+    'replacementOfTranscriptId', replacement_of_transcript_id,
+    'supersessionReason', supersession_reason,
+    'supersededAt', superseded_at,
+    'createdAt', created_at
+  ) AS row, created_at
+  FROM transcripts
+  WHERE module_section_id = ${sqlLiteral(sectionId)}::uuid
+) sub;
+`);
 }
 
 export function getTranscriptById(transcriptId) {
@@ -119,6 +143,9 @@ SELECT json_build_object(
   'id', id,
   'moduleSectionId', module_section_id,
   'status', status,
+  'lifecycleState', lifecycle_state,
+  'supersededByTranscriptId', superseded_by_transcript_id,
+  'supersessionReason', supersession_reason,
   'storageKey', storage_key,
   'originalFileName', original_file_name
 )::text
