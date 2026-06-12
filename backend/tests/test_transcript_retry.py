@@ -31,6 +31,7 @@ from app.platform.db.models import (
     TranscriptChunk,
 )
 from app.platform.query.transcript_status import get_transcript_processing_status_read
+from tests.test_transcript_lifecycle import _make_summarized
 from tests.test_transcript_worker import (
     _chunks,
     _create_chunked_transcript,
@@ -375,6 +376,72 @@ async def test_projection_sanitized_failure_category(
     assert projection.failure_category == expected_category
     assert projection.retryable is expected_retryable
     assert projection.overall_state == "failed"
+
+
+# ── F-4.6d-3: overallState derives from STEP states, never the transcript.status breadcrumb ──
+
+
+@pytest.mark.anyio
+async def test_overall_state_ignores_stale_failed_breadcrumb_after_retry(
+    db_session: AsyncSession,
+) -> None:
+    """The exact F-4.6d-3 case: apply_retry re-enqueues the failed step (embed → queued) but leaves
+    `transcript.status='failed'`. The projection must report in-progress (the steps say retrying), NOT
+    the stale 'failed' breadcrumb — else the lecturer badge settles on a transcript that is retrying.
+    (Fails on the pre-fix code, which short-circuited overall_state on transcript.status == 'failed'.)"""
+    transcript = await _create_worker_transcript(db_session, raw=VTT_BYTES)
+    transcript.status = "failed"  # the stale breadcrumb apply_retry leaves behind
+    await _completed_job(db_session, transcript.id, "parse")
+    await _completed_job(db_session, transcript.id, "chunk")
+    await _completed_job(db_session, transcript.id, "generate_brief_summary")
+    await _completed_job(db_session, transcript.id, "generate_detailed_summary")
+    db_session.add(
+        IngestionJob(
+            transcript_id=transcript.id,
+            job_type="embed",
+            status="queued",  # re-enqueued by retry — NOT failed
+            idempotency_key=f"{transcript.id}:embed:{uuid4()}",
+        )
+    )
+    await db_session.flush()
+    await db_session.commit()
+
+    projection = await get_transcript_processing_status_read(db_session, transcript=transcript)
+    assert projection.overall_state == "embedding"  # in-progress, not 'failed'
+    assert projection.failed_step is None
+    assert projection.failure_category is None
+    assert projection.retryable is False
+    assert projection.transcript_status == "failed"  # the demoted breadcrumb is exposed, not trusted
+
+
+@pytest.mark.anyio
+async def test_overall_state_failed_on_genuine_step_failure(db_session: AsyncSession) -> None:
+    """The fix must NOT break the genuine-failure case: a step actually `failed` (no retry) → the
+    projection is `failed` + retryable, derived purely from the step state."""
+    transcript = await _create_worker_transcript(db_session, raw=VTT_BYTES)
+    await _completed_job(db_session, transcript.id, "parse")
+    await _completed_job(db_session, transcript.id, "chunk")
+    await _failed_job(db_session, transcript.id, "embed", "embedding_failed")
+    await db_session.commit()
+
+    projection = await get_transcript_processing_status_read(db_session, transcript=transcript)
+    assert projection.overall_state == "failed"
+    assert projection.failed_step == "embed"
+    assert projection.failure_category == "embedding_failed"
+    assert projection.retryable is True
+
+
+@pytest.mark.anyio
+async def test_overall_state_summarized_when_all_leaves_complete(db_session: AsyncSession) -> None:
+    """Happy path unchanged: every leaf complete → `summarized` (even if the breadcrumb lags)."""
+    transcript = await _create_worker_transcript(db_session, raw=VTT_BYTES)
+    transcript.status = "embedding"  # breadcrumb lags the steps; doneness comes from the steps
+    await _make_summarized(db_session, transcript)
+    await db_session.commit()
+
+    projection = await get_transcript_processing_status_read(db_session, transcript=transcript)
+    assert projection.overall_state == "summarized"
+    assert projection.failed_step is None
 
 
 # ───────────────────────── retry endpoint (authz + 409s + happy path) ─────────────────────────

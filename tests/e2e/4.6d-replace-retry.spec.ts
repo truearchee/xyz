@@ -258,25 +258,16 @@ test('4.6d retry flow — forced step failure, lecturer retries to summarized, n
     const before = getTranscriptCounts(transcriptId) as { segmentCount: number; chunkCount: number };
     const summariesBefore = (getGeneratedSummariesForTranscript(transcriptId) as unknown[]).length;
 
-    // Clear the fault, then retry. A freshly-recreated worker re-validates its model snapshot (minutes)
-    // before it claims the re-enqueued embed job, so poll the DB for embed completion (robust against that
-    // boot cost — it is a test-harness artifact, not the retry's latency) before asserting the UI.
+    // Clear the fault, then retry. The badge keeps polling through the corrected overallState
+    // (retrying → embedding → summarized) on its OWN poll — no reload. (F-4.6d-3 fixed: the projection
+    // derives overallState from step states, so a re-enqueued step no longer reports the stale 'failed'
+    // breadcrumb.) The generous timeout only absorbs the recreated worker's model-snapshot boot, a
+    // harness artifact, not the badge.
     recreateEmbeddingWorker(null);
     await retryButton.click();
-    await expect.poll(() => jobStatus(transcriptId, 'embed'), { timeout: 360_000, intervals: [2000] }).toBe(
-      'completed',
-    );
-    // WORKAROUND for F-4.6d-3 (C-lite read-contract violation in the post-retry status path): after retry,
-    // apply_retry leaves transcript.status='failed', the shared projection _overall_state short-circuits on
-    // it, and the badge settles on the stale overallState='failed' and stops polling. Production-masked
-    // (live worker claims in ~100ms); exposed here by the recreated worker's minutes-long model boot. This
-    // reload re-polls from a clean state to observe the correct end-state. *** REMOVE THIS RELOAD when
-    // F-4.6d-3 is fixed (owner: Task 4.6d-P1) — see knowledge/findings-4.6-gate.md#F-4.6d-3. ***
-    await lecturerPage.reload();
-    const labRowAfter = rowForSection(lecturerPage, setup.lab);
-    await expect(labRowAfter.locator('[data-testid^="section-transcript-status-"]')).toContainText(
+    await expect(labRow.locator('[data-testid^="section-transcript-status-"]')).toContainText(
       'Summaries ready',
-      { timeout: 60_000 },
+      { timeout: 360_000 },
     );
 
     // No duplicate segments / chunks / summaries on the retry path.
