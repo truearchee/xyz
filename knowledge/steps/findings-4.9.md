@@ -77,3 +77,29 @@ consistency sweep. **4.9 ships no pagination** and no endpoint/schema change (sp
 
 **Resolution target:** 4.9d (author the unconditional teardown + the pre-run orphan-check script, wired
 into the verification surface §8) / 4.9e (confirm at close). Final disposition recorded here then.
+
+---
+
+## F-4.9-3 — `next@15.3.3` + `postcss` npm-audit advisories (surfaced when 4.9a added deps)
+
+**Raised:** 2026-06-12 (4.9a). **Status: ACCEPTED-WITH-RATIONALE for Stage 4.9; the Next upgrade DEFERRED to Stage 12 (release hardening).**
+
+`npm audit` flags two advisories after the 4.9a dep install. Assessed for **severity + reachability**
+(the two things that decide whether it jumps the queue):
+
+| Advisory | Severity | Reachable in THIS app? | Verdict |
+|---|---|---|---|
+| **next** — Image Optimization API cache-key confusion (GHSA-g5qg-72qw-gw5v, CVSS 6.2; npm rolls next up as "critical") | moderate (6.2) | **No** — app uses **no `next/image`**, **no middleware**, **no server actions** (grep-confirmed); the `/_next/image` optimization route is not on any app flow | not high-and-reachable |
+| **postcss** — XSS via unescaped `</style>` in CSS stringify (GHSA-qx2v-qp2m-jg93, CVSS 6.1) | moderate (6.1) | **No** — postcss runs **build-time on our own authored `globals.css`**, never on untrusted input | not reachable |
+
+**Pre-existing, not introduced by 4.9:** Stage 4.8 already shipped on `next@15.3.3`; the postcss
+advisory is a transitive of Next/Tailwind that 4.9a's explicit `postcss@^8` merely surfaced.
+
+**Resolution (rule 13):**
+- **Accepted-with-rationale for Stage 4.9** — neither advisory is high-severity AND reachable; upgrading
+  Next mid-foundation risks rippling the App Router / build behavior 4.9 is actively changing.
+- **Deferred:** the actual **`next` upgrade → Stage 12 (release hardening)** (its natural home; not forced
+  sooner because unreachable here). postcss resolves on the next Next/Tailwind bump. **Re-assess if the
+  CVE severity rises or a reachable path (next/image, middleware, image-opt) is added before Stage 12** —
+  at which point it jumps to the §7 hygiene batch or sooner.
+- Logged here as F-4.9-3 so it cannot evaporate as a loose `npm audit` line.

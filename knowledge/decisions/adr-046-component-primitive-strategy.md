@@ -50,3 +50,14 @@ bypasses our tokens → NOT allowed.** Hard requirements: React 19.1.0 compatibi
   styled kit.
 - Pre-existing `next@15.3.3` advisory (CVE) surfaced by `npm audit` is **not** introduced by these deps;
   a Next upgrade is out of 4.9a scope (tracked separately).
+
+## Amendment — 2026-06-12 (4.9b): Toast is OWNED, not React Aria
+At build time (4.9b) react-aria-components@1.18 exposes Toast **only** as `UNSTABLE_*`
+(`UNSTABLE_Toast/ToastRegion/ToastQueue/...`). A **frozen public contract** (ADR-047) must not ride an
+unstable API, and the Toast behavior is simple: a polite `aria-live` region, errors that don't
+auto-dismiss, keyboard-dismissible (§4.2). So **Toast is implemented in-house** (`Toast.tsx`:
+`ToastProvider` + `useToast` + a portal into the 4.9a `#toast-root`, falling back to `document.body`).
+**Modal stays on React Aria** (`Modal`/`ModalOverlay`/`Dialog`/`Heading` are **stable**) — that is where
+the genuinely-hard behavior lives (focus trap, `Esc`, focus restoration, role/labelling), which RA gives
+for free. lucide-react unchanged. Re-evaluate adopting RA's stable Toast when it ships (additive, no
+contract break expected).

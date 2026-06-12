@@ -82,6 +82,7 @@
   --color-surface: var(--palette-white);
   --color-surface-muted: var(--palette-zinc-50);
   --color-surface-raised: var(--palette-white);
+  --color-overlay: rgb(24 24 27 / 0.45); /* modal/dialog scrim (zinc-900 @ 45%) — added 4.9b */
   --color-border: var(--palette-zinc-200);
   --color-border-strong: var(--palette-zinc-500);
   --color-text: var(--palette-zinc-900);
@@ -99,6 +100,7 @@
   --color-on-warning: var(--palette-white);
   --color-danger: var(--palette-rose-600);
   --color-on-danger: var(--palette-white);
+  --color-danger-hover: var(--palette-rose-700);
   --color-info: var(--palette-indigo-500);
   --color-on-info: var(--palette-white);
 
