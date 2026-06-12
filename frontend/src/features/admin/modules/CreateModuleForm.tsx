@@ -4,7 +4,7 @@ import { useState, type FormEvent } from "react";
 
 import type { UserResponse } from "../../../lib/api";
 import { api } from "../../../lib/api/wrapper";
-import { errorMessage, panelStyles } from "../shared";
+import { errorMessage, panelClasses } from "../shared";
 
 type CreateModuleFormProps = {
   lecturers: UserResponse[];
@@ -49,41 +49,41 @@ export function CreateModuleForm({ lecturers, onCreated }: CreateModuleFormProps
   }
 
   return (
-    <form data-testid="create-module-form" onSubmit={submit} style={panelStyles.stack}>
-      <h3>Create module</h3>
-      {error ? <div role="alert" style={panelStyles.alert}>{error}</div> : null}
-      <label style={panelStyles.label}>
+    <form data-testid="create-module-form" onSubmit={submit} className={panelClasses.stack}>
+      <h3 className="m-0 font-display text-base font-semibold text-text">Create module</h3>
+      {error ? <div role="alert" className={panelClasses.alert}>{error}</div> : null}
+      <label className={panelClasses.label}>
         Title
-        <input aria-label="Module title" onChange={(event) => setTitle(event.target.value)} required style={panelStyles.input} type="text" value={title} />
+        <input aria-label="Module title" onChange={(event) => setTitle(event.target.value)} required className={panelClasses.input} type="text" value={title} />
       </label>
-      <label style={panelStyles.label}>
+      <label className={panelClasses.label}>
         Owner lecturer
-        <select aria-label="Module owner lecturer" onChange={(event) => setOwnerId(event.target.value)} required style={panelStyles.input} value={ownerId}>
+        <select aria-label="Module owner lecturer" onChange={(event) => setOwnerId(event.target.value)} required className={panelClasses.input} value={ownerId}>
           <option value="">Select lecturer</option>
           {lecturers.map((lecturer) => (
             <option key={lecturer.id} value={lecturer.id}>{lecturer.fullName} ({lecturer.email})</option>
           ))}
         </select>
       </label>
-      <label style={panelStyles.label}>
+      <label className={panelClasses.label}>
         Description
-        <textarea aria-label="Module description" onChange={(event) => setDescription(event.target.value)} style={panelStyles.input} value={description} />
+        <textarea aria-label="Module description" onChange={(event) => setDescription(event.target.value)} className={panelClasses.input} value={description} />
       </label>
-      <label style={panelStyles.label}>
+      <label className={panelClasses.label}>
         Timezone
-        <input aria-label="Module timezone" onChange={(event) => setTimezone(event.target.value)} required style={panelStyles.input} type="text" value={timezone} />
+        <input aria-label="Module timezone" onChange={(event) => setTimezone(event.target.value)} required className={panelClasses.input} type="text" value={timezone} />
       </label>
-      <div style={panelStyles.grid}>
-        <label style={panelStyles.label}>
+      <div className={panelClasses.grid}>
+        <label className={panelClasses.label}>
           Starts on
-          <input aria-label="Module starts on" onChange={(event) => setStartsOn(event.target.value)} style={panelStyles.input} type="date" value={startsOn} />
+          <input aria-label="Module starts on" onChange={(event) => setStartsOn(event.target.value)} className={panelClasses.input} type="date" value={startsOn} />
         </label>
-        <label style={panelStyles.label}>
+        <label className={panelClasses.label}>
           Ends on
-          <input aria-label="Module ends on" onChange={(event) => setEndsOn(event.target.value)} style={panelStyles.input} type="date" value={endsOn} />
+          <input aria-label="Module ends on" onChange={(event) => setEndsOn(event.target.value)} className={panelClasses.input} type="date" value={endsOn} />
         </label>
       </div>
-      <button disabled={isSubmitting || lecturers.length === 0} type="submit">
+      <button className={panelClasses.button} disabled={isSubmitting || lecturers.length === 0} type="submit">
         {isSubmitting ? "Creating..." : "Create module"}
       </button>
     </form>

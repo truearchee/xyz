@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type { ModuleMemberResponse, ModuleResponse, UserResponse } from "../../../lib/api";
 import { api } from "../../../lib/api/wrapper";
-import { errorMessage, panelStyles, slugify } from "../shared";
+import { errorMessage, panelClasses, slugify } from "../shared";
 import { AssignMemberForm } from "./AssignMemberForm";
 import { CreateModuleForm } from "./CreateModuleForm";
 
@@ -86,25 +86,25 @@ export function AdminModulesPanel() {
   const selectedModule = modules.find((module) => module.id === selectedModuleId);
 
   return (
-    <section aria-label="Admin modules" style={panelStyles.panel}>
-      <div>
-        <h2>Modules</h2>
-        <p>Create modules, assign active users, and archive memberships.</p>
+    <section aria-label="Admin modules" className={panelClasses.panel}>
+      <div className="grid gap-1">
+        <h2 className="m-0 font-display text-lg font-semibold text-text">Modules</h2>
+        <p className="m-0 text-sm text-text-muted">Create modules, assign active users, and archive memberships.</p>
       </div>
-      {error ? <div role="alert" style={panelStyles.alert}>{error}</div> : null}
-      <div style={panelStyles.grid}>
+      {error ? <div role="alert" className={panelClasses.alert}>{error}</div> : null}
+      <div className={panelClasses.grid}>
         <CreateModuleForm lecturers={activeLecturers} onCreated={refreshAfterMutation} />
         <AssignMemberForm modules={modules} onAssigned={refreshAfterMutation} users={users} />
       </div>
-      {isLoading ? <p aria-busy="true">Loading modules...</p> : null}
-      <div style={{ overflowX: "auto" }}>
-        <table data-testid="admin-modules-table" style={panelStyles.table}>
+      {isLoading ? <p aria-busy="true" className="text-sm text-text-muted">Loading modules...</p> : null}
+      <div className="overflow-x-auto">
+        <table data-testid="admin-modules-table" className={panelClasses.table}>
           <thead>
             <tr>
-              <th style={panelStyles.th}>Title</th>
-              <th style={panelStyles.th}>Owner</th>
-              <th style={panelStyles.th}>Timezone</th>
-              <th style={panelStyles.th}>State</th>
+              <th className={panelClasses.th}>Title</th>
+              <th className={panelClasses.th}>Owner</th>
+              <th className={panelClasses.th}>Timezone</th>
+              <th className={panelClasses.th}>State</th>
             </tr>
           </thead>
           <tbody>
@@ -112,23 +112,23 @@ export function AdminModulesPanel() {
               const owner = users.find((user) => user.id === module.ownerId);
               return (
                 <tr data-testid={`admin-module-row-${slugify(module.title)}`} key={module.id}>
-                  <td style={panelStyles.td}>{module.title}</td>
-                  <td style={panelStyles.td}>{owner ? `${owner.fullName} (${owner.email})` : module.ownerId}</td>
-                  <td style={panelStyles.td}>{module.timezone}</td>
-                  <td style={panelStyles.td}>{module.isActive ? "Active" : "Inactive"}</td>
+                  <td className={panelClasses.td}>{module.title}</td>
+                  <td className={panelClasses.td}>{owner ? `${owner.fullName} (${owner.email})` : module.ownerId}</td>
+                  <td className={panelClasses.td}>{module.timezone}</td>
+                  <td className={panelClasses.td}>{module.isActive ? "Active" : "Inactive"}</td>
                 </tr>
               );
             })}
           </tbody>
         </table>
       </div>
-      <section aria-label="Module members" style={panelStyles.stack}>
-        <label style={panelStyles.label}>
+      <section aria-label="Module members" className={panelClasses.stack}>
+        <label className={panelClasses.label}>
           Manage members for module
           <select
             aria-label="Managed module"
             onChange={(event) => setSelectedModuleId(event.target.value)}
-            style={panelStyles.input}
+            className={panelClasses.input}
             value={selectedModuleId}
           >
             <option value="">Select module</option>
@@ -137,27 +137,28 @@ export function AdminModulesPanel() {
             ))}
           </select>
         </label>
-        <h3>{selectedModule ? `${selectedModule.title} members` : "Members"}</h3>
-        <div style={{ overflowX: "auto" }}>
-          <table style={panelStyles.table}>
+        <h3 className="m-0 font-display text-base font-semibold text-text">{selectedModule ? `${selectedModule.title} members` : "Members"}</h3>
+        <div className="overflow-x-auto">
+          <table className={panelClasses.table}>
             <thead>
               <tr>
-                <th style={panelStyles.th}>Name</th>
-                <th style={panelStyles.th}>Email</th>
-                <th style={panelStyles.th}>Role</th>
-                <th style={panelStyles.th}>User state</th>
-                <th style={panelStyles.th}>Actions</th>
+                <th className={panelClasses.th}>Name</th>
+                <th className={panelClasses.th}>Email</th>
+                <th className={panelClasses.th}>Role</th>
+                <th className={panelClasses.th}>User state</th>
+                <th className={panelClasses.th}>Actions</th>
               </tr>
             </thead>
             <tbody>
               {members.map((member) => (
                 <tr key={member.membershipId}>
-                  <td style={panelStyles.td}>{member.fullName}</td>
-                  <td style={panelStyles.td}>{member.email}</td>
-                  <td style={panelStyles.td}>{member.role}</td>
-                  <td style={panelStyles.td}>{member.userIsActive ? "Active" : "Inactive"}</td>
-                  <td style={panelStyles.td}>
+                  <td className={panelClasses.td}>{member.fullName}</td>
+                  <td className={panelClasses.td}>{member.email}</td>
+                  <td className={panelClasses.td}>{member.role}</td>
+                  <td className={panelClasses.td}>{member.userIsActive ? "Active" : "Inactive"}</td>
+                  <td className={panelClasses.td}>
                     <button
+                      className={panelClasses.buttonSecondary}
                       disabled={removingUserId === member.userId}
                       onClick={() => void removeMember(member.userId)}
                       type="button"

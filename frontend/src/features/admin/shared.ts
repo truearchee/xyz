@@ -22,68 +22,24 @@ export function errorMessage(caught: unknown): string {
   return "Unexpected error";
 }
 
-export const panelStyles = {
-  panel: {
-    border: "1px solid #d7dde8",
-    borderRadius: 8,
-    display: "grid",
-    gap: 16,
-    padding: 16,
-  },
-  stack: {
-    display: "grid",
-    gap: 12,
-  },
-  grid: {
-    display: "grid",
-    gap: 12,
-    gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-  },
-  table: {
-    borderCollapse: "collapse",
-    width: "100%",
-  },
-  th: {
-    borderBottom: "1px solid #d7dde8",
-    fontSize: 13,
-    padding: "8px 6px",
-    textAlign: "left",
-  },
-  td: {
-    borderBottom: "1px solid #eef2f7",
-    fontSize: 14,
-    padding: "8px 6px",
-    verticalAlign: "top",
-  },
-  label: {
-    display: "grid",
-    fontSize: 13,
-    gap: 4,
-  },
-  input: {
-    border: "1px solid #cbd5e1",
-    borderRadius: 6,
-    fontSize: 14,
-    padding: "8px 10px",
-  },
-  buttonRow: {
-    alignItems: "center",
-    display: "flex",
-    flexWrap: "wrap",
-    gap: 8,
-  },
-  alert: {
-    border: "1px solid #f0b4b4",
-    borderRadius: 6,
-    color: "#7f1d1d",
-    fontSize: 14,
-    padding: 10,
-  },
-  status: {
-    border: "1px solid #9ad4aa",
-    borderRadius: 6,
-    color: "#14532d",
-    fontSize: 14,
-    padding: 10,
-  },
-} satisfies Record<string, React.CSSProperties>;
+// Stage 4.9c: the shared admin styling, migrated from inline CSS objects to semantic-token className
+// strings (same shape). Renamed panelStyles -> panelClasses so the compiler flags any dangling importer
+// (developer hold #1). errorMessage/slugify are logic and unchanged.
+export const panelClasses = {
+  panel: "grid gap-4 rounded-lg border border-border bg-surface-raised p-4 shadow-sm",
+  stack: "grid gap-3",
+  grid: "grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(220px,1fr))]",
+  table: "w-full border-collapse",
+  th: "border-b border-border px-1.5 py-2 text-left text-xs font-semibold text-text-muted",
+  td: "border-b border-border px-1.5 py-2 align-top text-sm text-text",
+  label: "grid gap-1 text-xs font-medium text-text",
+  input:
+    "rounded-md border border-border-strong px-2.5 py-2 text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2",
+  buttonRow: "flex flex-wrap items-center gap-2",
+  alert: "rounded-md border border-danger bg-danger-surface p-2.5 text-sm text-danger-text",
+  status: "rounded-md border border-success bg-success-surface p-2.5 text-sm text-success-text",
+  button:
+    "min-h-[38px] rounded-md border border-primary bg-primary px-3.5 text-sm font-bold text-on-primary hover:bg-primary-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60",
+  buttonSecondary:
+    "min-h-[34px] rounded-md border border-border-strong bg-surface px-3 text-sm font-medium text-text hover:bg-surface-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60",
+} as const;

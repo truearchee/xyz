@@ -4,7 +4,7 @@ import { useState, type FormEvent } from "react";
 
 import { CreateUserRequest } from "../../../lib/api";
 import { api } from "../../../lib/api/wrapper";
-import { errorMessage, panelStyles } from "../shared";
+import { errorMessage, panelClasses } from "../shared";
 
 type CreateUserFormProps = {
   role: CreateUserRequest.role.LECTURER | CreateUserRequest.role.STUDENT;
@@ -46,55 +46,55 @@ export function CreateUserForm({ role, onCreated }: CreateUserFormProps) {
   const label = role === CreateUserRequest.role.LECTURER ? "lecturer" : "student";
 
   return (
-    <form data-testid={`create-${label}-form`} onSubmit={submit} style={panelStyles.stack}>
-      <h3>Create {label}</h3>
-      {error ? <div role="alert" style={panelStyles.alert}>{error}</div> : null}
-      <label style={panelStyles.label}>
+    <form data-testid={`create-${label}-form`} onSubmit={submit} className={panelClasses.stack}>
+      <h3 className="m-0 font-display text-base font-semibold text-text">Create {label}</h3>
+      {error ? <div role="alert" className={panelClasses.alert}>{error}</div> : null}
+      <label className={panelClasses.label}>
         Email
         <input
           aria-label={`${label} email`}
           onChange={(event) => setEmail(event.target.value)}
           required
-          style={panelStyles.input}
+          className={panelClasses.input}
           type="email"
           value={email}
         />
       </label>
-      <label style={panelStyles.label}>
+      <label className={panelClasses.label}>
         Full name
         <input
           aria-label={`${label} full name`}
           onChange={(event) => setFullName(event.target.value)}
           required
-          style={panelStyles.input}
+          className={panelClasses.input}
           type="text"
           value={fullName}
         />
       </label>
-      <label style={panelStyles.label}>
+      <label className={panelClasses.label}>
         Password
         <input
           aria-label={`${label} password`}
           minLength={8}
           onChange={(event) => setPassword(event.target.value)}
           required
-          style={panelStyles.input}
+          className={panelClasses.input}
           type="password"
           value={password}
         />
       </label>
-      <label style={panelStyles.label}>
+      <label className={panelClasses.label}>
         Timezone
         <input
           aria-label={`${label} timezone`}
           onChange={(event) => setTimezone(event.target.value)}
           required
-          style={panelStyles.input}
+          className={panelClasses.input}
           type="text"
           value={timezone}
         />
       </label>
-      <button disabled={isSubmitting} type="submit">
+      <button className={panelClasses.button} disabled={isSubmitting} type="submit">
         {isSubmitting ? "Creating..." : `Create ${label}`}
       </button>
     </form>
