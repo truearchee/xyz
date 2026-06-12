@@ -5,6 +5,9 @@ import { useRouter } from 'next/navigation';
 
 import { ApiError } from '../../../lib/api';
 import { AccessDenied } from '../../../components/auth/AccessDenied';
+import { Button } from '../../../components/ui/Button';
+import { Card } from '../../../components/ui/Card';
+import { Input } from '../../../components/ui/Input';
 import { api } from '../../../lib/api/wrapper';
 import { roleHomePath } from '../../../lib/routing/ProtectedAppLayout';
 import { useSession } from '../../../lib/session/SessionProvider';
@@ -110,7 +113,7 @@ export default function LoginPage() {
   }, [router, state]);
 
   if (state.status === 'loading' || state.status === 'authenticated') {
-    return <main>Loading...</main>;
+    return <main className="grid min-h-dvh place-items-center text-text-muted">Loading...</main>;
   }
 
   if (state.status === 'forbidden') {
@@ -118,47 +121,64 @@ export default function LoginPage() {
   }
 
   return (
-    <main>
-      <h1>Login</h1>
-      <p>Session status: {status}</p>
-      <p>Session email: {session?.user.email ?? 'none'}</p>
-      <p>Access token present: {session?.access_token ? 'yes' : 'no'}</p>
-      {message ? <p>Message: {message}</p> : null}
+    <main className="mx-auto flex min-h-dvh max-w-md flex-col justify-center gap-4 px-4 py-10">
+      <div className="text-center">
+        <strong className="font-display text-2xl font-bold text-primary">XYZ LMS</strong>
+        <h1 className="mt-1 font-display text-lg font-semibold text-text">Login</h1>
+      </div>
 
-      <form onSubmit={signIn}>
-        <label>
-          Email
-          <input
-            autoComplete="email"
-            name="email"
-            onChange={(event) => setEmail(event.target.value)}
+      <Card className="grid gap-4">
+        <form onSubmit={signIn} className="grid gap-3">
+          <Input
+            id="email"
+            label="Email"
             type="email"
+            name="email"
+            autoComplete="email"
             value={email}
+            onChange={(event) => setEmail(event.target.value)}
           />
-        </label>
-        <label>
-          Password
-          <input
-            autoComplete="current-password"
-            name="password"
-            onChange={(event) => setPassword(event.target.value)}
+          <Input
+            id="password"
+            label="Password"
             type="password"
+            name="password"
+            autoComplete="current-password"
             value={password}
+            onChange={(event) => setPassword(event.target.value)}
           />
-        </label>
-        <button disabled={isSubmitting} type="submit">
-          Sign in
-        </button>
-      </form>
+          <Button disabled={isSubmitting} type="submit" className="w-full">
+            Sign in
+          </Button>
+        </form>
 
-      <button disabled={isSubmitting || status !== 'authenticated'} onClick={signOut} type="button">
-        Sign out
-      </button>
-      <button disabled={status !== 'authenticated'} onClick={callMe} type="button">
-        GET /me
-      </button>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={isSubmitting || status !== 'authenticated'}
+            onClick={signOut}
+          >
+            Sign out
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={status !== 'authenticated'}
+            onClick={callMe}
+          >
+            GET /me
+          </Button>
+        </div>
+      </Card>
 
-      <pre>{formatResult(meResult)}</pre>
+      <div className="grid gap-1 text-xs text-text-muted">
+        <p className="m-0">Session status: {status}</p>
+        <p className="m-0">Session email: {session?.user.email ?? 'none'}</p>
+        <p className="m-0">Access token present: {session?.access_token ? 'yes' : 'no'}</p>
+        {message ? <p className="m-0">Message: {message}</p> : null}
+        <pre className="overflow-x-auto rounded-md bg-surface-muted p-2 text-text">{formatResult(meResult)}</pre>
+      </div>
     </main>
   );
 }
