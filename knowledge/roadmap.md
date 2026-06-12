@@ -1,7 +1,9 @@
-# XYZ LMS — Development Roadmap v3
+# XYZ LMS — Development Roadmap v3.1
 
 **Approach:** Option C — Walking Skeleton, then widen.
 **Supersedes:** Roadmap v2. The Client Edge Recovery Plan remains the archived implementation record for 4.3.5.
+**v3.1 change:** design-plan linkage notes added — each stage now carries a **Design input** line. No scope or ordering changes.
+**Companion document:** `knowledge/design-plan.md` (Design Plan v1) — the visual reference for this roadmap. How it plugs in is defined in the **Design plan linkage** block after the cross-cutting rules; the per-stage **Design input** lines say exactly which design-plan section feeds each stage's spec.
 **Permanent rule:** No backend slice merges without a thin UI slice and a browser-verifiable gate.
 **Repo rule (new in v3):** This file lives at `knowledge/roadmap.md`. Its status table is updated **in the same commit** as the work that closes a stage (extension of cross-cutting rule 12). A roadmap living outside the repo drifts — v2 demonstrated this by still reading "4.4 NOT STARTED" after 4.4 shipped at `442f221`.
 
@@ -57,9 +59,9 @@ DONE             — governance stages where no browser gate applies (Stage 0 on
 ✅ Stage 4.3.5 Client Edge Recovery                       COMPLETE
 ✅ Stage 4.4   Embeddings                                 FULLY VERIFIED  (gate: 4.4 embedding browser run)
 ✅ Stage 4.5   AI infrastructure + summary generation   FULLY VERIFIED  (gate: 4.5d browser gate + full E2E + real-provider smoke)
-✅ Stage 4.6   Replacement / retry / supersession       FULLY VERIFIED — live browser gate GREEN (full active suite 9/9); two cross-stage-seam regressions found+fixed (F-4.6c-1, F-4.6b-2)
-✅ Stage 4.7   Student-facing summaries                   FULLY VERIFIED — gate G1–G9 GREEN; full active suite 11/11 ON MAIN (backend 389); restored Stage 3 visibility E2E; review R1–R3 resolved
-Stage 4.8   First hosted deploy (staging)              NOT STARTED  (new in v3)  ← next
+✅ Stage 4.6   Replacement / retry / supersession         FULLY VERIFIED  (gate: 4.6d replace+retry browser run)
+✅ Stage 4.7   Student-facing summaries                   FULLY VERIFIED  (gate: 4.7 student-summaries browser run)
+Stage 4.8   First hosted deploy (staging)              BACKEND VERIFIED  (4.8a–d built + locally verified; hosted browser gate deferred — trigger: before Stage 8.3 or demo/real-user exposure)
 Stage 4.9   Frontend foundation + platform hygiene     NOT STARTED  (new in v3)
 Stage 5     Shared quiz engine + event spine           NOT STARTED
 Stage 5.5   Module schedule & section metadata         NOT STARTED  (new in v3; parallel-OK with 5; blocks 6)
@@ -93,6 +95,7 @@ httpx ASGI-shortcut deprecation (83 warnings; future upgrade breaks suite)  → 
 CORS allow_credentials=True unnecessary with pure Bearer auth               → Stage 4.9 hygiene batch
 No client-regen alias in frontend/package.json (F008)                       → Stage 4.9 hygiene batch
 Hosted Postgres extension bootstrap not automated (F006)                    → Stage 4.8
+4.8 hosted gate (pooler pair → NC1≡NC2 → NC4 three-surface → artifact JSON)  → owner: developer; trigger: before Stage 8.3, or before any demo / real-user exposure, whichever comes first
 Signed URLs remain valid until TTL after unpublish                          → decision recorded in Stage 12
 can_publish derived from role rather than membership                        → reviewed in Stage 12 authz pass
 No custom exception handlers (raw default 500 bodies)                       → Stage 12
@@ -166,6 +169,37 @@ The K2 reference's "token volume is not the constraint" holds for chat-sized req
 - The limiter takes a **priority parameter** from day one so interactive traffic (Stage 8 assistant) keeps reserved headroom over background jobs — even while the MVP uses only the background priority.
 - 429 backoff happens **inside the call path under the limiter**. RQ job retries are reserved for provider 5xx and invalid-output failures.
 - Feature design minimizes call count: **one call per summary, one call per quiz generation — never per chunk, never per question.**
+
+---
+
+## Design plan linkage — NEW in v3.1
+
+The design plan (`knowledge/design-plan.md`) is the second input document for this roadmap. The model is **two reference documents feeding one spec per stage** — there is never a separate "design step" outside this roadmap.
+
+```
+How it works:
+
+1. Stages 4.6 → 4.8: NO design work. UI stays thin (rule 2). The 4.5d–4.7
+   surfaces are added to the Stage 4.9 retroactive restyle list.
+
+2. Stage 4.9 is the ONLY standalone design stage. Its input spec is
+   Design Plan Part 1 (tokens + component library + signature element),
+   Part 4 (accessibility baseline), and Part 5 (mobile strategy).
+   Its deliverable includes `knowledge/design-system.md` — written from the
+   SHIPPED code (code wins over docs).
+
+3. From Stage 5 onward, every stage spec is written from TWO inputs:
+   this roadmap (what to build) + the design-plan section named in that
+   stage's "Design input" line (what it looks like). One spec per stage,
+   both concerns, locked together BEFORE implementation begins.
+
+4. No second gate for design. The existing browser gate proves the UI
+   functions; "matches the locked design spec" is a light check at stage
+   close (see the acceptance rule). The heavy consistency sweep is
+   batched at Stage 12 (Design Plan Part 3).
+```
+
+Each stage below carries a **Design input** line stating exactly which design-plan section feeds its spec.
 
 ---
 
@@ -297,18 +331,12 @@ the 4.5d surface; browser-gate spec (`4.6d-replace-retry.spec.ts`: retry flow + 
 the deterministic fencing pytest; fixed the cross-stage e2e breaks (4.3.5e 409→pending, db.mjs
 lifecycle_state). Verified: backend 349 passed, frontend tsc clean, client regen, 9 e2e specs compile.
 See [[specs/stage-04/4.6d-lecturer-ui-browser-gate]] / [[steps/stage-04/4.6d-lecturer-ui-browser-gate]].
-**Stage 4.6 FULLY VERIFIED** (2026-06-11): the live browser gate ran GREEN — full active Playwright suite
-**9/9** (4.3.5b/c/e, 4.4, 4.5d-summary-browser, 4.5d-summary-fault ×2, 4.6d replacement-continuity + retry)
-against a backend image content-hash-verified against branch HEAD. The gate caught + fixed **two
-cross-stage-seam regressions** that per-session "backend verified" structurally could not (both lived
-between sessions): **F-4.6c-1** (4.6c startup recovery poisoned the fork-per-job module engine pool →
-isolated NullPool engine + `tests/test_worker_startup_recovery.py`) and **F-4.6b-2** (4.6a activation
-trigger orphaned by the 4.6b DAG decouple → every leaf attempts idempotent activation + 3 ordering tests).
-Deferred: **F-4.6d-3** (C-lite read-contract violation in the post-retry status path → owner 4.6d-P1;
-production-masked). See [[findings-4.6-gate]] + [[decisions/adr-032-stuck-row-reaper-singleton]]
-(pre-fork connection-clean invariant). Dev `xyz_lms` migrated 0009→0012 at cutover. Closes Stage 4.6.
+Remaining for Stage 4.6: the **live browser gate** (developer-run — rebuild images, apply 0010→0012,
+restart, `npx playwright`) + full active suite green → marks Stage 4.6 FULLY VERIFIED.
 
 **Goal:** make transcript replacement and failed-processing recovery safe and observable.
+
+**Design input:** none — build thin (rule 2). The retry/replace surfaces and per-step states join the Stage 4.9 retroactive restyle list; their *behavior* spec is this roadmap, not the design plan.
 
 **Backend scope:** replace active transcript (old superseded, new active); **retry covers all five job types** — parse / chunk / embed / generate_brief_summary / generate_detailed_summary; retry idempotency; stale-summary detection via `sourceTranscriptChecksum` mismatch; replacement triggers full regeneration; no mixed old/new student state; failure-reason persistence; recovery for the deferred stuck-row states (uploaded / parsing / queued after crash or enqueue failure); **storage reconciliation job** — periodic diff of object-store keys against DB keys, reporting and cleaning orphans (replacement multiplies the orphaning opportunities; this debt gets an owner here).
 
@@ -333,22 +361,11 @@ Replace transcript → old superseded → new active → summaries regenerate
 
 ## Stage 4.7 — Student-Facing Summaries
 
-**Status:** ✅ **FULLY VERIFIED** (2026-06-12, human-stamped after P1 assertion-strength audit + Steps 1–3
-on main). Spec v1.1 (LOCKED): 4.7a backend boundary (`StudentSummaryAccessPolicy` §5; §6 precedence with
-corruption≠supersession pinned; scoped module-level read model; §8.3 hygiene; migration 0013) + 4.7b thin
-student UI (4 per-slot states, bounded polling, react-markdown raw-HTML-off). **Verified ON MAIN:** backend
-**389 passed**; full active Playwright suite **11/11** (9 success serial + 2 fault); G1–G9 met. **P1 (Stage 3
-content-visibility E2E) restored to the active suite + green, no drift.** Review R1 (sentinel canary
-strengthened — proven non-vacuous), R2 (the `--workers=1` need classified CAPACITY: embed RQ-retries
-3×[30,120,300]s → non-terminal, GAP ruled out; non-blocking), R3 (row-3 unit test added) all resolved.
-ADR-034..039. Landed via two attributable merges: 4.6d-P1 (`fe9d924`) → 4.7 (`0e0654f`). Dev `xyz_lms` at
-0013. See [[steps/stage-04/4.7a-student-summary-read-policy]],
-[[steps/stage-04/4.7b-student-page-browser-gate]], [[steps/stage-04/4.7-stage3-restore]].
+**Status:** NOT STARTED.
 
-**Hard prerequisite (MET):** the Stage 3 content-visibility E2E spec is **restored to the active suite** —
-re-authored as `tests/e2e/4.7-stage3-content-visibility.spec.ts` (no committed spec existed) and green
-as-is against the current contract. "Students never see unpublished content" now has a live browser
-regression before the student surface was extended.
+**Hard prerequisite:** the Stage 3 content-visibility E2E spec is **restored to the active suite** (it currently lives in archive). "Students never see unpublished content" is the most security-sensitive student-facing rule and must have a live automated browser regression before student surfaces are extended.
+
+**Design input:** read Design Plan **§2.3 (Student Section View)** for screen *structure and content* — block order (Summary / Study Notes / Materials / Lecturer Note), labels, processing and unavailable states. Implement thin (pre-4.9, inline styles acceptable); the visual treatment lands in the 4.9 restyle. Structure from the design plan now means zero markup rework later.
 
 **Backend scope:** student-facing summary read projection; published-section and assigned-module enforcement; processing/unavailable fallback states; no raw transcript exposure.
 
@@ -375,6 +392,8 @@ Student opens published lecture/lab → sees brief + detailed summary
 
 **Why here:** after 4.7 the pipeline exercises every infrastructure component end-to-end (DB, storage, three worker types, AI provider, migrations) — the natural first hosted smoke. Stage 12 as the first deployment rehearsal is a classic trap, and there is one specific technical forcing function: **SSE breaks under buffering proxies, and discovering that during Stage 8.3 is expensive.** Platform constraints get discovered here, cheaply.
 
+**Design input:** none — pure infrastructure, no new UI.
+
 **Backend / infra scope:** hosted environment for Postgres (managed, with `vector` + `pgcrypto` bootstrap — closes F006), Redis, backend, all three workers, frontend; **explicit release-phase migration step** (migrations do not auto-run on boot — deliberate locally, fatal if forgotten hosted); secrets handling; repeatable deploy script; hosted CORS origins; **environment hygiene** — `NEXT_PUBLIC_E2E_TEST_HOOKS` and all fault-injection flags absent/disabled in hosted builds (same principle as the Stage 4.6 fault-injection rule, applied to the token-override hook).
 
 **Thin UI scope:** none new — the existing product, served from a hosted URL.
@@ -399,6 +418,23 @@ Against staging: admin creates module → lecturer uploads transcript
 **Status:** NOT STARTED.
 
 **Why here:** Stages 5–8 are the heavy student-facing UI (quiz attempt flow, glossary, assistant workspace). Building three stages of UI in inline styles with zero unit tests means repainting and retro-testing all of it at Stage 12. The thin 4.5d/4.7 panels were cheap to build either way; the quiz UI is not.
+
+**Design input — THE design stage. This is where the design plan becomes code:**
+```
+Input spec:        Design Plan Part 1 (1.2 tokens, 1.3 component library,
+                   1.4 signature element) + Part 4 (accessibility baseline)
+                   + Part 5 (mobile strategy) + Part 6 (decisions log)
+Build:             tokens in Tailwind config; core components (Button, Input,
+                   Card, Badge, Modal, Table, Toast, Empty State, Progress/
+                   Step indicators) as code
+Retroactive restyle: Design Plan §2.0 (login), §2.1 (admin), §2.2 (lecturer
+                   content), §2.3 (student view) — PLUS the 4.5d–4.7 surfaces
+                   (summary panels, status badge, retry/replace controls)
+Deliverable:       knowledge/design-system.md, written from the SHIPPED
+                   components (code wins over docs). From Stage 5 on, this
+                   file replaces Design Plan Part 1 as the living authority;
+                   Part 2 screen specs remain the per-stage seed source.
+```
 
 **Scope:**
 ```
@@ -426,6 +462,8 @@ Hygiene batch (one tidy-up commit):
 **Status:** NOT STARTED.
 
 **Goal:** shared MCQ engine + the platform activity event spine.
+
+**Design input:** Design Plan **§2.4, post-class portions** — quiz entry card (incl. the unavailable state), attempt view, question card with all answer-option states (selected / correct / incorrect / correct-not-chosen), feedback state, score screen, mistakes-bank notice. The two-input spec rule starts here: the 5.x specs are written from this roadmap + §2.4 together, locked before implementation.
 
 **Backend scope (v2 carried):** `QuizDefinition`, `QuizAttempt`, `QuizQuestion`, `AnswerOption`, `StudentAnswer`; `MistakeRecord` minimum schema (`retake_correct_count`, `show_in_retake_prefix`, `source_quiz_definition_id`, `source_question_snapshot`); post-class quiz availability after detailed summary; attempt created on start; AI question generation through the 4.5 infrastructure; validation; shuffling (correctness on option identity, never display letter); immediate submission; mistake creation; `StudentActivityEvent` in `platform/events` with atomic insert and idempotency keys.
 
@@ -466,6 +504,8 @@ Student opens lecture/lab with completed summary → post-class quiz available
 
 **Why:** `week_number`, `session_date`, `due_at` exist in the schema but are never populated — module creation emits a fixed 4-section template, not the schedule-driven structure Slice 1 specifies. Recap quizzes (date range), exam-prep quizzes (covered weeks), assistant time-management, and the agent's calendar all resolve scope through exactly these fields. Without this session, Stage 6 stops at a findings note in its first week.
 
+**Design input:** Design Plan **Part 3** note for this stage — simple admin form, **no new components**; compose existing Input / Modal / Table primitives from the 4.9 system. If a screen needs a component the system doesn't have, that's a finding, not an improvisation.
+
 **Backend scope:** module creation accepts schedule parameters (course dates, lecture days, lab days) driving section generation; admin can set/edit `week_number` / `session_date` / `due_at` per section; **backfill path for existing modules** (29 in dev); week→sections resolution query in `platform/query`.
 
 **Thin UI scope:** admin schedule fields on module creation; per-section metadata editing in the admin UI.
@@ -486,6 +526,8 @@ Admin creates module with schedule → sections carry week/date metadata
 ## Stage 6 — Complete Quiz Modes
 
 **Status:** NOT STARTED. **Hard prerequisite: Stage 5.5.**
+
+**Design input:** Design Plan **§2.4, remaining portions** — quiz mode selector (2×2 card grid), recap/exam-prep scope selector modal, retake mistake-prefix banner — **plus** the lecturer-side `AssessmentScope` creation form and the on-demand "generating your quiz" waiting state (both flagged in the design-plan v1.1 review; spec them honestly against the capacity ADR below — minutes-long waits get a real state, not an infinite spinner).
 
 **Backend scope (v2 carried):** `recap_period`, `exam_prep`, `mistakes_bank`; assessment scope by covered weeks (`AssessmentScope`); mistake-review prefix; retake reinforcement (`retakeCorrectCount`; prefix flag flips false after 2 correct retake answers; mistake stays in the bank).
 
@@ -519,6 +561,8 @@ Lecturer defines covered weeks → exam-prep quiz draws from scoped summaries
 
 **Scope as v2 / Slice 6:** folders, entries, source references, definition cache (key: normalizedTerm + subjectId + entryType, invalidated on promptVersion change — which aligns exactly with the flat-file PromptRegistry), review state, flashcards with hardcoded intervals, Learn/Test MCQ reusing Stage 5 mechanics, server-side duplicate detection, `TranslationService` abstraction + K2Think adapter, glossary activity events, `<SaveToGlossary>` shared component, KaTeX integrated early.
 
+**Design input:** Design Plan **§2.5** — glossary layout (folder sidebar, table/card toggle), entry detail sheet with tabs, save-to-glossary popover, duplicate warning, flashcard session with flip + rating row, Learn/Test reusing §2.4 quiz components — plus the translation action/display and manual-entry modal (v1.1 review additions).
+
 **v3 notes:** definition generation uses **K2-V2-Instruct via Cerebras** (per slice) through the shared limiter and `ai` queue — no new infrastructure; cache-hit = no model call is the primary cost control; 500-char context cap enforced server-side; entry lists use the Stage 5 pagination envelope.
 
 **UI proof obligation:** a student highlights text in a real summary, saves it, watches the AI definition fill in asynchronously, then practises that term — all in the browser.
@@ -534,6 +578,8 @@ Lecturer defines covered weeks → exam-prep quiz draws from scoped summaries
 **Status:** NOT STARTED.
 
 **Backend scope (v2 carried):** conversations, folders, messages, context snapshots, tool actions; server-side context resolver; retrieval service; SSE streaming (the sanctioned FastAPI direct-path exception); mode coordinator; history; save-to-glossary action.
+
+**Design input:** Design Plan **§2.6** — main window (two-pane), message bubbles, streaming cursor, mode selector pills, lecture-breakdown workspace, floating widget. These are the **two most complex UI surfaces in the product** (Part 3 note) — the §2.6 design spec, completed with the three missing mode workspaces (exam review / homework help / time management) and their picker flows from the v1.1 review, must be locked **before 8.1 begins**, not per sub-session.
 
 **v3 additions:**
 ```
@@ -565,6 +611,8 @@ Retrieval: exact pgvector scan under module/transcript filters — candidate
 
 **Scope as v2 / Slice 7:** progress and topic-mastery snapshots, `CourseGradeScheme` (boundaries in DB, never hardcoded; F/U/WF as distinct fail types), `GradeComponent` (weights sum to 100%), grade records, **deterministic forecast engine** (`requiredRemainingAverage = (target − current) / remainingWeight`), goals, anonymized class-average benchmarking, seeded data on production-like schemas, placeholder gamification section.
 
+**Design input:** Design Plan **§2.7** — module card grid, trend/topic-mastery charts, the grade-forecast panel (the signature data moment; all four status treatments incl. the unsoftened "impossible" state), goal setting.
+
 **UI proof obligation:** a student picks a target grade and sees a deterministic forecast — including a clearly shown "impossible" result when the math says so.
 
 **Exclusions:** as v2 (no live LMS integration, no rankings, no named comparisons, no mental-health diagnosis).
@@ -575,6 +623,8 @@ Retrieval: exact pgvector scan under module/transcript filters — candidate
 
 **Status:** NOT STARTED. Unchanged from v2.
 
+**Design input:** Design Plan **§2.8** — streak row, badge grid (locked/unlocked/in-progress states), the badge-unlock animation (the one budgeted spring/glow moment in the product — nowhere else), next-achievement callout. Additive to the §2.7 page; small.
+
 Streaks (timezone-aware, scheduled-day-based attendance), badges, progress — all consumed from `StudentActivityEvent`, reproducible from events, never awarded by the frontend. Gate: a completed quiz visibly updates streak and badge progress in My Progress via the event path.
 
 ---
@@ -584,6 +634,8 @@ Streaks (timezone-aware, scheduled-day-based attendance), badges, progress — a
 **Status:** NOT STARTED.
 
 **v3 addition:** the backend scope explicitly includes a **scheduler component** (rq-scheduler or a cron container). RQ alone cannot express "daily 6:00 AM recalculation" or "48-hour pre-deadline check" — every 11.x spec that assumes scheduled triggers depends on this existing, so it lands in 11.1.
+
+**Design input:** Design Plan **§2.9** — roster table with risk-row treatments (left border + tint, never color alone), student detail sheet, draft-message modal (lecturer sends manually), assessment analysis charts, workload planner calendar — plus the plan-rejection nudge banner (v1.1 review addition). Sub-session mapping: roster/detail design before 11.1–11.2; analysis before 11.3; planner before 11.4.
 
 **Scope as v2 / Slice 5:** `AgentRun`, performance/risk snapshots, recommendations, assessment analysis + question insights, internal calendar, availability settings, workload plans/items; deterministic risk classification (every label traceable to `riskReasons` + `supportingMetrics`); 6-phase planning algorithm; `.ics` export; **AI explains deterministic output — it never calculates risk or grades**; no auto-sent messages; estimates stored on records, not hardcoded.
 
@@ -598,6 +650,8 @@ Streaks (timezone-aware, scheduled-day-based attendance), badges, progress — a
 **Status:** NOT STARTED.
 
 **Backend scope (v2 carried + v3 additions):** security pass; authorization review (**including the `can_publish` role-vs-membership derivation**); migration review; worker retry/failure review; rate-limit review; load checks; logging/observability; deployment rehearsal — now a **staging→production promotion** rather than a first deploy, because 4.8 exists.
+
+**Design input:** Design Plan **Part 3 (design review pass)** + **Part 4 (accessibility audit)** — full-product consistency sweep, spacing/typography audit, empty/error states verified on every screen, keyboard/contrast/reduced-motion checks (WCAG AA), mobile verification of the key surfaces. This is the *only* place the heavy design audit lives — per-stage closes do the light check, Stage 12 does the sweep.
 v3 additions:
 ```
 Global exception handlers / consistent error envelope (no raw default 500 bodies)
@@ -674,6 +728,7 @@ A thin (real, not fake) UI slice exists
 The UI proof obligation is demonstrable in a real browser
 The Playwright/browser gate passes
 The FULL active E2E suite passes (rule 14)            ← new in v3
+UI matches the stage's locked Design input (light check; Stage 5 onward)  ← new in v3.1
 Knowledge files updated in the same commit (incl. this roadmap's status table)
 No out-of-scope backend work slipped in
 ```
@@ -682,4 +737,4 @@ A backend feature without a passing browser gate is not done. It is waiting to s
 
 ---
 
-**Next action:** verify the IFM API key and model identifiers (Stage 4.5 hard prerequisite #1 — it has external lead time), commit this file as `knowledge/roadmap.md`, then proceed to **Stage 4.5a**.
+**Next action:** run the Stage 4.6 live browser gate (rebuild images, apply 0010→0012, restart, `npx playwright`) + full active suite → mark 4.6 FULLY VERIFIED, then proceed to **Stage 4.7** (first restoring the Stage 3 content-visibility spec to the active suite). Commit this file as `knowledge/roadmap.md` and the design plan as `knowledge/design-plan.md`.
