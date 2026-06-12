@@ -82,7 +82,7 @@
   --color-surface: var(--palette-white);
   --color-surface-muted: var(--palette-zinc-50);
   --color-surface-raised: var(--palette-white);
-  --color-overlay: rgb(24 24 27 / 0.45); /* modal/dialog scrim (zinc-900 @ 45%) — added 4.9b */
+  --color-overlay: rgb(24 24 27 / 0.55); /* modal/dialog scrim (zinc-900 @ 55%) — 4.9b; deepened 4.9e so the dialog reads >=3:1 over the dimmed page (contrast re-validation) */
   --color-border: var(--palette-zinc-200);
   --color-border-strong: var(--palette-zinc-500);
   --color-text: var(--palette-zinc-900);

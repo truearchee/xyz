@@ -16,10 +16,11 @@ def create_app() -> FastAPI:
     # Refuse to boot if a fault-injection flag is active in a hosted env (Stage 4.8 §8).
     assert_fault_injection_safe()
     app = FastAPI(title="XYZ LMS")
+    # Stage 4.9e §7.2: auth is pure Bearer (rule 4) — credentials are never sent cross-origin, so
+    # allow_credentials is dropped (needless surface area; it also forbids wildcards for no benefit).
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.CORS_ORIGINS,
-        allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
     )

@@ -1,4 +1,4 @@
-from httpx import AsyncClient
+from httpx import ASGITransport, AsyncClient
 import pytest
 
 from app.main import app
@@ -6,7 +6,7 @@ from app.main import app
 
 @pytest.mark.anyio
 async def test_health_returns_ok():
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.get("/health")
     assert response.status_code == 200
     data = response.json()
@@ -16,7 +16,7 @@ async def test_health_returns_ok():
 
 @pytest.mark.anyio
 async def test_health_cors_allowed_origin():
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.get(
             "/health",
             headers={"Origin": "http://localhost:3000"},
@@ -27,7 +27,7 @@ async def test_health_cors_allowed_origin():
 
 @pytest.mark.anyio
 async def test_health_cors_preflight():
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.options(
             "/health",
             headers={
@@ -42,7 +42,7 @@ async def test_health_cors_preflight():
 
 @pytest.mark.anyio
 async def test_health_cors_rejects_unlisted_origin():
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.get(
             "/health",
             headers={"Origin": "http://evil.example"},

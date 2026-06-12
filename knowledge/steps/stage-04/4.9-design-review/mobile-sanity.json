@@ -1,0 +1,45 @@
+{
+  "target": "375px, no horizontal scroll (overflow <= 1px)",
+  "checks": [
+    {
+      "route": "/login",
+      "overflowPx": 0,
+      "ok": true
+    },
+    {
+      "route": "/admin",
+      "overflowPx": 0,
+      "ok": true
+    },
+    {
+      "route": "/unauthorized",
+      "overflowPx": 0,
+      "ok": true
+    },
+    {
+      "route": "/lecturer",
+      "overflowPx": 0,
+      "ok": true
+    },
+    {
+      "route": "/lecturer/modules/20000000-0000-4000-8000-000000000001",
+      "overflowPx": 0,
+      "ok": true
+    },
+    {
+      "route": "/student",
+      "overflowPx": 0,
+      "ok": true
+    },
+    {
+      "route": "/student/modules/20000000-0000-4000-8000-000000000001",
+      "overflowPx": 0,
+      "ok": true
+    },
+    {
+      "route": "/student/modules/20000000-0000-4000-8000-000000000001/sections/40000000-0000-4000-8000-000000000002",
+      "overflowPx": 0,
+      "ok": true
+    }
+  ]
+}

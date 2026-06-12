@@ -54,7 +54,7 @@ export function AdminUsersPanel() {
         <CreateUserForm onCreated={loadUsers} role={CreateUserRequest.role.STUDENT} />
       </div>
       {isLoading ? <p aria-busy="true" className="text-sm text-text-muted">Loading users...</p> : null}
-      <div className="overflow-x-auto">
+      <div className="min-w-0 overflow-x-auto">
         <table data-testid="admin-users-table" className={panelClasses.table}>
           <thead>
             <tr>

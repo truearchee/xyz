@@ -269,11 +269,11 @@ export function LecturerModuleDetail({ moduleId }: LecturerModuleDetailProps) {
   }
 
   return (
-    <section aria-labelledby="lecturer-module-title" className="grid gap-5">
+    <section aria-labelledby="lecturer-module-title" className="grid gap-5 [&>*]:min-w-0">
       <header className="flex items-start justify-between gap-4">
-        <div>
+        <div className="min-w-0">
           <p className="m-0 mb-1.5 text-xs font-bold uppercase text-text-muted">Lecturer module</p>
-          <h1 id="lecturer-module-title" className="m-0 font-display text-2xl leading-tight text-text">
+          <h1 id="lecturer-module-title" className="m-0 break-words font-display text-2xl leading-tight text-text">
             {module?.title ?? "Module"}
           </h1>
         </div>
@@ -292,7 +292,7 @@ export function LecturerModuleDetail({ moduleId }: LecturerModuleDetailProps) {
         <section
           aria-label="Generated sections"
           data-testid="lecturer-section-list"
-          className="grid gap-3.5"
+          className="grid gap-3.5 [&>*]:min-w-0"
         >
           {sortedSections.map(({ assets, detail, listItem }) => {
             const key = sectionKey(detail, listItem.orderIndex);
@@ -301,14 +301,14 @@ export function LecturerModuleDetail({ moduleId }: LecturerModuleDetailProps) {
               <article
                 data-testid={`lecturer-section-row-${key}`}
                 key={detail.id}
-                className="grid gap-3.5 rounded-lg border border-border bg-surface-raised p-4 shadow-sm"
+                className="grid gap-3.5 rounded-lg border border-border bg-surface-raised p-4 shadow-sm [&>*]:min-w-0"
               >
                 <header className="flex items-start justify-between gap-3">
-                  <div>
+                  <div className="min-w-0">
                     <p className="m-0 mb-1 text-xs font-bold capitalize text-text-muted">
                       Section {listItem.orderIndex} · {formatSectionType(detail.type)}
                     </p>
-                    <h2 className="m-0 font-display text-lg leading-snug text-text">{detail.title}</h2>
+                    <h2 className="m-0 break-words font-display text-lg leading-snug text-text">{detail.title}</h2>
                   </div>
                   <SectionPublishControl
                     errorMessage={publishErrors[detail.id] ?? null}

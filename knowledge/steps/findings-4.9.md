@@ -58,7 +58,24 @@ build — see F-4.9-2.
 
 ## F-4.9-2 — E2E data-hygiene PREVENTION (carried from F-4.8d-1; added to spec §7 as the 4th hygiene item)
 
-**Raised:** 2026-06-12. **Status: OPEN — resolve in 4.9d/4.9e (developer-locked framing: prevention, not cleanup).**
+**Raised:** 2026-06-12. **Status: RESOLVED — fixed in this block (4.9e §7.4), DEMONSTRATED not asserted.**
+
+**Resolution (2026-06-13, 4.9e):** both prevention halves shipped + proven fail-loud (not just present):
+- **Unconditional teardown** — `tests/e2e/run-active-suite.sh` wraps the whole run in `trap cleanup EXIT`,
+  so prefix-scoped (`teardown.mjs $E2E_RUN_ID`) cleanup runs on ANY exit — normal, a crashed spec, or
+  Ctrl-C. This is the "afterAll/finally semantics" §7.4 requires. Implemented as a trap **not** a Playwright
+  `globalTeardown` on purpose: globalTeardown fires per `playwright test` invocation and would wipe the seed
+  **between** the 3-part fault orchestration's invocations (success set → invalid_output → invalid_input).
+  The trap tears down ONCE at the end. (The globalTeardown I first wrote was deleted; playwright.config reverted.)
+- **Pre-run orphan check** — `tests/e2e/fixtures/check-orphans.mjs` counts e2e-owned `course_modules`
+  (`title <> 'e2e_module'`, excluding the seed's standing fixture) and **exits 1** if any leaked from a prior
+  run, aborting the suite before it starts. **DEMONSTRATED:** clean → "OK" exit 0; inject one orphan module →
+  "FAILED" exit 1; delete it → "OK" again (the inject/clear cycle, run in the 4.9e gate). Both heavy gates'
+  pre-run checks reported "check-orphans OK", and teardown manifests show full prefix-scoped cleanup.
+
+The §7.4 batch item (the 4th hygiene item, per the umbrella §7.4 amendment) is closed. Original framing kept below.
+
+---
 
 F-4.8d-1 deferred the root cause to "the 4.9 hygiene batch," but spec §7 originally listed only
 httpx / CORS / client-regen. Per developer decision this is now **spec §7.4** (amendment-added). Framed
@@ -130,3 +147,63 @@ mechanical verification over eyeballing.*
 missed — `app/(app)/lecturer/page.tsx` + `app/(app)/student/page.tsx` (tiny `style={{grid}}` wrappers).
 These ARE consumed → **restyled in 4.9d** (token classes) and logged in the restyle inventory; the
 suite/gates cover them.
+
+---
+
+## F-4.9-5 — Remote CI branch-protection enforcement (owner: developer; trigger: next push)
+
+**Raised:** 2026-06-12 (4.9d). **Status: DEFERRED — accepted-with-owner; trigger: the next push to the remote.**
+
+Prereq 5 requires the §8 gates to be a REAL gate, not folklore. 4.9d delivers + **proves the LOCAL half**
+(Husky pre-commit demonstrably blocks a failing commit) and ships `.github/workflows/ci.yml`. The **REMOTE
+half** — marking `frontend gates` + `backend pytest` as required status checks on `main` via branch
+protection, and demonstrating a failing check blocks a merge — **cannot be done from this environment**:
+`gh` is not installed and `gh auth login` is interactive (needs the developer's GitHub identity); the
+remote `main` is also 20 commits behind (4.8 + 4.9a-d unpushed). This is a boundary to respect, not engineer
+around (the agent must not act as the developer's GitHub identity).
+
+**Resolution (rule 13): deferred, owner = developer, trigger = next push.** Exact commands in
+[[steps/stage-04/4.9d-vitest-gates]] ("Branch-protection handoff"): push the branch → one Actions run →
+`gh api … /branches/main/protection` marking both checks required → open a PR with a failing check and
+confirm GitHub blocks the merge. **Until done, a CI gate that runs but is not required is the "yaml costume"
+failure mode — so 4.9's roadmap status states this explicitly** (FULLY VERIFIED with remote-CI enforcement
+pending this finding; local enforcement proven). F-4.9-5 flips to resolved when the developer completes the push + protection + failing-merge demo.
+
+---
+
+## F-4.9-6 — Mobile horizontal overflow on restyled authoring surfaces (caught by the 4.9e design-match capture)
+
+**Raised:** 2026-06-13 (4.9e close-out, by the automated mobile-sanity check). **Status: RESOLVED — fixed in this block (CSS only, no behaviour/selector change).**
+
+The 4.9e design-match capture (`tests/e2e/fixtures/capture-screenshots.mjs`) measures
+`documentElement.scrollWidth − innerWidth` at 375px per surface. It caught real horizontal overflow on two
+**restyled (4.9c) authoring** surfaces: **`/admin` (150px)** and **`/lecturer/modules/{id}` (5px)**. All five
+**mobile-first student** surfaces + login + unauthorized were already **0px** — i.e. the design plan's actual
+mobile-first requirement was met; the misses were on desktop-first surfaces. *(This is the automated check
+earning its keep — the same "mechanical verification over eyeballing" lesson as F-4.9-4.)*
+
+**Root cause (proven by a DOM ancestor-chain trace, not guessed).** Two compounding CSS mechanisms, NOT the
+tables (the `min-w-0 overflow-x-auto` table wrappers clip correctly — trace showed `off=309, overflow-x:auto ◀ CLIPS`):
+1. **Grid items default to `min-width:auto`** and refuse to shrink below their content's min-content, so a
+   wide member table or the auto-fit form grid forced the panel (then the page) past 375px. (`grid gap-6`
+   page section measured `client=343` but `scroll=509`, overflow-x visible all the way up — nothing clipped.)
+2. **`<select>` intrinsic width = its widest `<option>`** (long emails/titles like
+   `lecturer_unassigned_e2e@example.test`); `panelClasses.input` had no width constraint, so the select alone
+   was 492px and forced its form column wide.
+
+**Fix (CSS utilities only; every `data-testid`/role/structure preserved byte-for-byte → E2E selectors untouched):**
+- `frontend/src/features/admin/shared.ts`: `panelClasses.panel` += `min-w-0 [&>*]:min-w-0`; `stack` +=
+  `[&>*]:min-w-0`; `input` (used by selects) += `w-full min-w-0` — so the panel shrinks within the page grid,
+  its children shrink (auto-fit form grid then sees a DEFINITE 343px width and collapses to ONE column;
+  table wrappers clip; selects truncate). `grid` left at `minmax(220px,1fr)` (a `minmax(min(220px,100%),1fr)`
+  attempt was REVERTED — with an indefinite container it resolved to max-content and made `/admin` *worse*,
+  402px; recorded so the dead-end isn't re-attempted).
+- `frontend/src/features/admin/{users,modules}/*Panel.tsx`: the `overflow-x-auto` table wrappers += `min-w-0`.
+- `frontend/src/features/content/lecturer/LecturerModuleDetail.tsx`: `[&>*]:min-w-0` on the three grids +
+  `min-w-0`/`break-words` on the header title divs.
+
+**Verification (falsifiable):** the DOM-trace diagnostic (`tests/e2e/fixtures/diagnose-overflow.mjs`) reports
+**zero true wideners** on both surfaces; the mobile-sanity capture reports **all 8 surfaces = 0px** at 375px;
+the desktop screenshots confirm the **2-column form layout is preserved** (`min-width:0` only *enables*
+shrinking). `npm run build` compiles the `[&>*]:min-w-0` arbitrary variants (no purge/validity error); full §8
+gate + full active E2E suite green after the change (selectors intact). No behaviour added (umbrella §3).

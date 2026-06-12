@@ -8,7 +8,7 @@ from uuid import uuid4
 
 import asyncpg
 from cryptography.hazmat.primitives.asymmetric import ec
-from httpx import AsyncClient
+from httpx import ASGITransport, AsyncClient
 import jwt
 import pytest
 from sqlalchemy import text
@@ -130,7 +130,9 @@ async def auth_client(db_session: AsyncSession) -> AsyncIterator[AsyncClient]:
 
     app.dependency_overrides[get_db_session] = override_get_db_session
     try:
-        async with AsyncClient(app=app, base_url="http://test") as client:
+        # Stage 4.9e §7.1: explicit ASGITransport (the `app=` shortcut is httpx-deprecated). Behaviour-
+        # identical — both run the ASGI app in-process — so the SAME assertions pass; the deprecation clears.
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             yield client
     finally:
         app.dependency_overrides.clear()

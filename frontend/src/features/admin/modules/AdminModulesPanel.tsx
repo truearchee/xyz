@@ -97,7 +97,7 @@ export function AdminModulesPanel() {
         <AssignMemberForm modules={modules} onAssigned={refreshAfterMutation} users={users} />
       </div>
       {isLoading ? <p aria-busy="true" className="text-sm text-text-muted">Loading modules...</p> : null}
-      <div className="overflow-x-auto">
+      <div className="min-w-0 overflow-x-auto">
         <table data-testid="admin-modules-table" className={panelClasses.table}>
           <thead>
             <tr>
@@ -138,7 +138,7 @@ export function AdminModulesPanel() {
           </select>
         </label>
         <h3 className="m-0 font-display text-base font-semibold text-text">{selectedModule ? `${selectedModule.title} members` : "Members"}</h3>
-        <div className="overflow-x-auto">
+        <div className="min-w-0 overflow-x-auto">
           <table className={panelClasses.table}>
             <thead>
               <tr>

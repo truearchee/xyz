@@ -12,7 +12,8 @@
     "test:unit": "vitest run --exclude '**/*.a11y.test.tsx'",
     "test:a11y": "vitest run src/components/ui",
     "check:design-tokens": "node scripts/check-design-tokens.mjs",
-    "check:inline-styles": "node scripts/check-inline-styles.mjs"
+    "check:inline-styles": "node scripts/check-inline-styles.mjs",
+    "gen:api": "bash ../scripts/generate-api-client.sh"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.107.0",

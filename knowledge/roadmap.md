@@ -62,7 +62,7 @@ DONE             — governance stages where no browser gate applies (Stage 0 on
 ✅ Stage 4.6   Replacement / retry / supersession         FULLY VERIFIED  (gate: 4.6d replace+retry browser run)
 ✅ Stage 4.7   Student-facing summaries                   FULLY VERIFIED  (gate: 4.7 student-summaries browser run)
 Stage 4.8   First hosted deploy (staging)              BACKEND VERIFIED  (4.8a–d built + locally verified; hosted browser gate deferred — trigger: before Stage 8.3 or demo/real-user exposure)
-Stage 4.9   Frontend foundation + platform hygiene     NOT STARTED  (new in v3)
+Stage 4.9   Frontend foundation + platform hygiene     FULLY VERIFIED*  (Tailwind v4 two-layer tokens + shell, 9-component lib, Vitest harness, §8 gates + CI + Husky, bounded restyle, hygiene batch; backend 421 + full active E2E 11/11 green) — *3 developer-owned residuals stated below, not hidden
 Stage 5     Shared quiz engine + event spine           NOT STARTED
 Stage 5.5   Module schedule & section metadata         NOT STARTED  (new in v3; parallel-OK with 5; blocks 6)
 Stage 6     Complete quiz modes                        NOT STARTED
@@ -73,6 +73,19 @@ Stage 10    Gamification                               NOT STARTED
 Stage 11    Proactive analytics                        NOT STARTED
 Stage 12    Release hardening                          NOT STARTED
 ```
+
+**\* Stage 4.9 FULLY VERIFIED — three developer-owned residuals, stated not hidden** (a bare FULLY VERIFIED
+hiding pending human/remote steps is not defensible):
+1. **Design-match visual sign-off** — evidence captured (16 desktop+mobile screenshots in
+   `steps/stage-04/4.9-design-review/`, all 8 surfaces 0px horizontal overflow at 375px); the *visual
+   judgement* is the developer's, as 4.6/4.7 were human-stamped.
+2. **Keyboard pass** — the manual checklist is authored (`steps/stage-04/4.9-keyboard-checklist.md`, 4.9d);
+   the run-through is the developer's. Full automated keyboard + axe = Stage 12 (ADR-048).
+3. **Remote-CI enforcement** — local gate proven (Husky pre-commit demonstrably blocks; `ci.yml` shipped);
+   marking the checks **required** on `main` via branch protection + the failing-merge demo is **F-4.9-5**
+   (owner: developer, trigger: next push). A CI job that runs but isn't required is the "yaml costume" failure mode.
+All automated evidence is green: backend `pytest` 421 (0 httpx deprecations under `-W error`); full active
+Playwright suite 11/11 (CORS credentials off); §8 gates green; contrast 35/35; mobile sanity 8/8 at 0px.
 
 ---
 
@@ -90,10 +103,12 @@ Browser-gate assertions pinned to overall terminal state, not steps          →
 Status badge polling model (2.5s / 60s hard timeout)                        → reworked in Stage 4.5d
 week_number / session_date / due_at columns exist but never populated;
 fixed 4-section template instead of schedule-driven generation              → Stage 5.5
-Frontend: zero unit tests, inline styles only                               → Stage 4.9
-httpx ASGI-shortcut deprecation (83 warnings; future upgrade breaks suite)  → Stage 4.9 hygiene batch
-CORS allow_credentials=True unnecessary with pure Bearer auth               → Stage 4.9 hygiene batch
-No client-regen alias in frontend/package.json (F008)                       → Stage 4.9 hygiene batch
+Frontend: zero unit tests, inline styles only                               → Stage 4.9  ✓ PAID (Vitest harness 4.9d; restyle 4.9c; check:inline-styles gate)
+httpx ASGI-shortcut deprecation (83 warnings; future upgrade breaks suite)  → Stage 4.9 hygiene batch  ✓ PAID 4.9e (ASGITransport ×3 files; 0 deprecations under -W error)
+CORS allow_credentials=True unnecessary with pure Bearer auth               → Stage 4.9 hygiene batch  ✓ PAID 4.9e (dropped; cross-origin E2E green)
+No client-regen alias in frontend/package.json (F008)                       → Stage 4.9 hygiene batch  ✓ PAID 4.9e (gen:api + README)
+Backend static type checker (mypy/pyright) — frontend tsc shipped 4.9d only → Stage 12 (NOT closed by 4.9)
+E2E --workers=1 capacity (4.7-R2: scale embedding_worker / tolerant poll)   → Stage 12 (NOT in the §7 batch)
 Hosted Postgres extension bootstrap not automated (F006)                    → Stage 4.8
 4.8 hosted gate (pooler pair → NC1≡NC2 → NC4 three-surface → artifact JSON)  → owner: developer; trigger: before Stage 8.3, or before any demo / real-user exposure, whichever comes first
 Signed URLs remain valid until TTL after unpublish                          → decision recorded in Stage 12

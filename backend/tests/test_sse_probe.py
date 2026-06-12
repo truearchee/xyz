@@ -9,7 +9,7 @@ from __future__ import annotations
 from uuid import uuid4
 
 import pytest
-from httpx import AsyncClient
+from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.main import create_app
@@ -30,7 +30,7 @@ async def probe_client(db_session: AsyncSession, mock_jwks_client, monkeypatch):
         yield db_session
 
     app_on.dependency_overrides[get_db_session] = _override_db
-    async with AsyncClient(app=app_on, base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app_on), base_url="http://test") as client:
         yield client
     app_on.dependency_overrides.clear()
 
