@@ -1,0 +1,188 @@
+@import "tailwindcss";
+
+/* Stage 4.9a — Tailwind v4 source detection. frontend/ is a standalone npm project so v4 auto-scans
+   from here, but register the component + feature dirs explicitly so the literal-class scanner never
+   misses a directory (the prod-purge footgun — §4.4). */
+@source "../components";
+@source "../features";
+@source "../app";
+
+/* ============================================================================
+   Layer 1 — RAW PALETTE (private). Components NEVER reference these directly;
+   they exist only to be mapped into the Layer-2 semantic roles below.
+   Values: design-plan.md Part 1.2 (Violet / AI-forward, LOCKED 2026-06-12).
+   ============================================================================ */
+:root {
+  /* Brand — Violet */
+  --palette-violet-50: #f5f3ff;
+  --palette-violet-100: #ede9fe;
+  --palette-violet-200: #ddd6fe;
+  --palette-violet-300: #c4b5fd;
+  --palette-violet-400: #a78bfa;
+  --palette-violet-500: #8b5cf6;
+  --palette-violet-600: #7c3aed;
+  --palette-violet-700: #6d28d9;
+  --palette-violet-800: #5b21b6;
+  --palette-violet-900: #4c1d95;
+
+  /* Neutral — Zinc */
+  --palette-white: #ffffff;
+  --palette-zinc-50: #fafafa;
+  --palette-zinc-100: #f4f4f5;
+  --palette-zinc-200: #e4e4e7;
+  --palette-zinc-300: #d4d4d8;
+  --palette-zinc-400: #a1a1aa;
+  --palette-zinc-500: #71717a;
+  --palette-zinc-600: #52525b;
+  --palette-zinc-700: #3f3f46;
+  --palette-zinc-800: #27272a;
+  --palette-zinc-900: #18181b;
+
+  /* Status raws (solid 600 + light 50 tint + dark 700 text-on-light) */
+  --palette-green-50: #f0fdf4;
+  --palette-green-600: #16a34a;
+  --palette-green-700: #15803d;
+  --palette-amber-50: #fffbeb;
+  --palette-amber-600: #d97706;
+  --palette-amber-700: #b45309;
+  --palette-rose-50: #fff1f2;
+  --palette-rose-600: #e11d48;
+  --palette-rose-700: #be123c;
+  --palette-indigo-50: #eef2ff;
+  --palette-indigo-500: #6366f1;
+  --palette-indigo-700: #4338ca;
+
+  /* Layering — z-index TOKENS (single source of magic numbers; the .z-* utilities below
+     reference these, so stacking is deterministic: base < dropdown < assistant < modal < toast). */
+  --z-base: 0;
+  --z-dropdown: 1000;
+  --z-assistant: 1100;
+  --z-modal: 1200;
+  --z-toast: 1300;
+
+  /* Motion — duration + easing (the reduced-motion convention is enforced at the bottom). */
+  --motion-duration-fast: 120ms;
+  --motion-duration-base: 200ms;
+  --motion-duration-slow: 320ms;
+  --motion-ease-standard: cubic-bezier(0.2, 0, 0, 1);
+}
+
+/* ============================================================================
+   Layer 2 — SEMANTIC ROLES + scales (the ONLY tokens components consume).
+   In Tailwind v4 these @theme variables ARE the utility classes.
+   ============================================================================ */
+@theme {
+  /* Disable the DEFAULT color namespace — only the semantic colors below resolve as utilities.
+     This makes "components use semantic tokens" compile-impossible-to-violate: bg-blue-500 etc.
+     simply do not exist (§4.1). Only the color namespace is reset; spacing/font/radius/shadow
+     scales are untouched. */
+  --color-*: initial;
+
+  /* Surfaces / text / borders */
+  --color-surface: var(--palette-white);
+  --color-surface-muted: var(--palette-zinc-50);
+  --color-surface-raised: var(--palette-white);
+  --color-border: var(--palette-zinc-200);
+  --color-border-strong: var(--palette-zinc-500);
+  --color-text: var(--palette-zinc-900);
+  --color-text-muted: var(--palette-zinc-500);
+
+  /* Primary */
+  --color-primary: var(--palette-violet-600);
+  --color-primary-hover: var(--palette-violet-700);
+  --color-on-primary: var(--palette-white);
+
+  /* Status — solid (on-* white = large/bold/UI only, per the validated AA table) */
+  --color-success: var(--palette-green-600);
+  --color-on-success: var(--palette-white);
+  --color-warning: var(--palette-amber-600);
+  --color-on-warning: var(--palette-white);
+  --color-danger: var(--palette-rose-600);
+  --color-on-danger: var(--palette-white);
+  --color-info: var(--palette-indigo-500);
+  --color-on-info: var(--palette-white);
+
+  /* Status — tonal (badge default: dark -text on light -surface; body-AA-safe) */
+  --color-success-surface: var(--palette-green-50);
+  --color-success-text: var(--palette-green-700);
+  --color-warning-surface: var(--palette-amber-50);
+  --color-warning-text: var(--palette-amber-700);
+  --color-danger-surface: var(--palette-rose-50);
+  --color-danger-text: var(--palette-rose-700);
+  --color-info-surface: var(--palette-indigo-50);
+  --color-info-text: var(--palette-indigo-700);
+
+  /* Focus */
+  --color-focus-ring: var(--palette-violet-500);
+
+  /* Type — families (next/font local vars are wired in layout.tsx; the *-src indirection avoids a
+     self-referential cycle). Body/UI = Inter (--font-sans); headings opt into Space Grotesk. */
+  --font-sans: var(--font-sans-src), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-display-src), ui-sans-serif, system-ui, sans-serif;
+
+  /* Type — scale (design-plan 1.2b) */
+  --text-xs: 0.75rem;
+  --text-xs--line-height: 1rem;
+  --text-sm: 0.875rem;
+  --text-sm--line-height: 1.25rem;
+  --text-base: 1rem;
+  --text-base--line-height: 1.5rem;
+  --text-lg: 1.125rem;
+  --text-lg--line-height: 1.75rem;
+  --text-xl: 1.25rem;
+  --text-xl--line-height: 1.75rem;
+  --text-2xl: 1.5rem;
+  --text-2xl--line-height: 2rem;
+  --text-3xl: 1.875rem;
+  --text-3xl--line-height: 2.25rem;
+  --text-4xl: 2.25rem;
+  --text-4xl--line-height: 2.5rem;
+
+  /* Radius (design-plan 1.2b) */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+
+  /* Elevation */
+  --shadow-sm: 0 1px 2px 0 rgb(24 24 27 / 0.06);
+  --shadow-md: 0 4px 12px -2px rgb(24 24 27 / 0.1);
+  --shadow-lg: 0 12px 32px -8px rgb(24 24 27 / 0.18);
+}
+
+/* Spacing scale: keep Tailwind v4's default multiplier (ADR-045) — it maps the inline-style
+   migration cleanly in 4.9c (gap: 8 → gap-2, padding: 16 → p-4) with no per-value arithmetic. */
+
+/* ============================================================================
+   Layering utilities — read the --z-* TOKENS (no magic numbers at the call site).
+   ============================================================================ */
+@layer utilities {
+  .z-base {
+    z-index: var(--z-base);
+  }
+  .z-dropdown {
+    z-index: var(--z-dropdown);
+  }
+  .z-assistant {
+    z-index: var(--z-assistant);
+  }
+  .z-modal {
+    z-index: var(--z-modal);
+  }
+  .z-toast {
+    z-index: var(--z-toast);
+  }
+}
+
+/* ============================================================================
+   Reduced-motion convention (design-plan Part 4 / §4.1 motion token).
+   ============================================================================ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
