@@ -10,8 +10,10 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 import {
+  countTranscriptSegmentsContaining,
   getActiveTranscriptForSection,
   getAppUserByEmail,
+  getGeneratedSummariesForTranscript,
   getMembershipsForModule,
   getSectionsForModule,
   getTranscriptArtifacts,
@@ -199,6 +201,17 @@ test('4.7 student summaries browser gate', async ({ browser }) => {
     const settled = await waitForSummariesSettled(transcriptId, 120_000);
     expect(settled.generate_brief_summary).toBe('completed');
     expect(settled.generate_detailed_summary).toBe('completed');
+
+    // CANARY VALIDITY (R1) — prove the sentinel actually rode the transcript backing G3's summary, so its
+    // absence from the student surface is a live guarantee, not vacuous: (1) A1's active transcript IS the
+    // sentinel file, (2) the sentinel is genuinely in that transcript's raw segments, (3) both summaries
+    // the student reads were generated FROM that same transcript id.
+    const a1Active = getActiveTranscriptForSection(a1.id);
+    expect(a1Active.id).toBe(transcriptId);
+    expect(a1Active.originalFileName).toBe(SENTINEL_FILE);
+    expect(countTranscriptSegmentsContaining(transcriptId, SENTINEL)).toBeGreaterThan(0);
+    const a1Summaries = getGeneratedSummariesForTranscript(transcriptId) as Array<{ summaryType: string }>;
+    expect(a1Summaries.map((s) => s.summaryType).sort()).toEqual(['brief', 'detailed_study']);
 
     await publish(apiLecturer, a.moduleId, a1.id);
     await publish(apiLecturer, a.moduleId, a3.id); // Lecture 2 published, no transcript

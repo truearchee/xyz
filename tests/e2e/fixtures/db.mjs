@@ -448,3 +448,17 @@ SET status = 'running', completed_at = NULL
 WHERE transcript_id = ${sqlLiteral(transcriptId)} AND job_type = 'generate_detailed_summary';
 `);
 }
+
+// Stage 4.7 R1 — canary validity: how many of a transcript's SEGMENTS (raw transcript text) contain a
+// needle. Proves the G3 sentinel actually rode the transcript that backs the student's summary (not an
+// orphan), so its absence from the student surface is a live guarantee, not a vacuous one.
+export function countTranscriptSegmentsContaining(transcriptId, needle) {
+  assertUuid(transcriptId, 'transcriptId');
+  const rows = runPsqlRows(`
+SELECT count(*)::int
+FROM transcript_segments
+WHERE transcript_id = ${sqlLiteral(transcriptId)}::uuid
+  AND text LIKE ${sqlLiteral('%' + needle + '%')};
+`);
+  return Number(rows.at(-1) ?? 0);
+}

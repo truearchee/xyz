@@ -223,6 +223,29 @@ def test_precedence_summary_job_running_is_generating():
     assert res.state == GENERATING
 
 
+def test_precedence_row3_both_slots_generating():
+    """Row 3 — both summaries in flight (pipeline progressing): BOTH slots resolve to GENERATING."""
+    active = _FakeTranscript()
+    brief = derive_slot_state(
+        section_type="lecture",
+        summary_type="brief",
+        active_transcript=active,
+        summary_row=None,
+        summary_step_status="queued",
+        overall_state="summarizing",
+    )
+    detailed = derive_slot_state(
+        section_type="lab",
+        summary_type="detailed_study",
+        active_transcript=active,
+        summary_row=None,
+        summary_step_status="running",
+        overall_state="summarizing",
+    )
+    assert brief.state == GENERATING
+    assert detailed.state == GENERATING
+
+
 def test_precedence_completed_but_missing_is_unavailable_with_inconsistency(caplog):
     active = _FakeTranscript()
     with caplog.at_level(logging.ERROR, logger="app.domains.student_summaries.precedence"):
