@@ -1,0 +1,95 @@
+#!/usr/bin/env sh
+# Stage 4.8 (B7) — staging environment preflight. REQUIRED before deploy and before the staging smoke.
+#
+# Reads the process environment. Either export the staging vars first, or:
+#     set -a; . ./.env.staging; set +a; sh scripts/check-staging-env
+# Prints one line per violation and exits non-zero if any fail. Variable names follow the umbrella
+# spec Filing note (code wins): LLM_API_KEY (not K2THINK_API_KEY), ENVIRONMENT (not APP_ENV),
+# SUPABASE_SECRET_KEY (not SUPABASE_SERVICE_ROLE_KEY), NEXT_PUBLIC_API_BASE_URL (not _API_URL),
+# EMBEDDING_MODEL_REVISION (not _SHA).
+#
+# A table catches review mistakes; this script catches deploy mistakes.
+set -u
+
+fail=0
+err() { printf 'FAIL: %s\n' "$1"; fail=1; }
+
+# ── env VALUE guard (layered under the boot check; adr ruling O1). The fault-injection boot check
+#    permits ENVIRONMENT=development, so a deploy that left ENVIRONMENT=development would slip fault
+#    flags past the boot check — THIS assertion is what catches it. Must be exactly 'staging'. ──
+[ "${ENVIRONMENT:-}" = "staging" ] || err "ENVIRONMENT must be exactly 'staging' (got '${ENVIRONMENT:-}')"
+
+# ── frontend must point at staging, not localhost ──
+case "${NEXT_PUBLIC_API_BASE_URL:-}" in
+  "") err "NEXT_PUBLIC_API_BASE_URL is unset" ;;
+  *localhost*|*127.0.0.1*) err "NEXT_PUBLIC_API_BASE_URL points at localhost: ${NEXT_PUBLIC_API_BASE_URL}" ;;
+esac
+
+# ── E2E hooks must be absent from the hosted env ──
+[ -z "${NEXT_PUBLIC_E2E_TEST_HOOKS:-}" ] || err "NEXT_PUBLIC_E2E_TEST_HOOKS must be absent in staging (got '${NEXT_PUBLIC_E2E_TEST_HOOKS}')"
+
+# ── fault-injection flags must be absent (presence at all is a hygiene failure) ──
+for f in PIPELINE_FAULT_INJECTION_ENABLED PIPELINE_FAULT_INJECTION LLM_FAULT_INJECTION; do
+  eval "v=\${$f:-}"
+  [ -z "$v" ] || err "$f must be absent in staging (got '$v')"
+done
+
+# ── Supabase must be configured and not the dev project ──
+[ -n "${SUPABASE_URL:-}" ]      || err "SUPABASE_URL is unset"
+[ -n "${SUPABASE_JWKS_URL:-}" ] || err "SUPABASE_JWKS_URL is unset"
+if [ -n "${DEV_SUPABASE_URL:-}" ]; then
+  [ "${SUPABASE_URL:-}" != "${DEV_SUPABASE_URL}" ]      || err "SUPABASE_URL points at the DEV project"
+  [ "${SUPABASE_JWKS_URL:-}" != "${DEV_SUPABASE_JWKS_URL:-}" ] || err "SUPABASE_JWKS_URL points at the DEV project"
+fi
+
+# ── dual DB URL: app via pooler, Alembic via direct; the two MUST differ ──
+[ -n "${DATABASE_URL:-}" ]        || err "DATABASE_URL is unset"
+[ -n "${DIRECT_DATABASE_URL:-}" ] || err "DIRECT_DATABASE_URL is unset"
+[ "${DATABASE_URL:-a}" != "${DIRECT_DATABASE_URL:-b}" ] || err "DATABASE_URL must differ from DIRECT_DATABASE_URL (app=pooler, Alembic=direct)"
+[ "${DATABASE_POOLER:-}" = "true" ] || err "DATABASE_POOLER must be 'true' in staging (A1; prepared statements off)"
+# Secondary heuristic (the explicit DATABASE_POOLER flag is the behaviour driver — MF3). A2 (VPS, no
+# pooler) documents an exception and would not set DATABASE_POOLER=true.
+case "${DATABASE_URL:-}" in
+  *pooler*) : ;;
+  *) err "DATABASE_URL does not look like the pooler endpoint (no 'pooler' in host)" ;;
+esac
+
+# ── LLM key present when the real provider is selected ──
+if [ "${LLM_PROVIDER:-}" = "k2think" ] && [ -z "${LLM_API_KEY:-}" ]; then
+  err "LLM_API_KEY missing while LLM_PROVIDER=k2think"
+fi
+
+# ── CORS must include the staging frontend origin ──
+if [ -n "${STAGING_FRONTEND_ORIGIN:-}" ]; then
+  case "${CORS_ORIGINS:-}" in
+    *"${STAGING_FRONTEND_ORIGIN}"*) : ;;
+    *) err "CORS_ORIGINS missing the staging frontend origin (${STAGING_FRONTEND_ORIGIN})" ;;
+  esac
+else
+  [ -n "${CORS_ORIGINS:-}" ] || err "CORS_ORIGINS is unset"
+fi
+
+# ── Identity bootstrap (4.8b). Second layer only — the bootstrap CLI is the authoritative gate (MF6).
+#    The first-admin must have credentials or the release bootstrap silently no-ops; when the seed
+#    flag is on, the lecturer/student seeds must be present too. ──
+[ -n "${BOOTSTRAP_ADMIN_EMAIL:-}" ] && [ -n "${BOOTSTRAP_ADMIN_PASSWORD:-}" ] \
+  || err "BOOTSTRAP_ADMIN_EMAIL + BOOTSTRAP_ADMIN_PASSWORD must be set (the first-admin bootstrap)"
+if [ "${BOOTSTRAP_SEED_IDENTITIES:-}" = "true" ]; then
+  [ -n "${BOOTSTRAP_LECTURER_EMAIL:-}" ] && [ -n "${BOOTSTRAP_LECTURER_PASSWORD:-}" ] \
+    || err "BOOTSTRAP_SEED_IDENTITIES=true but lecturer seed vars are missing"
+  [ -n "${BOOTSTRAP_STUDENT_EMAIL:-}" ] && [ -n "${BOOTSTRAP_STUDENT_PASSWORD:-}" ] \
+    || err "BOOTSTRAP_SEED_IDENTITIES=true but student seed vars are missing"
+fi
+
+# ── STALE renamed (left-hand) names must NOT be present. A lingering old name after a rename is the
+#    exact silent misconfig this script exists to catch (developer review). ──
+for stale in K2THINK_API_KEY K2THINK_BASE_URL APP_ENV SUPABASE_SERVICE_ROLE_KEY EMBEDDING_MODEL_SHA NEXT_PUBLIC_API_URL; do
+  eval "v=\${$stale:-}"
+  [ -z "$v" ] || err "stale/renamed variable '$stale' is set — use the current name (see spec Filing note)"
+done
+
+if [ "$fail" -ne 0 ]; then
+  printf '\ncheck-staging-env: FAILED\n' >&2
+  exit 1
+fi
+printf 'check-staging-env: OK\n'

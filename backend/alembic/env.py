@@ -17,7 +17,12 @@ target_metadata = Base.metadata
 
 
 def get_database_url() -> str:
-    return os.environ.get("DATABASE_URL", config.get_main_option("sqlalchemy.url"))
+    # Stage 4.8b (adr-041): migrations run over the DIRECT/session endpoint, never the transaction
+    # pooler — DDL + advisory locks need a real session. Logic lives in an importable, side-effect-free
+    # helper so it is unit-testable (this module runs migrations on import).
+    from app.platform.db.alembic_url import resolve_migration_url
+
+    return resolve_migration_url(config.get_main_option("sqlalchemy.url"))
 
 
 def run_migrations_offline() -> None:

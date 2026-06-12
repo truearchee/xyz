@@ -28,3 +28,5 @@ knowledge/.obsidian/appearance.json
 knowledge/.obsidian/hotkeys.json
 knowledge/.obsidian/cache/
 knowledge/.obsidian/plugins/*/data.json
+
+.conductor/settings.local.toml

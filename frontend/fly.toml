@@ -1,0 +1,32 @@
+# Stage 4.8 (B6, adr-040/042) — FRONTEND Fly app (Next.js standalone). Separate app from the backend
+# because under D1 the browser talks to the backend cross-origin; this app's hostname IS the value
+# that goes into the backend's CORS_ORIGINS, and the backend app's hostname is baked here as
+# NEXT_PUBLIC_API_BASE_URL.
+#
+# NEXT_PUBLIC_* are inlined at BUILD (Decision D1) — pass them as build args at deploy time:
+#   fly deploy -c frontend/fly.toml \
+#     --build-arg NEXT_PUBLIC_API_BASE_URL=https://xyz-lms-backend-staging.fly.dev \
+#     --build-arg NEXT_PUBLIC_SUPABASE_URL=https://<staging-ref>.supabase.co \
+#     --build-arg NEXT_PUBLIC_SUPABASE_ANON_KEY=<staging anon key>
+# NEXT_PUBLIC_E2E_TEST_HOOKS is intentionally NEVER passed → window.__xyzE2E absent (§8).
+
+app = "xyz-lms-frontend-staging"  # operator: real app name
+primary_region = "iad"            # operator: match the backend region
+
+[build]
+  dockerfile = "Dockerfile.prod"
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  auto_start_machines = true
+  auto_stop_machines = false        # keep warm for the smoke window
+  min_machines_running = 1
+  processes = ["app"]
+
+[env]
+  NODE_ENV = "production"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
