@@ -13,6 +13,10 @@ import {
   OpenAPI,
   type ResetPasswordRequest,
   type SectionAssetListResponse,
+  type StudentSectionListItem,
+  type StudentSectionRead,
+  type StudentSectionSummariesRead,
+  StudentSummariesService,
   TranscriptsService,
   type TranscriptMeta,
   type TranscriptProcessingStatus,
@@ -204,6 +208,18 @@ export const api = {
     get: (moduleId: string) =>
       withAuthRecovery(() => ModulesService.getModuleModulesModuleIdGet(moduleId)),
     list: () => withAuthRecovery(() => ModulesService.listModulesModulesGet()),
+  },
+  studentSummaries: {
+    listSections: (moduleId: string): Promise<Array<StudentSectionListItem>> =>
+      withAuthRecovery(() =>
+        StudentSummariesService.getStudentModuleSections(moduleId),
+      ),
+    getSection: (sectionId: string): Promise<StudentSectionRead> =>
+      withAuthRecovery(() => StudentSummariesService.getStudentSection(sectionId)),
+    getSummaries: (sectionId: string): Promise<StudentSectionSummariesRead> =>
+      withAuthRecovery(() =>
+        StudentSummariesService.getStudentSectionSummaries(sectionId),
+      ),
   },
   transcripts: {
     getActive: (

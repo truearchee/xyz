@@ -1,0 +1,16 @@
+WEBVTT
+
+00:00:00.000 --> 00:00:06.000
+<v Lecturer>Ensemble methods combine several models so the final prediction is more stable than a single learner.
+
+00:00:06.500 --> 00:00:13.000
+<v Lecturer>RAW_TRANSCRIPT_SENTINEL_DO_NOT_SURFACE_4_7 — quick admin aside before we continue, please ignore.
+
+00:00:13.500 --> 00:00:21.000
+<v Lecturer>Bagging trains learners on bootstrap samples, then averages their predictions to reduce variance.
+
+00:00:21.500 --> 00:00:30.000
+<v Lecturer>Random forests add feature sampling at each split, which makes the trees less correlated and stronger together.
+
+00:00:30.500 --> 00:00:40.000
+<v Lecturer>Boosting fits learners sequentially, each correcting the errors of the last, lowering bias on the training set.

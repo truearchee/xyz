@@ -434,3 +434,31 @@ WHERE transcript_id = ${sqlLiteral(transcriptId)} AND job_type IN ('generate_bri
   }
   throw new Error(`Timed out waiting for summary failure_category=${category} on ${transcriptId}`);
 }
+
+// Stage 4.7 G2 — deterministic SEED of the brief-first state (§14): from a fully-summarized transcript,
+// remove the detailed summary artifact and re-open its job to 'running'. The student surface then shows
+// brief READY + detailed GENERATING with no timing race. E2E-only.
+export function seedDetailedSummaryGenerating(transcriptId) {
+  assertUuid(transcriptId, 'transcriptId');
+  runPsqlRows(`
+DELETE FROM generated_lecture_summaries
+WHERE transcript_id = ${sqlLiteral(transcriptId)} AND summary_type = 'detailed_study';
+UPDATE ingestion_jobs
+SET status = 'running', completed_at = NULL
+WHERE transcript_id = ${sqlLiteral(transcriptId)} AND job_type = 'generate_detailed_summary';
+`);
+}
+
+// Stage 4.7 R1 — canary validity: how many of a transcript's SEGMENTS (raw transcript text) contain a
+// needle. Proves the G3 sentinel actually rode the transcript that backs the student's summary (not an
+// orphan), so its absence from the student surface is a live guarantee, not a vacuous one.
+export function countTranscriptSegmentsContaining(transcriptId, needle) {
+  assertUuid(transcriptId, 'transcriptId');
+  const rows = runPsqlRows(`
+SELECT count(*)::int
+FROM transcript_segments
+WHERE transcript_id = ${sqlLiteral(transcriptId)}::uuid
+  AND text LIKE ${sqlLiteral('%' + needle + '%')};
+`);
+  return Number(rows.at(-1) ?? 0);
+}

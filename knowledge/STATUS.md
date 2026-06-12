@@ -1,6 +1,8 @@
 # Status
 
-_Last updated: 2026-06-11 - **Stage 4.6 FULLY VERIFIED.** The live browser gate ran GREEN — full active Playwright suite 9/9 (4.3.5b/c/e, 4.4, 4.5d-summary-browser, 4.5d-summary-fault ×2, 4.6d replacement-continuity + retry) against a backend image freshly built from branch HEAD (verified by content-hash vs git). The gate surfaced + fixed TWO cross-stage-seam regressions: F-4.6c-1 (startup recovery poisoned the fork-per-job module engine pool → isolated NullPool engine, `tests/test_worker_startup_recovery.py`) and F-4.6b-2 (orphaned activation trigger after the 4.6b DAG decouple → every leaf attempts idempotent activation, 3 ordering regression tests). Backend 353 passed; frontend tsc clean. dev `xyz_lms` migrated 0009→0012. Deferred: F-4.6d-3 (C-lite read-contract violation in the post-retry status path → owner Task 4.6d-P1; production-masked). On branch `stage/4.6-replacement-retry`. Next → 4.7 (student surface) — inherits a resolver proven correct in a real browser._
+_Last updated: 2026-06-12 - **Stage 4.7 (student-facing summaries) BUILT + browser gate GREEN — AWAITING HUMAN VERIFICATION (not self-certified).** Autonomous overnight build of spec v1.1 (LOCKED). 4.7a backend boundary: `StudentSummaryAccessPolicy` (§5: row R 403 before lookup; D/P/I pinned byte-identical 404), §6 precedence pure function (corruption≠supersession kept DISTINCT + logged — the trickiest correctness point, pinned by two separate tests), scoped read model (§8.6 MODULE-LEVEL membership join, >1-active fail-safe, no fetch-then-branch), server-side markdown shaping, two Option-B endpoints + coarse module list, §8.3 schema hygiene, `Cache-Control: private, no-store`, migration 0013 (list index). 4.7b UI: thin student section page (4 per-slot states + bounded polling + react-markdown raw-HTML-off), module-page coarse flags. **P1 (Stage 3 content-visibility E2E) RESTORED to the active suite + GREEN as-is (no drift).** Backend 388 passed (+32). Full active Playwright suite 11/11 (9 success serial + 2 fault). G1–G9 met. ADR-034..039. Dev `xyz_lms` at 0013. On branch `stage/4.7-student-summaries` (off the 4.6d-P1 fix; cannot merge until that lands on main). **Terminal state: awaiting Arthur's review against §15 + the FULLY-VERIFIED stamp.** Audit G8 + security gates G3–G6 for assertion STRENGTH. **Post-review closure (R1–R3) done:** R1 sentinel canary STRENGTHENED (gate now proves the sentinel rode the transcript backing G3's summary; re-run green); R2 the `--workers=1` need classified CAPACITY (embed RQ-retries 3×[30,120,300]s → non-terminal; GAP ruled out; serial is the correct harness config — non-blocking, in open-questions); R3 row-3 precedence unit test added (corruption-log assertion already present). `stage/4.7-student-summaries` merges cleanly into main (no conflicts; stacked on the 4.6d-P1 fix). Next → 4.8 (staging deploy)._
+
+_Prior: 2026-06-11 - **Stage 4.6 FULLY VERIFIED.** The live browser gate ran GREEN — full active Playwright suite 9/9 (4.3.5b/c/e, 4.4, 4.5d-summary-browser, 4.5d-summary-fault ×2, 4.6d replacement-continuity + retry) against a backend image freshly built from branch HEAD (verified by content-hash vs git). The gate surfaced + fixed TWO cross-stage-seam regressions: F-4.6c-1 (startup recovery poisoned the fork-per-job module engine pool → isolated NullPool engine, `tests/test_worker_startup_recovery.py`) and F-4.6b-2 (orphaned activation trigger after the 4.6b DAG decouple → every leaf attempts idempotent activation, 3 ordering regression tests). Backend 353 passed; frontend tsc clean. dev `xyz_lms` migrated 0009→0012. Deferred: F-4.6d-3 (C-lite read-contract violation in the post-retry status path → owner Task 4.6d-P1; production-masked). On branch `stage/4.6-replacement-retry`. Next → 4.7 (student surface) — inherits a resolver proven correct in a real browser._
 
 ## Stage 4.6 — Replacement / Retry / Supersession (FULLY VERIFIED)
 
@@ -214,12 +216,20 @@ Required next:
 - Session 1.1b: Stage 1 browser gate satisfied. Docker-backed automated checks passed (`3 passed` config tests, `4 passed` health/CORS tests, full backend `136 passed`, frontend type-check exited 0), browser polling showed `ok -> unreachable -> ok`, and human DevTools Network confirmed direct `http://localhost:8000/health` with `Access-Control-Allow-Origin: http://localhost:3000` - completed 2026-06-03 13:58.
 
 ## In progress
-- **Stage 4.6 — FULLY VERIFIED** (live gate green 9/9; F-4.6c-1 + F-4.6b-2 fixed). On branch `stage/4.6-replacement-retry`, merged to `main` at the close-out.
+- **Stage 4.7 — BUILT + browser gate GREEN, AWAITING HUMAN VERIFICATION.** On branch `stage/4.7-student-summaries`
+  (off `fix/4.6d-p1-overallstate-projection` — §6 depends on the F-4.6d-3 projection fix, so 4.7 cannot merge
+  until 4.6d-P1 lands on main first). Terminal state: NOT self-certified FULLY VERIFIED — Arthur reviews
+  against §15 (audit G8 + security gates G3–G6 for assertion STRENGTH) and makes the stamp.
+  See [[steps/stage-04/4.7a-student-summary-read-policy]], [[steps/stage-04/4.7b-student-page-browser-gate]],
+  [[steps/stage-04/4.7-stage3-restore]].
 
 ## Next up
-- **4.7 — student summary HTTP surface + content-visibility + 404-not-403** (now unblocked — inherits the resolver, proven correct in a real browser).
-- **4.6d-P1** (polish, owner of F-4.6d-3): fix the C-lite read-contract violation in the post-retry status path (reset `transcript.status` in `apply_retry` or drop the raw-status short-circuit in `_overall_state`) + remove the `reload()` workaround in `4.6d-replace-retry.spec.ts`.
-- Dev `xyz_lms` is **migrated to 0012** (done at the gate cutover). 11.1: point a cron at `run_stuck_row_reaper` / `run_storage_reconciliation`.
+- **Arthur:** review the 4.7 report trio against §15; if honestly green, set Stage 4.7 FULLY VERIFIED +
+  flip the roadmap status table. Then land 4.6d-P1 on main, then merge 4.7.
+- **4.8 — first hosted deploy (staging):** the lecturer→student summary path (incl. one real K2Think summary)
+  runs against the staging URL. Keep the 4.7 gate runnable against a configurable base URL (§20). Env hygiene:
+  fault-injection + E2E hooks absent in hosted builds; `RECONCILE_AT_STARTUP`/`RECONCILIATION_CLEANUP_ENABLED` OFF.
+- Dev `xyz_lms` is **migrated to 0013**. 11.1: point a cron at `run_stuck_row_reaper` / `run_storage_reconciliation`.
 
 ## Known issues / blockers
 - Hosted Postgres extension bootstrap is not covered by the local Docker init script; handle `vector` and `pgcrypto` explicitly before first hosted deployment.

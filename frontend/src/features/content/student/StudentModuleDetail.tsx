@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import {
@@ -10,6 +11,15 @@ import {
 } from "../../../lib/api";
 import { ForbiddenError, api } from "../../../lib/api/wrapper";
 import { StudentSectionView } from "./StudentSectionView";
+
+// Coarse per-section summary flag (§8.1) — one batched call, no per-section fan-out.
+const SUMMARY_BADGE: Record<string, { label: string; bg: string; color: string } | null> = {
+  ready: { label: "Summaries ready", bg: "#ecfdf5", color: "#047857" },
+  partial: { label: "Summaries partly ready", bg: "#eff6ff", color: "#1d4ed8" },
+  generating: { label: "Summaries generating", bg: "#eff6ff", color: "#1d4ed8" },
+  none: { label: "No summary yet", bg: "#f3f4f6", color: "#4b5563" },
+  not_applicable: null,
+};
 
 type StudentModuleDetailProps = {
   moduleId: string;
@@ -53,6 +63,7 @@ type SectionRecord = {
 export function StudentModuleDetail({ moduleId }: StudentModuleDetailProps) {
   const [module, setModule] = useState<ModuleDetail | null>(null);
   const [sections, setSections] = useState<SectionRecord[]>([]);
+  const [summaryState, setSummaryState] = useState<Map<string, string>>(new Map());
   const [error, setError] = useState<string | null>(null);
   const [isForbidden, setIsForbidden] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -70,9 +81,10 @@ export function StudentModuleDetail({ moduleId }: StudentModuleDetailProps) {
     setIsForbidden(false);
 
     try {
-      const [moduleDetail, sectionList] = await Promise.all([
+      const [moduleDetail, sectionList, summaryList] = await Promise.all([
         api.modules.get(moduleId),
         api.content.listSections(moduleId),
+        api.studentSummaries.listSections(moduleId),
       ]);
       const sectionDetails = await Promise.all(
         sectionList.map(async (section) => {
@@ -86,6 +98,7 @@ export function StudentModuleDetail({ moduleId }: StudentModuleDetailProps) {
 
       setModule(moduleDetail);
       setSections(sectionDetails);
+      setSummaryState(new Map(summaryList.map((item) => [item.id, item.summariesState])));
     } catch (caught) {
       if (caught instanceof ForbiddenError) {
         setIsForbidden(true);
@@ -155,13 +168,33 @@ export function StudentModuleDetail({ moduleId }: StudentModuleDetailProps) {
           data-testid="student-section-list"
           style={styles.sectionList}
         >
-          {sortedSections.map(({ detail }) => (
-            <StudentSectionView
-              key={detail.id}
-              moduleId={moduleId}
-              section={detail}
-            />
-          ))}
+          {sortedSections.map(({ detail }) => {
+            const badge = SUMMARY_BADGE[summaryState.get(detail.id) ?? "none"] ?? null;
+            return (
+              <div key={detail.id} style={styles.sectionCard}>
+                <StudentSectionView moduleId={moduleId} section={detail} />
+                <div style={styles.summaryFooter}>
+                  {badge ? (
+                    <span
+                      data-testid={`student-section-summary-flag-${detail.id}`}
+                      style={{ ...styles.summaryBadge, background: badge.bg, color: badge.color }}
+                    >
+                      {badge.label}
+                    </span>
+                  ) : (
+                    <span />
+                  )}
+                  <Link
+                    href={`/student/modules/${moduleId}/sections/${detail.id}`}
+                    data-testid={`student-section-open-${detail.id}`}
+                    style={styles.summaryLink}
+                  >
+                    View summaries →
+                  </Link>
+                </div>
+              </div>
+            );
+          })}
         </section>
       )}
     </section>
@@ -217,6 +250,28 @@ const styles = {
   sectionList: {
     display: "grid",
     gap: 14,
+  },
+  sectionCard: {
+    display: "grid",
+    gap: 8,
+  },
+  summaryFooter: {
+    alignItems: "center",
+    display: "flex",
+    gap: 12,
+    justifyContent: "space-between",
+  },
+  summaryBadge: {
+    borderRadius: 999,
+    fontSize: 12,
+    fontWeight: 700,
+    padding: "3px 10px",
+  },
+  summaryLink: {
+    color: "#1d4ed8",
+    fontSize: 13,
+    fontWeight: 700,
+    textDecoration: "none",
   },
   emptyPanel: {
     border: "1px solid #d7dde8",

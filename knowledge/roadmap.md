@@ -58,7 +58,7 @@ DONE             — governance stages where no browser gate applies (Stage 0 on
 ✅ Stage 4.4   Embeddings                                 FULLY VERIFIED  (gate: 4.4 embedding browser run)
 ✅ Stage 4.5   AI infrastructure + summary generation   FULLY VERIFIED  (gate: 4.5d browser gate + full E2E + real-provider smoke)
 ✅ Stage 4.6   Replacement / retry / supersession       FULLY VERIFIED — live browser gate GREEN (full active suite 9/9); two cross-stage-seam regressions found+fixed (F-4.6c-1, F-4.6b-2)
-Stage 4.7   Student-facing summaries                   NOT STARTED  ← next
+Stage 4.7   Student-facing summaries                   BUILT — gate GREEN, review R1–R3 resolved, AWAITING HUMAN VERIFICATION  ← next
 Stage 4.8   First hosted deploy (staging)              NOT STARTED  (new in v3)
 Stage 4.9   Frontend foundation + platform hygiene     NOT STARTED  (new in v3)
 Stage 5     Shared quiz engine + event spine           NOT STARTED
@@ -333,9 +333,20 @@ Replace transcript → old superseded → new active → summaries regenerate
 
 ## Stage 4.7 — Student-Facing Summaries
 
-**Status:** NOT STARTED.
+**Status:** BUILT — browser gate GREEN, **AWAITING HUMAN VERIFICATION** (not self-certified FULLY VERIFIED).
+Autonomous overnight build of spec v1.1 (LOCKED): 4.7a backend boundary (`StudentSummaryAccessPolicy` §5;
+§6 precedence with corruption≠supersession pinned; scoped module-level read model; §8.3 hygiene; migration
+0013) + 4.7b thin student UI (4 per-slot states, bounded polling, react-markdown raw-HTML-off). Backend 388
+passed; full active Playwright suite **11/11** (G1–G9). **P1 (Stage 3 content-visibility E2E) restored to
+the active suite + green, no drift.** ADR-034..039. On branch `stage/4.7-student-summaries` (off the 4.6d-P1
+fix — cannot merge until that lands on main). Arthur reviews against §15 (audit G8 + G3–G6 for assertion
+STRENGTH) and makes the FULLY-VERIFIED stamp. See [[steps/stage-04/4.7a-student-summary-read-policy]],
+[[steps/stage-04/4.7b-student-page-browser-gate]], [[steps/stage-04/4.7-stage3-restore]].
 
-**Hard prerequisite:** the Stage 3 content-visibility E2E spec is **restored to the active suite** (it currently lives in archive). "Students never see unpublished content" is the most security-sensitive student-facing rule and must have a live automated browser regression before student surfaces are extended.
+**Hard prerequisite (MET):** the Stage 3 content-visibility E2E spec is **restored to the active suite** —
+re-authored as `tests/e2e/4.7-stage3-content-visibility.spec.ts` (no committed spec existed) and green
+as-is against the current contract. "Students never see unpublished content" now has a live browser
+regression before the student surface was extended.
 
 **Backend scope:** student-facing summary read projection; published-section and assigned-module enforcement; processing/unavailable fallback states; no raw transcript exposure.
 
