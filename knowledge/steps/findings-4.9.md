@@ -103,3 +103,30 @@ advisory is a transitive of Next/Tailwind that 4.9a's explicit `postcss@^8` mere
   CVE severity rises or a reachable path (next/image, middleware, image-opt) is added before Stage 12** —
   at which point it jumps to the §7 hygiene batch or sooner.
 - Logged here as F-4.9-3 so it cannot evaporate as a loose `npm audit` line.
+
+---
+
+## F-4.9-4 — Unconsumed legacy `features/content/*.tsx` generation (surfaced by the 4.9d gates)
+
+**Raised:** 2026-06-12 (4.9d, by `check:inline-styles`/`check:design-tokens`). **Status: deferred to Stage 12 (delete) — LEFT per §5.**
+
+Standing up the §8 gates (and the 4.9c inline-style grep that found `ModuleDetailView`) surfaced an
+entire **unconsumed older generation** of content components living **directly** in `src/features/content/`:
+`LecturerNotesEditor`, `PublishToggle`, `SectionAssetList`, `StudentSectionList`, `StudentSectionView`,
+`UploadButton` (+ the `features/content/api/*` helpers), all barrel-only exports of `features/content/index.ts`.
+**Confirmed dead:** nothing outside `features/content/` imports the barrel or any of these components/JSX,
+and the live UI uses the `features/content/{lecturer,student}/*` subdir components (restyled in 4.9c) +
+`lib/api/wrapper`. Plus `features/modules/ModuleDetailView.tsx` (same: barrel-only, no consumer).
+
+**Resolution (rule 13): deferred to Stage 12 — LEFT, not restyled (§5 componentize-or-leave).** Restyling
+dead code is a YAGNI/§5 violation; deleting code (even dead) is a deliberate developer decision out of
+4.9's restyle scope. The gates EXCLUDE these paths (`src/features/content/[^/]+\.tsx` + ModuleDetailView)
+with the reason inline. **Stage 12 action: delete the unconsumed `features/content/*.tsx` generation +
+`ModuleDetailView`** (or confirm + restyle if a consumer is reintroduced). This is the entire Stage-12
+Part-3 dead-code backlog from 4.9. *The gates finding surfaces the recon missed is the argument for
+mechanical verification over eyeballing.*
+
+**4.9c scope completion note (not a finding):** the same gate run caught two **live** surfaces the recon
+missed — `app/(app)/lecturer/page.tsx` + `app/(app)/student/page.tsx` (tiny `style={{grid}}` wrappers).
+These ARE consumed → **restyled in 4.9d** (token classes) and logged in the restyle inventory; the
+suite/gates cover them.

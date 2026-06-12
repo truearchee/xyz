@@ -1,0 +1,8 @@
+# Stage 4.9d — local enforcement (fast subset). The full gate surface runs in GitHub Actions CI
+# (.github/workflows/ci.yml) as REQUIRED status checks; this hook gives fast local feedback so the
+# specificity-trap / off-token regressions are caught before they leave the laptop. tests/build are CI's job.
+set -e
+cd frontend
+echo "[pre-commit] typecheck…"        && npm run --silent typecheck
+echo "[pre-commit] check:design-tokens…" && npm run --silent check:design-tokens
+echo "[pre-commit] check:inline-styles…" && npm run --silent check:inline-styles

@@ -2,8 +2,8 @@ import { AssignedModulesList } from "../../../features/modules/AssignedModulesLi
 
 export default function StudentPage() {
   return (
-    <section style={{ display: "grid", gap: 16 }}>
-      <h1>Student</h1>
+    <section className="grid gap-4">
+      <h1 className="m-0 font-display text-2xl font-bold text-text">Student</h1>
       <AssignedModulesList moduleHrefPrefix="/student/modules" />
     </section>
   );

@@ -1,15 +1,16 @@
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vitest/config";
 
-// Stage 4.9b — MINIMAL runner: executes the co-located component static-a11y smokes (§6.4) as each
-// component lands. The FULL gate surface (the §6.1–6.3 logic tests, the test:unit/test:a11y/check:*
-// scripts, CI, pre-commit) is 4.9d; this config's include is deliberately scoped to *.a11y.test.tsx.
+// Stage 4.9d — runs ALL Vitest specs: the §6.1–6.3 logic tests (*.test.ts(x)) + the §6.4 static-a11y
+// smokes (*.a11y.test.tsx, which also match *.test.tsx). The package.json scripts split them:
+//   test:unit  → vitest run --exclude '**/*.a11y.test.tsx'   (logic)
+//   test:a11y  → vitest run src/components/ui/*.a11y.test.tsx (component a11y smokes)
 export default defineConfig({
   plugins: [react()],
   test: {
     environment: "jsdom",
     globals: true,
     setupFiles: ["./vitest.setup.ts"],
-    include: ["src/**/*.a11y.test.{ts,tsx}"],
+    include: ["src/**/*.test.{ts,tsx}"],
   },
 });

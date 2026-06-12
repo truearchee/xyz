@@ -6,7 +6,13 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "type-check": "tsc --noEmit"
+    "type-check": "tsc --noEmit",
+    "typecheck": "tsc --noEmit",
+    "lint": "next lint",
+    "test:unit": "vitest run --exclude '**/*.a11y.test.tsx'",
+    "test:a11y": "vitest run src/components/ui",
+    "check:design-tokens": "node scripts/check-design-tokens.mjs",
+    "check:inline-styles": "node scripts/check-inline-styles.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.107.0",
@@ -29,6 +35,8 @@
     "@types/react-dom": "19.1.5",
     "@vitejs/plugin-react": "^6.0.2",
     "axe-core": "^4.12.1",
+    "eslint": "^9.39.4",
+    "eslint-config-next": "^15.3.3",
     "jsdom": "^29.1.1",
     "openapi-typescript-codegen": "0.29.0",
     "postcss": "^8.5.15",

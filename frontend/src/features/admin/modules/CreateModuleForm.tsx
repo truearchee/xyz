@@ -26,7 +26,7 @@ export function CreateModuleForm({ lecturers, onCreated }: CreateModuleFormProps
     setError(null);
     setIsSubmitting(true);
     try {
-      const module = await api.admin.createModule({
+      const createdModule = await api.admin.createModule({
         title,
         description: description || null,
         ownerId,
@@ -40,7 +40,7 @@ export function CreateModuleForm({ lecturers, onCreated }: CreateModuleFormProps
       setTimezone("UTC");
       setStartsOn("");
       setEndsOn("");
-      await onCreated(module.id);
+      await onCreated(createdModule.id);
     } catch (caught) {
       setError(errorMessage(caught));
     } finally {
