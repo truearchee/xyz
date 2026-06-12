@@ -9,9 +9,12 @@ from app.api.routers.modules import router as modules_router
 from app.api.routers.student_summaries import router as student_summaries_router
 from app.api.routers.transcripts import router as transcripts_router
 from app.platform.config import settings
+from app.platform.faults.boot import assert_fault_injection_safe
 
 
 def create_app() -> FastAPI:
+    # Refuse to boot if a fault-injection flag is active in a hosted env (Stage 4.8 §8).
+    assert_fault_injection_safe()
     app = FastAPI(title="XYZ LMS")
     app.add_middleware(
         CORSMiddleware,
@@ -27,6 +30,11 @@ def create_app() -> FastAPI:
     app.include_router(modules_router)
     app.include_router(transcripts_router)
     app.include_router(student_summaries_router)
+    # Stage 4.8c (C1): the SSE probe route exists ONLY when explicitly enabled (404 otherwise).
+    if settings.ENABLE_INTERNAL_SSE_PROBE:
+        from app.api.routers.sse_probe import router as sse_probe_router
+
+        app.include_router(sse_probe_router)
     return app
 
 

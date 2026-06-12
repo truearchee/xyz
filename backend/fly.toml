@@ -1,0 +1,73 @@
+# Stage 4.8 (B6, adr-040) — BACKEND Fly app: API + the three RQ worker groups (one image, the
+# command differs per process group, exactly like docker-compose). The frontend is a SEPARATE Fly
+# app (frontend/fly.toml) because under D1 (adr-042) it is a distinct public origin — that split is
+# what wires CORS_ORIGINS (frontend host) and NEXT_PUBLIC_API_BASE_URL (this app's host).
+#
+# The operator creates the app and sets `app`/`primary_region`; secrets go via `fly secrets set`
+# (never in this file). Deploy:  fly deploy -c backend/fly.toml
+
+app = "xyz-lms-backend-staging"   # operator: real app name
+primary_region = "iad"            # operator: choose a region close to Supabase
+
+[build]
+  dockerfile = "Dockerfile"
+
+[processes]
+  api = "uvicorn app.main:app --host 0.0.0.0 --port 8000"
+  worker = "python -m app.workers.worker ingestion"
+  embedding_worker = "python -m app.workers.worker embedding"
+  ai_worker = "python -m app.workers.worker ai"
+
+# Only the API group serves HTTP. Liveness check hits /health (cheap, NO DB/Redis — §7.K: a DB blip
+# must not restart-loop the machine). Readiness (/health/ready) is checked operationally + by the
+# 4.8d smoke, not as a machine-restart probe.
+[http_service]
+  internal_port = 8000
+  force_https = true
+  auto_start_machines = true
+  auto_stop_machines = false        # keep the API warm for the smoke window (§7.D, failure #13)
+  min_machines_running = 1
+  processes = ["api"]
+
+  [[http_service.checks]]
+    method = "GET"
+    path = "/health"
+    interval = "15s"
+    timeout = "2s"
+    grace_period = "10s"
+
+# Non-secret config only. Secrets (DATABASE_URL, DIRECT_DATABASE_URL, REDIS_URL, SUPABASE_URL,
+# SUPABASE_SECRET_KEY, SUPABASE_JWKS_URL, SUPABASE_JWT_ISSUER, LLM_API_KEY, CORS_ORIGINS, ...) are set
+# with `fly secrets set` by the operator. See .env.staging.example for the full matrix.
+[env]
+  ENVIRONMENT = "staging"
+  DATABASE_POOLER = "true"          # app routes through the transaction pooler (prepared stmts off)
+  LLM_PROVIDER = "k2think"
+  # Connection budget (MF3) — small per-process pools so api + 3 workers + migrator + reaper stay
+  # under the plan's max_connections (the runbook holds the table). App pools hit the POOLER (which
+  # multiplexes to Postgres); only the release migrator + the reaper advisory lock open DIRECT
+  # session connections (transient, singleton-serialized).
+  DATABASE_POOL_SIZE = "5"
+  DATABASE_MAX_OVERFLOW = "0"
+  # Seed-identity gate (4.8b): create the known-credential lecturer/student for the smoke. Enforced
+  # in the bootstrap CLI; valid because ENVIRONMENT=staging is NOT production (IS_PRODUCTION=false).
+  BOOTSTRAP_SEED_IDENTITIES = "true"
+
+# 4.8b — release phase: migrate over the DIRECT connection + idempotent identity bootstrap. A non-zero
+# exit ABORTS the deploy and gates all process groups (workers crashloop against a schema-less DB if
+# they precede it). The script lives in the backend image at /app/scripts/release.sh.
+[deploy]
+  release_command = "sh scripts/release.sh"
+
+# Default VM for the light groups.
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
+  processes = ["api", "worker", "ai_worker"]
+
+# Embed worker carries torch + MiniLM resident (hundreds of MB) — a 256/512 MB VM OOMs (§7.D,
+# failure #8). Size it larger; CPU-only torch is already baked into the image.
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "2048mb"
+  processes = ["embedding_worker"]

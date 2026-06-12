@@ -11,7 +11,7 @@ from uuid import uuid4
 
 import pytest
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.domains.recovery import reaper as reaper_module
 from app.domains.recovery.locks import maintenance_advisory_lock
@@ -94,6 +94,38 @@ async def test_advisory_lock_is_singleton(db_session: AsyncSession) -> None:
     # released — re-acquirable now
     async with maintenance_advisory_lock(engine, "stuck_row_reaper") as third:
         assert third is True
+
+
+@pytest.mark.anyio
+async def test_two_concurrent_reapers_exactly_one_proceeds(db_session: AsyncSession) -> None:
+    """MF1 (Stage 4.8): two reaper invocations racing on the same DB → exactly ONE acquires the
+    singleton advisory lock and runs; the other sees it held and no-ops (returns None). Proves the
+    singleton at the reaper-invocation level under genuine concurrency, not just on the lock
+    primitive.
+
+    NOTE on scope: the test DB is a DIRECT connection, so this proves lock exclusivity across
+    sessions. The transaction-pooler hand-back failure mode that motivates routing the lock to
+    DIRECT_DATABASE_URL (adr-041) is only provable against a real pooler — asserted by code review
+    and the 4.8d staging smoke, not here. Stated, not overclaimed.
+    """
+    import asyncio as _asyncio
+
+    engine = db_session.bind
+    factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+    def _never_live(job_type, job_id):  # no Redis in unit tests — nothing is "live"
+        return False
+
+    async def _invoke() -> dict | None:
+        return await run_stuck_row_reaper(
+            session_factory=factory, engine=engine, rq_liveness=_never_live, now=_now()
+        )
+
+    results = await _asyncio.gather(_invoke(), _invoke())
+    proceeded = [r for r in results if r is not None]
+    skipped = [r for r in results if r is None]
+    assert len(proceeded) == 1, results  # exactly one ran
+    assert len(skipped) == 1, results    # exactly one was locked out
 
 
 # ───────────────────────── reaper ─────────────────────────

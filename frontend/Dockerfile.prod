@@ -1,0 +1,46 @@
+# syntax=docker/dockerfile:1
+# Stage 4.8 (B5) — PRODUCTION frontend image for staging (Fly `frontend` app).
+#
+# Deliberately separate from ./Dockerfile (which runs `next dev` for local + e2e). The e2e suite
+# injects NEXT_PUBLIC_E2E_TEST_HOOKS=true at RUNTIME via .env.e2e; a production `output:'standalone'`
+# build INLINES every NEXT_PUBLIC_* at BUILD time, so a single image cannot serve both purposes. Two
+# Dockerfiles, two purposes — mirroring the umbrella spec's "two suites" reframe. This is the §8
+# hygiene boundary: NEXT_PUBLIC_E2E_TEST_HOOKS is never passed here, so window.__xyzE2E is absent.
+#
+# Base is version-pinned; the immutable sha256 digest is captured at first build and recorded in the
+# deploy runbook + the 4.8d artifact-identity block (an offline build cannot resolve a live digest).
+ARG NODE_IMAGE=node:20.18.1-alpine
+
+FROM ${NODE_IMAGE} AS deps
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci
+
+FROM ${NODE_IMAGE} AS builder
+WORKDIR /app
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
+# Build-time NEXT_PUBLIC_* are inlined into the bundle (Decision D1, adr-042). Staging values arrive
+# as build args. NEXT_PUBLIC_E2E_TEST_HOOKS is intentionally absent → the hosted bundle has no
+# token-override hook (§8).
+ARG NEXT_PUBLIC_API_BASE_URL
+ARG NEXT_PUBLIC_SUPABASE_URL
+ARG NEXT_PUBLIC_SUPABASE_ANON_KEY
+ENV NEXT_PUBLIC_API_BASE_URL=${NEXT_PUBLIC_API_BASE_URL}
+ENV NEXT_PUBLIC_SUPABASE_URL=${NEXT_PUBLIC_SUPABASE_URL}
+ENV NEXT_PUBLIC_SUPABASE_ANON_KEY=${NEXT_PUBLIC_SUPABASE_ANON_KEY}
+ENV NEXT_TELEMETRY_DISABLED=1
+RUN npm run build
+
+FROM ${NODE_IMAGE} AS runner
+WORKDIR /app
+ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
+ENV PORT=3000
+ENV HOSTNAME=0.0.0.0
+# standalone output bundles server.js + the minimal node_modules it needs; static assets are NOT
+# included by standalone and must be copied alongside. (No public/ dir in this project.)
+COPY --from=builder /app/.next/standalone ./
+COPY --from=builder /app/.next/static ./.next/static
+EXPOSE 3000
+CMD ["node", "server.js"]

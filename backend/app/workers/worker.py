@@ -10,6 +10,7 @@ from sqlalchemy.pool import NullPool
 
 from app.domains.transcripts.embedding_encoder import validate_model_snapshot
 from app.platform.config import settings
+from app.platform.faults.boot import assert_fault_injection_safe
 from app.workers.queues import AI_QUEUE_NAME, EMBEDDING_QUEUE_NAME, INGESTION_QUEUE_NAME
 
 logger = logging.getLogger(__name__)
@@ -17,6 +18,8 @@ logger = logging.getLogger(__name__)
 
 def main() -> None:
     logging.basicConfig(level=logging.INFO)
+    # Refuse to boot if a fault-injection flag is active in a hosted env (Stage 4.8 §8).
+    assert_fault_injection_safe()
     queue_name = _queue_name()
     if queue_name == EMBEDDING_QUEUE_NAME:
         _validate_embedding_worker_startup()
@@ -50,10 +53,15 @@ async def _startup_recovery_async() -> None:
     order". See [[findings-4.6-gate]] / adr-032; flag for 11.1's parent-side scheduler hooks."""
     from app.platform.db import session as db_session_module
 
-    if db_session_module.DATABASE_URL is None:
+    # Recovery holds a session-level advisory lock across multiple commits, so it must run on the
+    # DIRECT/session endpoint — a transaction pooler would lose the lock when the connection is handed
+    # back (adr-041). Falls back to DATABASE_URL locally (single URL). Read as module attributes so
+    # test_worker_startup_recovery's monkeypatch of DATABASE_URL still resolves.
+    recovery_url = db_session_module.DIRECT_DATABASE_URL or db_session_module.DATABASE_URL
+    if recovery_url is None:
         return
 
-    recovery_engine = create_async_engine(db_session_module.DATABASE_URL, poolclass=NullPool)
+    recovery_engine = create_async_engine(recovery_url, poolclass=NullPool)
     recovery_factory = async_sessionmaker(
         recovery_engine, class_=AsyncSession, expire_on_commit=False
     )
