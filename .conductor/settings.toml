@@ -1,6 +1,22 @@
-"$schema" = "https://conductor.build/schemas/settings.repo.schema.json"
-
 [scripts]
 setup = ".conductor/setup.sh"
 run = ".conductor/run.sh"
 run_mode = "nonconcurrent"
+
+[git]
+archive_on_merge = true
+delete_branch_on_archive = true
+
+[prompts]
+general = """
+This is XYZ LMS — a production-grade Learning Management System.
+Stack: FastAPI, SQLAlchemy 2.0, PostgreSQL + pgvector, Redis, RQ workers, Next.js (App Router), TypeScript, Supabase.
+
+RULES — never violate these:
+1. Follow the spec in knowledge/specs/ for your stage. Done means the done-means checklist passes.
+2. Migrations: use only your assigned block of numbers. Never touch another stage's range.
+3. OpenAPI client: never merge a regenerated client. Regen happens on main after merge only.
+4. Never call LLM directly — always go through LLMGateway.
+5. Never update STATUS.md or roadmap.md on a branch — only on main during merge train.
+6. knowledge/ files: update only your own stage trio on-branch.
+"""
