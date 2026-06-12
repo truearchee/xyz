@@ -28,89 +28,36 @@ export function SectionNotesEditor({
   const isDisabled = disabled || isSaving;
 
   return (
-    <div style={styles.shell}>
-      <label style={styles.label}>
-        <span style={styles.labelText}>Lecturer notes</span>
+    <div className="grid gap-2.5">
+      <label className="grid gap-1.5">
+        <span className="text-xs font-bold text-text-muted">Lecturer notes</span>
         <textarea
           aria-label={`Lecturer notes for ${sectionTitle}`}
           disabled={isDisabled}
           onChange={(event) => setDraft(event.currentTarget.value)}
           rows={5}
-          style={styles.textarea}
+          className="min-h-[118px] w-full resize-y rounded-md border border-border-strong p-2.5 text-sm text-text focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 disabled:bg-surface-muted disabled:opacity-70"
           value={draft}
         />
       </label>
-      <div style={styles.actions}>
+      <div className="flex flex-wrap items-center gap-2.5">
         <button
           disabled={isDisabled}
           onClick={() => onSave(draft.trim() ? draft : null)}
-          style={styles.button}
+          className="min-h-[38px] rounded-md border border-primary bg-primary px-3.5 text-sm font-bold text-on-primary hover:bg-primary-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
           type="button"
         >
           {isSaving ? "Saving notes" : "Save notes"}
         </button>
-        <p aria-live="polite" style={styles.persisted}>
+        <p aria-live="polite" className="m-0 text-xs text-text-muted">
           {initialNotes ? "Persisted notes loaded" : "No notes saved"}
         </p>
       </div>
       {errorMessage ? (
-        <p role="alert" style={styles.error}>
+        <p role="alert" className="m-0 text-xs text-danger-text">
           {errorMessage}
         </p>
       ) : null}
     </div>
   );
 }
-
-const styles = {
-  shell: {
-    display: "grid",
-    gap: 10,
-  },
-  label: {
-    display: "grid",
-    gap: 6,
-  },
-  labelText: {
-    color: "#374151",
-    fontSize: 13,
-    fontWeight: 700,
-  },
-  textarea: {
-    border: "1px solid #cbd5e1",
-    borderRadius: 6,
-    color: "#111827",
-    font: "inherit",
-    minHeight: 118,
-    padding: 10,
-    resize: "vertical",
-    width: "100%",
-  },
-  actions: {
-    alignItems: "center",
-    display: "flex",
-    flexWrap: "wrap",
-    gap: 10,
-  },
-  button: {
-    background: "#174a63",
-    border: "1px solid #174a63",
-    borderRadius: 6,
-    color: "#ffffff",
-    cursor: "pointer",
-    fontSize: 14,
-    fontWeight: 700,
-    minHeight: 38,
-    padding: "0 14px",
-  },
-  persisted: {
-    color: "#4b5563",
-    fontSize: 13,
-    margin: 0,
-  },
-  error: {
-    color: "#b42318",
-    fontSize: 13,
-    margin: 0,
-  },
-} satisfies Record<string, React.CSSProperties>;

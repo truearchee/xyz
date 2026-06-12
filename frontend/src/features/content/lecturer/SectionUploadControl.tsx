@@ -11,6 +11,13 @@ type SectionUploadControlProps = {
   sectionTitle: string;
 };
 
+const inputClass =
+  "min-h-[38px] rounded-md border border-border-strong px-2.5 py-[7px] text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2";
+const btnPrimary =
+  "min-h-[38px] rounded-md border border-primary bg-primary px-3.5 text-sm font-bold text-on-primary hover:bg-primary-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2";
+const btnDisabled =
+  "min-h-[38px] cursor-not-allowed rounded-md border border-border bg-surface-muted px-3.5 text-sm font-bold text-text-muted";
+
 export function SectionUploadControl({
   disabled = false,
   errorMessage,
@@ -39,10 +46,10 @@ export function SectionUploadControl({
     <section
       aria-label={`Upload asset to ${sectionTitle}`}
       data-testid={`section-upload-control-${sectionKey}`}
-      style={styles.shell}
+      className="grid gap-2 border-t border-border pt-3.5"
     >
-      <div style={styles.fields}>
-        <label htmlFor={fileInputId} style={styles.label}>
+      <div className="grid items-end gap-2.5 [grid-template-columns:repeat(auto-fit,minmax(160px,1fr))]">
+        <label htmlFor={fileInputId} className="text-xs font-bold text-text-muted [grid-column:1/-1]">
           PDF file
         </label>
         <input
@@ -53,96 +60,29 @@ export function SectionUploadControl({
             setSelectedFile(event.currentTarget.files?.[0] ?? null);
           }}
           ref={inputRef}
-          style={styles.input}
+          className={inputClass}
           type="file"
         />
         <button
           disabled={disabled || isUploading || !selectedFile}
           onClick={() => void submitUpload()}
-          style={
-            disabled || isUploading || !selectedFile
-              ? styles.disabledButton
-              : styles.button
-          }
+          className={disabled || isUploading || !selectedFile ? btnDisabled : btnPrimary}
           type="button"
         >
           {isUploading ? "Uploading..." : "Upload"}
         </button>
       </div>
       {selectedFile ? (
-        <p style={styles.selected}>Selected: {selectedFile.name}</p>
+        <p className="m-0 break-words text-xs text-text-muted">Selected: {selectedFile.name}</p>
       ) : null}
       {errorMessage ? (
-        <p role="alert" style={styles.error}>
+        <p
+          role="alert"
+          className="m-0 rounded-md border border-danger bg-danger-surface px-2.5 py-2 text-sm leading-snug text-danger-text"
+        >
           {errorMessage}
         </p>
       ) : null}
     </section>
   );
 }
-
-const buttonBase = {
-  borderRadius: 6,
-  fontSize: 14,
-  fontWeight: 700,
-  minHeight: 38,
-  padding: "0 14px",
-} satisfies React.CSSProperties;
-
-const styles = {
-  shell: {
-    borderTop: "1px solid #e5e7eb",
-    display: "grid",
-    gap: 8,
-    paddingTop: 14,
-  },
-  fields: {
-    alignItems: "end",
-    display: "grid",
-    gap: 10,
-    gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
-  },
-  label: {
-    color: "#374151",
-    fontSize: 13,
-    fontWeight: 700,
-    gridColumn: "1 / -1",
-  },
-  input: {
-    border: "1px solid #cbd5e1",
-    borderRadius: 6,
-    fontSize: 14,
-    minHeight: 38,
-    padding: "7px 9px",
-  },
-  button: {
-    ...buttonBase,
-    background: "#174a63",
-    border: "1px solid #174a63",
-    color: "#ffffff",
-    cursor: "pointer",
-  },
-  disabledButton: {
-    ...buttonBase,
-    background: "#e5e7eb",
-    border: "1px solid #d1d5db",
-    color: "#6b7280",
-    cursor: "not-allowed",
-  },
-  selected: {
-    color: "#374151",
-    fontSize: 13,
-    margin: 0,
-    overflowWrap: "anywhere",
-  },
-  error: {
-    background: "#fef2f2",
-    border: "1px solid #fecaca",
-    borderRadius: 6,
-    color: "#7f1d1d",
-    fontSize: 14,
-    lineHeight: 1.45,
-    margin: 0,
-    padding: "8px 10px",
-  },
-} satisfies Record<string, React.CSSProperties>;

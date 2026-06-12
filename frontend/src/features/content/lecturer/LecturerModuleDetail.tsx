@@ -14,6 +14,7 @@ import {
   uploadSectionAsset,
 } from "../../../lib/api/upload";
 import { ForbiddenError, api } from "../../../lib/api/wrapper";
+import { Badge } from "../../../components/ui/Badge";
 import { SectionAssetList } from "./SectionAssetList";
 import { SectionNotesEditor } from "./SectionNotesEditor";
 import { SectionPublishControl } from "./SectionPublishControl";
@@ -238,8 +239,12 @@ export function LecturerModuleDetail({ moduleId }: LecturerModuleDetailProps) {
 
   if (isLoading) {
     return (
-      <section aria-busy="true" aria-label="Lecturer module detail" style={styles.statePanel}>
-        <h1 style={styles.stateTitle}>Loading module sections</h1>
+      <section
+        aria-busy="true"
+        aria-label="Lecturer module detail"
+        className="rounded-lg border border-border p-6"
+      >
+        <h1 className="m-0 font-display text-lg leading-snug text-text">Loading module sections</h1>
       </section>
     );
   }
@@ -249,41 +254,45 @@ export function LecturerModuleDetail({ moduleId }: LecturerModuleDetailProps) {
       <section
         aria-label="Lecturer module detail"
         role={isForbidden ? undefined : "alert"}
-        style={isForbidden ? styles.forbiddenPanel : styles.errorPanel}
+        className={
+          isForbidden
+            ? "rounded-lg border border-warning p-6 text-warning-text"
+            : "rounded-lg border border-danger p-6 text-danger-text"
+        }
       >
-        <h1 style={styles.stateTitle}>
+        <h1 className="m-0 font-display text-lg leading-snug">
           {isForbidden ? "Unauthorized module" : "Unable to load module"}
         </h1>
-        <p style={styles.stateText}>{error}</p>
+        <p className="mt-2 text-sm leading-normal">{error}</p>
       </section>
     );
   }
 
   return (
-    <section aria-labelledby="lecturer-module-title" style={styles.shell}>
-      <header style={styles.header}>
+    <section aria-labelledby="lecturer-module-title" className="grid gap-5">
+      <header className="flex items-start justify-between gap-4">
         <div>
-          <p style={styles.eyebrow}>Lecturer module</p>
-          <h1 id="lecturer-module-title" style={styles.title}>
+          <p className="m-0 mb-1.5 text-xs font-bold uppercase text-text-muted">Lecturer module</p>
+          <h1 id="lecturer-module-title" className="m-0 font-display text-2xl leading-tight text-text">
             {module?.title ?? "Module"}
           </h1>
         </div>
         {module ? (
-          <span style={module.isActive ? styles.activeBadge : styles.inactiveBadge}>
+          <Badge tone={module.isActive ? "success" : "neutral"}>
             {module.isActive ? "Active" : "Inactive"}
-          </span>
+          </Badge>
         ) : null}
       </header>
 
       {sortedSections.length === 0 ? (
-        <section aria-label="Generated sections" style={styles.emptyPanel}>
-          <h2 style={styles.stateTitle}>No generated sections</h2>
+        <section aria-label="Generated sections" className="rounded-lg border border-border p-6">
+          <h2 className="m-0 font-display text-lg leading-snug text-text">No generated sections</h2>
         </section>
       ) : (
         <section
           aria-label="Generated sections"
           data-testid="lecturer-section-list"
-          style={styles.sectionList}
+          className="grid gap-3.5"
         >
           {sortedSections.map(({ assets, detail, listItem }) => {
             const key = sectionKey(detail, listItem.orderIndex);
@@ -292,14 +301,14 @@ export function LecturerModuleDetail({ moduleId }: LecturerModuleDetailProps) {
               <article
                 data-testid={`lecturer-section-row-${key}`}
                 key={detail.id}
-                style={styles.sectionCard}
+                className="grid gap-3.5 rounded-lg border border-border bg-surface-raised p-4 shadow-sm"
               >
-                <header style={styles.sectionHeader}>
+                <header className="flex items-start justify-between gap-3">
                   <div>
-                    <p style={styles.sectionMeta}>
+                    <p className="m-0 mb-1 text-xs font-bold capitalize text-text-muted">
                       Section {listItem.orderIndex} · {formatSectionType(detail.type)}
                     </p>
-                    <h2 style={styles.sectionTitle}>{detail.title}</h2>
+                    <h2 className="m-0 font-display text-lg leading-snug text-text">{detail.title}</h2>
                   </div>
                   <SectionPublishControl
                     errorMessage={publishErrors[detail.id] ?? null}
@@ -363,111 +372,3 @@ export function LecturerModuleDetail({ moduleId }: LecturerModuleDetailProps) {
   );
 }
 
-const badgeBase = {
-  borderRadius: 999,
-  flex: "0 0 auto",
-  fontSize: 13,
-  fontWeight: 700,
-  padding: "4px 10px",
-} satisfies React.CSSProperties;
-
-const styles = {
-  shell: {
-    display: "grid",
-    gap: 18,
-  },
-  header: {
-    alignItems: "flex-start",
-    display: "flex",
-    gap: 16,
-    justifyContent: "space-between",
-  },
-  eyebrow: {
-    color: "#4b5563",
-    fontSize: 13,
-    fontWeight: 700,
-    letterSpacing: 0,
-    margin: "0 0 6px",
-    textTransform: "uppercase",
-  },
-  title: {
-    color: "#111827",
-    fontSize: 26,
-    lineHeight: 1.2,
-    margin: 0,
-  },
-  activeBadge: {
-    ...badgeBase,
-    background: "#e8f5e9",
-    border: "1px solid #a7d8ad",
-    color: "#1f6f35",
-  },
-  inactiveBadge: {
-    ...badgeBase,
-    background: "#f3f4f6",
-    border: "1px solid #d1d5db",
-    color: "#4b5563",
-  },
-  sectionList: {
-    display: "grid",
-    gap: 14,
-  },
-  sectionCard: {
-    border: "1px solid #d7dde8",
-    borderRadius: 8,
-    display: "grid",
-    gap: 14,
-    padding: 16,
-  },
-  sectionHeader: {
-    alignItems: "flex-start",
-    display: "flex",
-    gap: 12,
-    justifyContent: "space-between",
-  },
-  sectionMeta: {
-    color: "#4b5563",
-    fontSize: 13,
-    fontWeight: 700,
-    margin: "0 0 5px",
-    textTransform: "capitalize",
-  },
-  sectionTitle: {
-    color: "#111827",
-    fontSize: 18,
-    lineHeight: 1.25,
-    margin: 0,
-  },
-  emptyPanel: {
-    border: "1px solid #d7dde8",
-    borderRadius: 8,
-    padding: 24,
-  },
-  statePanel: {
-    border: "1px solid #d7dde8",
-    borderRadius: 8,
-    padding: 24,
-  },
-  errorPanel: {
-    border: "1px solid #f0b4b4",
-    borderRadius: 8,
-    color: "#7f1d1d",
-    padding: 24,
-  },
-  forbiddenPanel: {
-    border: "1px solid #fed7aa",
-    borderRadius: 8,
-    color: "#7c2d12",
-    padding: 24,
-  },
-  stateTitle: {
-    fontSize: 18,
-    lineHeight: 1.35,
-    margin: 0,
-  },
-  stateText: {
-    fontSize: 14,
-    lineHeight: 1.5,
-    margin: "8px 0 0",
-  },
-} satisfies Record<string, React.CSSProperties>;
