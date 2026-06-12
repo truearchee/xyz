@@ -1,3 +1,4 @@
-[workspace]
-setup_script = ".conductor/setup.sh"
-run_script = ".conductor/run.sh"
+[scripts]
+setup = ".conductor/setup.sh"
+run = ".conductor/run.sh"
+run_mode = "nonconcurrent"
