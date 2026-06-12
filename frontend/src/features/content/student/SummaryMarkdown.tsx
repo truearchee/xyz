@@ -15,7 +15,7 @@ function SafeLink({ href, children }: { href?: string; children?: React.ReactNod
     return <>{children}</>;
   }
   return (
-    <a href={href} target="_blank" rel="noopener noreferrer">
+    <a href={href} target="_blank" rel="noopener noreferrer" className="text-primary underline">
       {children}
     </a>
   );
@@ -23,7 +23,7 @@ function SafeLink({ href, children }: { href?: string; children?: React.ReactNod
 
 export function SummaryMarkdown({ content, testId }: { content: string; testId?: string }) {
   return (
-    <div data-testid={testId} style={styles.markdown}>
+    <div data-testid={testId} className="text-sm leading-relaxed text-text">
       <Markdown
         disallowedElements={DISALLOWED}
         unwrapDisallowed
@@ -34,11 +34,3 @@ export function SummaryMarkdown({ content, testId }: { content: string; testId?:
     </div>
   );
 }
-
-const styles = {
-  markdown: {
-    color: "#111827",
-    fontSize: 14,
-    lineHeight: 1.55,
-  },
-} satisfies Record<string, React.CSSProperties>;

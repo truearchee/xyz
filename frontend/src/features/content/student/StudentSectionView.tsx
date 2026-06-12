@@ -19,30 +19,33 @@ export function StudentSectionView({
   return (
     <article
       data-testid={`student-section-row-${sectionKey}`}
-      style={styles.sectionCard}
+      className="grid gap-3.5 rounded-lg border border-border bg-surface-raised p-4 shadow-sm"
     >
-      <header style={styles.sectionHeader}>
-        <p style={styles.sectionMeta}>
+      <header className="grid gap-1">
+        <p className="m-0 text-xs font-bold capitalize text-text-muted">
           Section {section.orderIndex} · {formatSectionType(section.type)}
         </p>
-        <h2 style={styles.sectionTitle}>{section.title}</h2>
+        <h2 className="m-0 break-words font-display text-lg leading-snug text-text">{section.title}</h2>
       </header>
 
-      <section aria-label={`Lecturer notes for ${section.title}`} style={styles.notesPanel}>
-        <h3 style={styles.panelTitle}>Lecturer notes</h3>
+      <section
+        aria-label={`Lecturer notes for ${section.title}`}
+        className="grid gap-2 rounded-md border border-border bg-surface-muted p-3"
+      >
+        <h3 className="m-0 text-sm leading-snug text-text">Lecturer notes</h3>
         {section.lecturerNotes ? (
-          <p style={styles.notes}>{section.lecturerNotes}</p>
+          <p className="m-0 whitespace-pre-wrap text-sm leading-normal text-text">{section.lecturerNotes}</p>
         ) : (
-          <p style={styles.empty}>No lecturer notes</p>
+          <p className="m-0 text-sm leading-snug text-text-muted">No lecturer notes</p>
         )}
       </section>
 
-      <section aria-label={`Files for ${section.title}`} style={styles.filesPanel}>
-        <h3 style={styles.panelTitle}>Files</h3>
+      <section aria-label={`Files for ${section.title}`} className="grid gap-2">
+        <h3 className="m-0 text-sm leading-snug text-text">Files</h3>
         {section.assets.length === 0 ? (
-          <p style={styles.empty}>No files available</p>
+          <p className="m-0 text-sm leading-snug text-text-muted">No files available</p>
         ) : (
-          <ul aria-label={`Published files for ${section.title}`} style={styles.assetList}>
+          <ul aria-label={`Published files for ${section.title}`} className="m-0 grid list-none gap-2 p-0">
             {section.assets.map((asset) => (
               <StudentAssetRow
                 asset={asset}
@@ -57,69 +60,3 @@ export function StudentSectionView({
     </article>
   );
 }
-
-const styles = {
-  sectionCard: {
-    border: "1px solid #d7dde8",
-    borderRadius: 8,
-    display: "grid",
-    gap: 14,
-    padding: 16,
-  },
-  sectionHeader: {
-    display: "grid",
-    gap: 5,
-  },
-  sectionMeta: {
-    color: "#4b5563",
-    fontSize: 13,
-    fontWeight: 700,
-    margin: 0,
-    textTransform: "capitalize",
-  },
-  sectionTitle: {
-    color: "#111827",
-    fontSize: 18,
-    lineHeight: 1.25,
-    margin: 0,
-    overflowWrap: "anywhere",
-  },
-  notesPanel: {
-    background: "#f7faf9",
-    border: "1px solid #cfe1da",
-    borderRadius: 6,
-    display: "grid",
-    gap: 8,
-    padding: 12,
-  },
-  filesPanel: {
-    display: "grid",
-    gap: 8,
-  },
-  panelTitle: {
-    color: "#111827",
-    fontSize: 14,
-    lineHeight: 1.35,
-    margin: 0,
-  },
-  notes: {
-    color: "#1f2937",
-    fontSize: 14,
-    lineHeight: 1.5,
-    margin: 0,
-    whiteSpace: "pre-wrap",
-  },
-  empty: {
-    color: "#4b5563",
-    fontSize: 14,
-    lineHeight: 1.45,
-    margin: 0,
-  },
-  assetList: {
-    display: "grid",
-    gap: 8,
-    listStyle: "none",
-    margin: 0,
-    padding: 0,
-  },
-} satisfies Record<string, React.CSSProperties>;
