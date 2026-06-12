@@ -1,0 +1,3 @@
+[workspace]
+setup_script = ".conductor/setup.sh"
+run_script = ".conductor/run.sh"
