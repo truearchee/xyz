@@ -1,0 +1,46 @@
+WEBVTT
+
+00:00:00.000 --> 00:00:18.000
+Welcome to today's lecture, an introduction to relational databases. By the end of this session you should understand what a relational database is, why it is the default choice for structured data, and how its core pieces fit together.
+
+00:00:18.000 --> 00:00:40.000
+At a high level, a relational database stores data in tables. Each table is a collection of rows, and each row is a single record described by a fixed set of columns. This simple, regular shape is what makes the model so powerful and so predictable.
+
+00:00:40.000 --> 00:01:04.000
+Let us start with the key concepts. A table represents one kind of thing — students, courses, or enrolments. A column is one attribute of that thing, such as a student's email. A row is one concrete instance, such as one particular student.
+
+00:01:04.000 --> 00:01:30.000
+The next key concept is the key itself. A primary key is a column, or set of columns, whose value uniquely identifies a row in a table. No two rows may share the same primary key value, and a primary key may never be empty.
+
+00:01:30.000 --> 00:01:54.000
+Related to that is the foreign key. A foreign key is a column in one table whose values must match a primary key in another table. Foreign keys are how the relational model represents relationships between different kinds of things.
+
+00:01:54.000 --> 00:02:20.000
+Now some important definitions you should write down. Normalization is the process of organising columns and tables to reduce duplicated data. A schema is the formal description of the tables, their columns, and the constraints that hold the data together.
+
+00:02:20.000 --> 00:02:46.000
+Another definition: a transaction is a group of changes that succeed or fail together as a single unit. We describe well behaved transactions with the word ACID — atomic, consistent, isolated, and durable. Each letter is a promise the database makes about your data.
+
+00:02:46.000 --> 00:03:14.000
+Let us explain how a query actually retrieves related data. A join combines rows from two tables by matching a foreign key in one table to a primary key in the other. When you join the enrolments table to the students table, each enrolment is paired with the student it belongs to.
+
+00:03:14.000 --> 00:03:40.000
+It helps to explain why constraints matter. A constraint is a rule the database enforces on every write. Because the database checks the rule itself, every application that touches the data inherits the same guarantee, and invalid data simply cannot be stored.
+
+00:03:40.000 --> 00:04:08.000
+Here is a concrete example. Imagine a students table with a primary key of student id, and a courses table with a primary key of course id. An enrolments table then has two foreign keys, one pointing at a student and one pointing at a course, recording which student is enrolled in which course.
+
+00:04:08.000 --> 00:04:34.000
+A second example. Suppose two clerks try to enrol the same student in the same course at the same instant. Because the database wraps each enrolment in a transaction and enforces a uniqueness constraint, exactly one enrolment succeeds and the other is rejected cleanly.
+
+00:04:34.000 --> 00:05:00.000
+For the exam, make sure you can state the difference between a primary key and a foreign key in one sentence each, and explain what each letter of ACID guarantees. These two topics appear on almost every paper, so practise them until they are automatic.
+
+00:05:00.000 --> 00:05:22.000
+Also exam relevant: be ready to read a small schema of three tables and identify the primary keys, the foreign keys, and the relationship each foreign key expresses. We will practise exactly this in the lab.
+
+00:05:22.000 --> 00:05:40.000
+RAW_TRANSCRIPT_SENTINEL_4_8D_DO_NOT_SURFACE. This sentence is an internal marker placed in the raw transcript only; it carries no teaching content and must never appear on any student-facing surface.
+
+00:05:40.000 --> 00:06:00.000
+To summarise the session: relational databases store data in tables of rows and columns; primary and foreign keys connect those tables; constraints and ACID transactions keep the data trustworthy. Read the chapter on normalization before next week.

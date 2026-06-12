@@ -146,6 +146,19 @@ class Settings:
         return self.ENVIRONMENT not in {"production", "staging"}
 
     @property
+    def IS_PRODUCTION(self) -> bool:
+        """True only in real production. DISTINCT from ``not IS_NON_PROD``: staging is NOT production.
+        The known-credential seed-identity bootstrap (4.8b) is gated on this — it must run in STAGING
+        (where the smoke needs the seeded lecturer/student) but never auto-create them in production."""
+        return self.ENVIRONMENT == "production"
+
+    @property
+    def BOOTSTRAP_SEED_IDENTITIES(self) -> bool:
+        """Gate the known-credential LECTURER/STUDENT seed identities (4.8b). Requires this flag AND
+        ``not IS_PRODUCTION``. The real first ADMIN is gated only by its own BOOTSTRAP_ADMIN_* vars."""
+        return self._bool("BOOTSTRAP_SEED_IDENTITIES", default=False)
+
+    @property
     def PIPELINE_FAULT_INJECTION_ENABLED(self) -> bool:
         """Master gate for the Stage 4.6 pipeline fault-injection harness (deterministic forced step
         failure + seeded failed-job records). Default OFF; absent/no-op when off. Distinct from the
@@ -220,6 +233,31 @@ class Settings:
     @property
     def REDIS_URL(self) -> str:
         return os.environ.get("REDIS_URL", "redis://redis:6379/0")
+
+    @property
+    def ENABLE_INTERNAL_SSE_PROBE(self) -> bool:
+        """Stage 4.8c (C1, adr-043): register the admin-only ``/internal/sse-probe`` ONLY when set.
+        Default off → the route does not exist (404). Allowed ON in staging (gated + admin-auth; the
+        4.8d smoke uses it); a future prod build leaves it off."""
+        return self._bool("ENABLE_INTERNAL_SSE_PROBE", default=False)
+
+    # ─── Database (Stage 4.8: dual URL — app via pooler, Alembic + advisory lock via direct) ─────
+    @property
+    def DATABASE_URL(self) -> str | None:
+        return os.environ.get("DATABASE_URL")
+
+    @property
+    def DIRECT_DATABASE_URL(self) -> str | None:
+        """Direct/session endpoint for Alembic + the maintenance advisory lock. Falls back to
+        DATABASE_URL locally (single URL); the Supabase session endpoint in staging (adr-041)."""
+        return os.environ.get("DIRECT_DATABASE_URL") or self.DATABASE_URL
+
+    @property
+    def DATABASE_POOLER(self) -> bool:
+        """True when DATABASE_URL is a transaction pooler (prepared statements off, unique stmt
+        names). EXPLICIT flag — never inferred from the URL/port, since Supabase's direct and
+        transaction-pooler endpoints can both listen on :5432 (a port sniff is a latent bug)."""
+        return self._bool("DATABASE_POOLER", default=False)
 
     # ─── LLM provider + capacity (Stage 4.5) ────────────────────────────────
     @property

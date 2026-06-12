@@ -1,3 +1,5 @@
+import os
+from contextlib import asynccontextmanager
 from typing import Annotated
 from uuid import UUID
 
@@ -26,7 +28,7 @@ from app.domains.recovery.schemas import (
 from app.platform.auth.context import CurrentUserContext
 from app.platform.auth.guards import require_role
 from app.platform.db.models import MaintenanceRun
-from app.platform.db.session import get_db_session
+from app.platform.db.session import create_direct_engine, get_db_session
 from app.platform.storage import StorageProvider, get_storage_provider
 
 
@@ -161,6 +163,23 @@ async def remove_from_module(
 # ─── Stage 4.6c maintenance triggers (admin-only; recovery jobs are otherwise startup-driven) ────
 
 
+@asynccontextmanager
+async def _maintenance_lock_engine(db: AsyncSession):
+    """Yield the engine the maintenance advisory lock is held on. The lock is session-level and spans
+    the whole reap (multiple commits), so over a transaction pooler it would be lost when a connection
+    is handed back (adr-041). When a distinct DIRECT_DATABASE_URL is configured (staging), use a
+    dedicated direct NullPool engine; otherwise the request engine (db.bind) is already a real session
+    (local/test) and is reused unchanged. The reap WORK still runs through db.bind via the factory."""
+    if os.environ.get("DIRECT_DATABASE_URL"):
+        direct_engine = create_direct_engine()
+        try:
+            yield direct_engine
+        finally:
+            await direct_engine.dispose()
+    else:
+        yield db.bind
+
+
 async def _load_run(db: AsyncSession, result: dict | None) -> MaintenanceRunRead:
     if result is None:
         # Another instance holds the singleton advisory lock → this trigger is a no-op.
@@ -180,12 +199,13 @@ async def reap_stuck_rows(
     payload: ReapStuckRowsRequest | None = None,
 ) -> MaintenanceRunRead:
     factory = async_sessionmaker(db.bind, expire_on_commit=False)
-    result = await run_stuck_row_reaper(
-        session_factory=factory,
-        engine=db.bind,
-        triggered_by_user_id=current_user.user_id,
-        report_only=bool(payload.report_only) if payload else False,
-    )
+    async with _maintenance_lock_engine(db) as lock_engine:
+        result = await run_stuck_row_reaper(
+            session_factory=factory,
+            engine=lock_engine,
+            triggered_by_user_id=current_user.user_id,
+            report_only=bool(payload.report_only) if payload else False,
+        )
     return await _load_run(db, result)
 
 
@@ -197,11 +217,12 @@ async def reconcile_storage(
     payload: ReconcileStorageRequest | None = None,
 ) -> MaintenanceRunRead:
     factory = async_sessionmaker(db.bind, expire_on_commit=False)
-    result = await run_storage_reconciliation(
-        storage_provider,
-        session_factory=factory,
-        engine=db.bind,
-        triggered_by_user_id=current_user.user_id,
-        mode=payload.mode if payload else "report_only",
-    )
+    async with _maintenance_lock_engine(db) as lock_engine:
+        result = await run_storage_reconciliation(
+            storage_provider,
+            session_factory=factory,
+            engine=lock_engine,
+            triggered_by_user_id=current_user.user_id,
+            mode=payload.mode if payload else "report_only",
+        )
     return await _load_run(db, result)
