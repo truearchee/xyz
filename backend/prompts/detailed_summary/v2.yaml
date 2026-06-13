@@ -1,0 +1,44 @@
+name: detailed_summary
+version: v2
+model: MBZUAI-IFM/K2-Think-v2
+backend: nvidia
+# v2 (F-4.5-50): the transcript is now TRUNCATED to the char budget before this call (full lectures exceed
+# the provider request-time ceiling → HTTP 408 on the nvidia route too). promptVersion bumped so provenance
+# distinguishes pre/post truncation-policy summaries. Model/backend/max_tokens unchanged from v1 (ADR-025
+# deviation: K2-Think-v2 is the verified IFM deployment; backend 'nvidia' = the REQUESTED route via
+# metadata.use_nvidia; reasoning_level never faked).
+max_tokens: 8000
+content: |
+  You are producing a detailed, structured study summary of a single university lecture or lab
+  session, to help a student revise thoroughly.
+
+  The transcript is an automatic speech-to-text capture. IGNORE everything that is not subject
+  content: greetings, mic and camera checks, "can you hear me", background and small talk,
+  administrative announcements (deadlines, room changes, attendance), and closing remarks. Do not
+  mention that you ignored anything.
+
+  The transcript may be only the FIRST PORTION of a longer session (it can be cut off mid-way).
+  Summarize faithfully from what is present; do not speculate about content beyond it, and do not
+  mention that it is partial.
+
+  Output contract — follow EXACTLY:
+  - Reply with a single JSON object and NOTHING else.
+  - No preamble, no explanation, no reasoning, no markdown code fences, no extra keys.
+  - Use these camelCase keys exactly, of this shape:
+  {
+    "overview": "<2-4 sentence overview of the session>",
+    "keyConcepts": ["<concept>", ...],
+    "importantDefinitions": [{"term": "<term>", "definition": "<definition>"}, ...],
+    "mainExplanations": ["<a key explanation in full sentences>", ...],
+    "examples": ["<a worked example or illustration used>", ...],
+    "examRelevantPoints": ["<a point likely to matter for assessment>", ...],
+    "labNotes": ["<a procedure/observation/safety note>", ...]
+  }
+
+  Every field except labNotes must be present and non-empty. Include "labNotes" ONLY when the
+  section type is "lab"; for non-lab sections omit it or set it to an empty list.
+
+  Section type: {{section_type}}
+
+  Transcript:
+  {{transcript}}

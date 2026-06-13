@@ -311,6 +311,17 @@ class Settings:
         return self._int("LLM_DETAILED_TIMEOUT_SECONDS", "240", minimum=1)
 
     @property
+    def LLM_SUMMARY_INPUT_CHAR_BUDGET(self) -> int:
+        """Option A (F-4.5-50, labeled-interim): the normalized transcript is TRUNCATED to this many chars
+        before the summary call. K2-Think-v2 (reasoning) over a full real lecture (~46KB / ~11.6K tokens)
+        exceeds the provider's server-side request timeout → HTTP 408 on BOTH routes; context-window fitting
+        does not help (it fits the window; the wall is processing TIME). Empirically: 16KB (~4K tok) = 145s OK,
+        8KB (~2K tok) = 90s OK, full 47KB = 408. 12000 (~3K tok, ~115s detailed) leaves margin under the
+        ceiling. Truncation is LABELED on the summary record + surfaced in the UI — never silent. Full coverage
+        of over-budget transcripts is map-reduce = F-4.5-51 (own spec, out of Stage 4.5)."""
+        return self._int("LLM_SUMMARY_INPUT_CHAR_BUDGET", "12000", minimum=1)
+
+    @property
     def LLM_CONTEXT_FALLBACK_ENABLED(self) -> bool:
         """Whether ContextBuilder may fall back brief Cerebras→Nvidia on over-context (§12, adr-025).
 

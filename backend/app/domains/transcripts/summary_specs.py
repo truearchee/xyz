@@ -32,7 +32,7 @@ class SummarySpec:
 BRIEF = SummarySpec(
     job_type="generate_brief_summary",
     feature="summary_brief",
-    prompt_key=PromptKey("brief_summary", "v1"),
+    prompt_key=PromptKey("brief_summary", "v2"),  # v2: transcript truncated to budget (F-4.5-50)
     output_schema=BriefSummary,
     summary_type="brief",
     content_schema_version=BRIEF_SCHEMA_VERSION,
@@ -40,7 +40,7 @@ BRIEF = SummarySpec(
 DETAILED = SummarySpec(
     job_type="generate_detailed_summary",
     feature="summary_detailed",
-    prompt_key=PromptKey("detailed_summary", "v1"),
+    prompt_key=PromptKey("detailed_summary", "v2"),  # v2: transcript truncated to budget (F-4.5-50)
     output_schema=DetailedSummary,
     summary_type="detailed_study",
     content_schema_version=DETAILED_SCHEMA_VERSION,

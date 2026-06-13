@@ -30,6 +30,9 @@ class StudentSummarySlot(CamelModel):
 
     state: str  # ready | generating | unavailable | not_applicable
     content: str | None = None
+    # Option A (F-4.5-50): true when this summary was generated from a TRUNCATED transcript (the full
+    # lecture exceeded the provider's single-call ceiling). Surfaced in the inline frame — never silent.
+    truncated: bool = False
 
 
 class StudentSectionSummariesContent(CamelModel):

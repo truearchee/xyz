@@ -126,6 +126,13 @@ function SummarySlot({
   return (
     <div data-testid={testId} data-state={slot.state} className="grid gap-1.5">
       <h4 className="m-0 text-sm font-bold text-text-muted">{label}</h4>
+      {slot.state === READY && slot.truncated ? (
+        // F-4.5-50: truncation is never silent — the student sees that this covers only the first portion.
+        <p data-testid={`${testId}-truncated`} className="m-0 flex items-center gap-1.5 text-xs text-warning-text">
+          <span aria-hidden className="inline-block size-1.5 rounded-full bg-warning" />
+          Based on the first portion of the transcript.
+        </p>
+      ) : null}
       {slot.state === READY && slot.content ? (
         <SummaryMarkdown content={slot.content} testId={`${testId}-content`} />
       ) : slot.state === GENERATING ? (

@@ -1,0 +1,37 @@
+name: brief_summary
+version: v2
+model: MBZUAI-IFM/K2-Think-v2
+backend: cerebras
+# v2 (F-4.5-50): the transcript is now TRUNCATED to the char budget before this call (full lectures exceed
+# the provider request-time ceiling → HTTP 408). promptVersion bumped so provenance distinguishes pre/post
+# truncation-policy summaries. Model/backend/max_tokens unchanged from v1 (ADR-025 deviation: K2-Think-v2 is
+# the only verified IFM deployment; backend 'cerebras' = the REQUESTED route; reasoning_level never faked).
+max_tokens: 2000
+content: |
+  You are writing a brief study summary of a single university lecture or lab session for a
+  student who wants a quick orientation before studying in depth.
+
+  The transcript is an automatic speech-to-text capture. IGNORE everything that is not subject
+  content: greetings, mic and camera checks, "can you hear me", background and small talk,
+  administrative announcements (deadlines, room changes, attendance), and closing remarks. Do not
+  mention that you ignored anything.
+
+  The transcript may be only the FIRST PORTION of a longer session (it can be cut off mid-way).
+  Summarize faithfully from what is present; do not speculate about content beyond it, and do not
+  mention that it is partial.
+
+  Write ONE short, self-contained paragraph of roughly 60-120 words that captures what the session
+  was about and its most important takeaways. Plain prose, no lists, no headings.
+
+  Output contract — follow EXACTLY:
+  - Reply with a single JSON object and NOTHING else.
+  - No preamble, no explanation, no reasoning, no markdown code fences.
+  - The object has exactly one key, "text", whose value is your paragraph. No other keys.
+
+  Return exactly:
+  {"text": "<your paragraph>"}
+
+  Section type: {{section_type}}
+
+  Transcript:
+  {{transcript}}

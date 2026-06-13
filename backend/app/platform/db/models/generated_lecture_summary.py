@@ -4,9 +4,11 @@ from datetime import datetime
 from uuid import UUID
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     DateTime,
     ForeignKey,
+    Integer,
     UniqueConstraint,
     Text,
     text,
@@ -74,6 +76,13 @@ class GeneratedLectureSummary(Base):
     reasoning_level: Mapped[str | None] = mapped_column(Text)
     source_transcript_checksum: Mapped[str] = mapped_column(Text, nullable=False)
     input_hash: Mapped[str] = mapped_column(Text, nullable=False)
+    # Option A (F-4.5-50): the transcript was truncated to the char budget before generation (full lectures
+    # 408 the provider). Surfaced in the UI ("based on the first portion …") — truncation is never silent.
+    truncated: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false")
+    )
+    source_char_count: Mapped[int | None] = mapped_column(Integer)
+    summarized_char_count: Mapped[int | None] = mapped_column(Integer)
     ai_request_log_id: Mapped[UUID] = mapped_column(
         PostgresUUID(as_uuid=True),
         ForeignKey("ai_request_logs.id"),

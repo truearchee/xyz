@@ -100,9 +100,14 @@ quiz/glossary/assistant; the "Save notes no-feedback" nit is a separate small fi
 - **F-C4 (frontend nit)** — "Save notes" gives no UI confirmation (lecturer side). **OPEN — out of this
   corrective's scope**, logged for a future small frontend pass.
 - **F-C5 (Stage 4.5 / ops, reachability)** — was BLOCKED (placeholder key). **RESOLVED 2026-06-13:** real key
-  placed in `.env`; `K2-Think-v2` live-verified end-to-end (both routes); real grounded summaries produced +
-  validator-conformant. Workstream A closed as **branch 1 (no-op)** — no code change needed. F-4.5-27 closed.
-  Evidence: [[steps/stage-04/4.5-real-provider-smoke]]. **Residual:** the exposed key must be ROTATED (§7).
+  placed in `.env`; `K2-Think-v2` live-verified. F-4.5-27 closed. Evidence: [[steps/stage-04/4.5-real-provider-smoke]].
+- **F-4.5-50 (correction to the above)** — the first smoke verified only a ~150-token fixture. The REAL
+  Checkpoint A lecture (~47KB/~11.6K tok) 408'd on BOTH routes (single-call size ceiling). Resolved via
+  **Option A (truncate input to 12000 chars, labeled, promptVersion v2; [[decisions/adr-050-summary-input-truncation]])**:
+  both lectures now regenerate real, grounded (functions/limits), validator-conformant, **no 408s**, with the
+  `truncated` flag surfaced in the inline frame. Side-fixes kept: queues.py RQ job_timeout (> HTTP timeout),
+  §3A gate-only deterministic overlay + guard. Full-coverage map-reduce = **F-4.5-51** (own spec, out of 4.5).
+- **Residual:** the exposed key must be ROTATED (§7).
 
 ## Workflow (§8)
 Each workstream gets its own sub-spec → implementation plan → developer approval BEFORE any source edits.

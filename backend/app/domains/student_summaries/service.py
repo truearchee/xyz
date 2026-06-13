@@ -127,9 +127,11 @@ async def get_student_section_summaries(
             section, inputs, summary_type=summary_type, summary_row=summary_row, step_status=step_status
         )
         content = None
+        truncated = False
         if result.state == READY and summary_row is not None:
             content = summary_to_markdown(summary_type, summary_row.content_json)
-        return StudentSummarySlot(state=result.state, content=content)
+            truncated = bool(summary_row.truncated)  # F-4.5-50: label first-portion summaries (never silent)
+        return StudentSummarySlot(state=result.state, content=content, truncated=truncated)
 
     return StudentSectionSummariesRead(
         section_id=section.id,

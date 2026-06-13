@@ -86,6 +86,9 @@ class _SummaryContext:
     normalized_text: str
     input_hash: str
     attempts: int
+    truncated: bool
+    source_char_count: int
+    summarized_char_count: int
 
 
 def _now() -> datetime:
@@ -99,6 +102,24 @@ def _summary_idempotency_key(transcript: Transcript, job_type: str) -> str:
 def _normalized_transcript(segments: list[TranscriptSegment]) -> str:
     parts = [normalize_segment_text(segment.text) for segment in segments]
     return " ".join(part for part in parts if part).strip()
+
+
+def _truncate_for_summary(normalized_text: str) -> tuple[str, bool, int, int]:
+    """Option A (F-4.5-50): after structural normalization, cap the transcript at the char budget so the
+    real provider call stays under its server-side request-time ceiling (full lectures → HTTP 408 both
+    routes). Cuts at a clean sentence/word boundary, never mid-word. Returns
+    (kept_text, truncated, source_char_count, summarized_char_count) — `truncated` is LABELED on the record
+    + surfaced in the UI, never silent. Over-budget = first-portion only; full coverage is map-reduce (F-4.5-51)."""
+    budget = settings.LLM_SUMMARY_INPUT_CHAR_BUDGET
+    source_chars = len(normalized_text)
+    if source_chars <= budget:
+        return normalized_text, False, source_chars, source_chars
+    head = normalized_text[:budget]
+    cut = head.rfind(". ")          # prefer a sentence boundary in the back half
+    if cut < budget // 2:
+        cut = head.rfind(" ")       # else the last word boundary
+    kept = (head[: cut + 1] if cut > 0 else head).strip()
+    return kept, True, source_chars, len(kept)
 
 
 def _summary_input_hash(normalized_text: str) -> str:
@@ -364,9 +385,11 @@ async def _claim_summary_job(
                     .order_by(TranscriptSegment.sequence_number)
                 )
             ).scalars().all()
-            normalized = _normalized_transcript(list(segments))
-            if not normalized:
+            normalized_full = _normalized_transcript(list(segments))
+            if not normalized_full:
                 raise SummaryGenerationError("no transcript text available")
+            # Option A (F-4.5-50): truncate the cleaned transcript to the char budget BEFORE the model call.
+            normalized, truncated, source_chars, kept_chars = _truncate_for_summary(normalized_full)
 
             return _SummaryContext(
                 transcript_id=transcript.id,
@@ -376,6 +399,9 @@ async def _claim_summary_job(
                 normalized_text=normalized,
                 input_hash=_summary_input_hash(normalized),
                 attempts=job.attempts,
+                truncated=truncated,
+                source_char_count=source_chars,
+                summarized_char_count=kept_chars,
             )
 
 
@@ -436,6 +462,9 @@ async def _persist_summary_success(
                     input_hash=context.input_hash,
                     ai_request_log_id=log.id,
                     created_by_ingestion_job_id=ingestion_job_id,
+                    truncated=context.truncated,
+                    source_char_count=context.source_char_count,
+                    summarized_char_count=context.summarized_char_count,
                 )
                 .on_conflict_do_nothing(constraint="uq_gen_summaries_provenance")
             )
