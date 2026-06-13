@@ -1,7 +1,7 @@
 # Log
 
 Append-only. Newest at the bottom. One line per entry.
-Format: `YYYY-MM-DD  [type]  summary  (#stage.session)` — type: spec | plan | report | decision | fix | note
+Format: `YYYY-MM-DD  [type]  summary  (#stage.session)` — type: spec | plan | report | decision | fix | note | blocker | docs
 
 ---
 

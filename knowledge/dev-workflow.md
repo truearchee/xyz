@@ -106,6 +106,47 @@ When work is replaced rather than finished:
 
 ---
 
+## Vocabulary & conventions
+
+> Canonicalized 2026-06-13 (knowledge-audit close-out). The three-artifact templates cover linear sessions;
+> the 4.3.5 recovery block + supplemental gates needed documented extensions. Per the sacred rule
+> (code/reality wins), these record the **established** vocabulary rather than churn 80+ historical files to a
+> narrower literal.
+
+### Log entry types (`log.md`)
+`spec | plan | report | decision | fix | note | blocker | docs` — matches the `log.md` Format header.
+`blocker` = a session halted on an unresolved finding; `docs` = a knowledge-only consolidation/maintenance entry.
+
+### Document `type:` values
+- **Canonical (linear sessions):** `session-spec`, `session-plan`, `session-report`.
+- **Accepted extensions** (recovery / supplemental / consolidation — intentional structure the linear template
+  can't express): `checkpoint-spec`/`-plan`/`-report`, `repair-session-spec`/`-plan`/`-report`,
+  `supplemental-gate-spec`/`-plan`/`-report`, `final-report` (a consolidated canonical report; carries
+  `canonical: true`), `regression-report`, `fixture-report`, `findings`, `architecture`, `adr`, `scope-spec`,
+  `stage-spec`. New work uses the canonical three unless it is genuinely one of these.
+
+### Accepted extra frontmatter fields
+Beyond the template set, accepted where meaningful: `checkpoint`, `parent_session`, `depends_on`, `blocks`,
+`unblocks`, `closes`, `satisfies_stage_gate`, `predecessor`, `recovery_plan`, `baseline_commit`, `roadmap`,
+`canonical`, `findings`, `superseded-by`, `inputs`, `umbrella`, `scope-spec`, `note`, `related-session`, and
+`historical_*_report:` pointers. Reuse these; do not invent new fields casually.
+
+### `stage:` field
+A bare number for a whole stage (`stage: 4`) — the dominant form across 80+ files — or a **quoted string** for
+a sub-stage / recovery identifier that is not a plain number (`stage: "4.3.5"`). Both bare and quoted
+whole-stage forms appear historically and are accepted; do not mass-rewrite them.
+
+### Review / audit + roadmap docs
+Project-level review/audit docs (`CODEBASE_REVIEW.md`, `KNOWLEDGE_REVIEW.md`) and `roadmap.md` are
+**cross-cutting knowledge docs that live in `knowledge/`**, alongside `STATUS.md` / `log.md` / `open-questions.md`.
+
+### `specs/recovery/`
+`knowledge/specs/recovery/client-edge-recovery-plan.md` is a deliberate exception: the cross-block 4.3.5
+recovery STRATEGY doc (predates the sub-sessions; no single plan/report sibling). Not a session spec → lives
+outside the `stage-NN/` session tree. Documented exception, not drift.
+
+---
+
 ## Cross-cutting files
 
 | File | Rule |
