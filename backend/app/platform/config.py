@@ -369,6 +369,17 @@ class Settings:
         return value
 
     @property
+    def LLM_DETAILED_MAP_REDUCE_CEILING_SECONDS(self) -> int:
+        """Wall-clock CEILING for the map-reduce detailed summary: up to MAX_MAP_UNITS sequential map calls
+        + a bounded tiered reduce (≤ MAP_UNITS reduce calls across tiers), each capped at the detailed HTTP
+        timeout, + a buffer. SINGLE source of truth scaling with MAX_MAP_UNITS (the SAME setting the
+        partition cost-guard reads) so the RQ work-horse ``job_timeout`` (queues.py) AND the stuck-row
+        reaper threshold (recovery/reaper.py) move in LOCK-STEP with the partition cap — raising the cap
+        raises both, never a stale flat number. A ceiling, not the expected run (a real ~60-min lecture is
+        ~9 units, ~20 min). F-4.5.1a-3."""
+        return 2 * self.LLM_SUMMARY_MAX_MAP_UNITS * self.LLM_DETAILED_TIMEOUT_SECONDS + 120
+
+    @property
     def LLM_CONTEXT_FALLBACK_ENABLED(self) -> bool:
         """Whether ContextBuilder may fall back brief Cerebras→Nvidia on over-context (§12, adr-025).
 

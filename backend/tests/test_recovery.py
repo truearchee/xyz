@@ -623,3 +623,32 @@ async def test_admin_can_trigger_reconciliation(
     )
     assert response.status_code == 200
     assert response.json()["runType"] == "storage_reconciliation"
+
+
+# ── F-4.5.1a-3: the summary reaper threshold scales with MAX_MAP_UNITS ──────────
+
+
+def test_detailed_summary_reaper_threshold_scales_with_max_map_units(monkeypatch):
+    """The map-reduce detailed job RUNS for up to MAX_MAP_UNITS sequential calls; the reaper threshold
+    must SCALE with that cap (not be a flat number), and must equal the RQ job_timeout (one ceiling, no
+    drift). The brief shares it (it waits QUEUED for the detailed under the 4.5.1b DAG)."""
+    from app.platform.config import settings
+    from app.workers.queues import _detailed_summary_job_timeout
+
+    monkeypatch.setenv("LLM_DETAILED_TIMEOUT_SECONDS", "240")
+    monkeypatch.setenv("LLM_SUMMARY_MAX_MAP_UNITS", "5")
+    small = reaper_module._threshold_seconds("generate_detailed_summary")
+    monkeypatch.setenv("LLM_SUMMARY_MAX_MAP_UNITS", "20")
+    large = reaper_module._threshold_seconds("generate_detailed_summary")
+
+    # Scales with the cap (4× the units → ~4× the threshold), not a bigger flat number.
+    assert large == 2 * 20 * 240 + 120
+    assert small == 2 * 5 * 240 + 120
+    assert large > small
+    # The brief shares the ceiling (queued-waiting for the detailed); both dwarf the old flat 900s.
+    assert reaper_module._threshold_seconds("generate_brief_summary") == large
+    assert large > settings.REAPER_THRESHOLD_SUMMARY_SECONDS
+    # The reaper threshold and the RQ work-horse timeout read the SAME ceiling — they cannot drift.
+    assert _detailed_summary_job_timeout() == large
+    # Non-summary thresholds are unchanged (still their own per-step config).
+    assert reaper_module._threshold_seconds("embed") == settings.REAPER_THRESHOLD_EMBED_SECONDS

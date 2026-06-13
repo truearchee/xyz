@@ -47,7 +47,15 @@ def _threshold_seconds(job_type: str) -> int:
         return settings.REAPER_THRESHOLD_CHUNK_SECONDS
     if job_type == "embed":
         return settings.REAPER_THRESHOLD_EMBED_SECONDS
-    return settings.REAPER_THRESHOLD_SUMMARY_SECONDS  # brief / detailed
+    # Summary jobs (4.5.1b DAG): BOTH the detailed AND the brief use the map-reduce ceiling, which scales
+    # with MAX_MAP_UNITS (F-4.5.1a-3). The DETAILED legitimately RUNS that long (N sequential map calls +
+    # reduce); the BRIEF legitimately sits QUEUED that long, waiting for the detailed to fork it (ADR-052).
+    # A flat threshold would reap a healthy in-flight detailed OR a healthy waiting brief. max() floors at
+    # the historical plain summary threshold so a tiny MAX_MAP_UNITS never drops below it.
+    return max(
+        settings.REAPER_THRESHOLD_SUMMARY_SECONDS,
+        settings.LLM_DETAILED_MAP_REDUCE_CEILING_SECONDS,
+    )
 
 
 def _reenqueue(job_type: str, *, transcript_id: UUID, job_id: UUID) -> None:
