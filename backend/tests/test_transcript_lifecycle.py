@@ -30,6 +30,11 @@ from app.domains.transcripts.summary_eligibility import (
     get_activation_ready_summaries,
     is_summary_eligible,
 )
+from app.domains.transcripts.summary_specs import (
+    BRIEF,
+    DETAILED,
+    EXPECTED_PROMPT_VERSION_BY_SUMMARY_TYPE,
+)
 from app.platform.db.models import (
     AIRequestLog,
     GeneratedLectureSummary,
@@ -107,14 +112,17 @@ async def _create_summary_row(
     summary_type: str,
     feature: str,
     job: IngestionJob,
-    prompt_version: str = "v1",
+    prompt_version: str | None = None,
     source_checksum: str | None = None,
 ) -> GeneratedLectureSummary:
+    # Default to the CURRENT expected version for this summary type (brief / map-reduce reduce) so the
+    # row is activation-eligible without a hardcoded literal that rots on a version bump (4.5.1a finding).
+    resolved_version = prompt_version or EXPECTED_PROMPT_VERSION_BY_SUMMARY_TYPE.get(summary_type, "v1")
     log = AIRequestLog(
         ingestion_job_id=job.id,
         feature=feature,
         model_id="m",
-        prompt_version=prompt_version,
+        prompt_version=resolved_version,
         prompt_content_hash="pch",
         rendered_prompt_hash="rph",
         input_content_hash="ich",
@@ -140,7 +148,7 @@ async def _create_summary_row(
         ),
         content_schema_version="v1",
         model_id="m",
-        prompt_version=prompt_version,
+        prompt_version=resolved_version,
         prompt_content_hash="pch",
         backend_used="cerebras",
         source_transcript_checksum=source_checksum or transcript.checksum,
@@ -157,12 +165,22 @@ async def _make_summarized(
     session: AsyncSession,
     transcript: Transcript,
     *,
-    prompt_version: str = "v1",
+    prompt_version: str | None = None,
     summary_checksum: str | None = None,
 ) -> None:
     """Build the end-state that makes overall_state == 'summarized' (embedded chunk + 3 done jobs +
-    brief & detailed summary rows)."""
+    brief & detailed summary rows).
+
+    By default each summary row is stamped with the CURRENT expected prompt version for its type
+    (brief = brief prompt, detailed = the map-reduce REDUCE prompt) so the rows are activation-eligible
+    — tracking ``EXPECTED_PROMPT_VERSION_BY_SUMMARY_TYPE`` rather than a hardcoded literal that silently
+    rots whenever a prompt version is bumped (the 4.5.1a finding: the 4.5 v2 bump left this at "v1").
+    Pass ``prompt_version`` to force a specific (e.g. stale) version for staleness tests."""
     now = _now()
+    brief_version = prompt_version or EXPECTED_PROMPT_VERSION_BY_SUMMARY_TYPE[BRIEF.summary_type]
+    detailed_version = (
+        prompt_version or EXPECTED_PROMPT_VERSION_BY_SUMMARY_TYPE[DETAILED.summary_type]
+    )
     segment = TranscriptSegment(
         transcript_id=transcript.id, sequence_number=0, start_ms=0, end_ms=1000, text="hello"
     )
@@ -220,7 +238,7 @@ async def _make_summarized(
         summary_type="brief",
         feature="summary_brief",
         job=brief_job,
-        prompt_version=prompt_version,
+        prompt_version=brief_version,
         source_checksum=summary_checksum,
     )
     await _create_summary_row(
@@ -229,7 +247,7 @@ async def _make_summarized(
         summary_type="detailed_study",
         feature="summary_detailed",
         job=detailed_job,
-        prompt_version=prompt_version,
+        prompt_version=detailed_version,
         source_checksum=summary_checksum,
     )
 
