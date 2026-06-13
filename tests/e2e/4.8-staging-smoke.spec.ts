@@ -246,8 +246,11 @@ test("4.8d staging smoke — membership+publish visibility gate (hook-free)", as
     const studentContext = await browser.newContext();
     await seedBrowserSession(studentContext, env, studentSession);
     const studentPage = await studentContext.newPage();
-    await studentPage.goto(`/student/modules/${moduleId}/sections/${sectionId}`);
-    await expect(studentPage.getByTestId("student-section-detail")).toBeVisible({ timeout: 30_000 });
+    // Post-4.9 Workstream B: summaries are now inline on the module page; the separate section page redirects
+    // here. Assert the published-section list renders, then run the no-transcript-text checks on it. (HOSTED
+    // gate — re-verify on the next staging run; this spec is testIgnore'd from the local active suite.)
+    await studentPage.goto(`/student/modules/${moduleId}`);
+    await expect(studentPage.getByTestId("student-section-list")).toBeVisible({ timeout: 30_000 });
     const pageText = await studentPage.locator("body").innerText();
     expect(pageText).not.toContain(SENTINEL);
     expect(pageText).not.toContain("sentinel-lecture.vtt");

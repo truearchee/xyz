@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import {
@@ -13,16 +12,10 @@ import { ForbiddenError, api } from "../../../lib/api/wrapper";
 import { Badge } from "../../../components/ui/Badge";
 import { StudentSectionView } from "./StudentSectionView";
 
-// Coarse per-section summary flag (§8.1) — one batched call, no per-section fan-out.
-// Tonal token classes (status-by-text-label; AA-safe at body size).
-const SUMMARY_FLAG_BASE = "inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-bold";
-const SUMMARY_BADGE: Record<string, { label: string; cls: string } | null> = {
-  ready: { label: "Summaries ready", cls: "border-success bg-success-surface text-success-text" },
-  partial: { label: "Summaries partly ready", cls: "border-info bg-info-surface text-info-text" },
-  generating: { label: "Summaries generating", cls: "border-info bg-info-surface text-info-text" },
-  none: { label: "No summary yet", cls: "border-border bg-surface-muted text-text-muted" },
-  not_applicable: null,
-};
+// Post-4.9 Workstream B: the per-section summary BADGE + the "View summaries →" hop are gone — each section
+// block now renders the brief + detailed summaries inline (via StudentSectionView → SectionSummaries), so the
+// student reads everything in one block on this page. The coarse `studentSummaries.listSections` flag call is
+// therefore no longer fetched here (the inline block's own §4.3 state is the signal).
 
 type StudentModuleDetailProps = {
   moduleId: string;
@@ -66,7 +59,6 @@ type SectionRecord = {
 export function StudentModuleDetail({ moduleId }: StudentModuleDetailProps) {
   const [module, setModule] = useState<ModuleDetail | null>(null);
   const [sections, setSections] = useState<SectionRecord[]>([]);
-  const [summaryState, setSummaryState] = useState<Map<string, string>>(new Map());
   const [error, setError] = useState<string | null>(null);
   const [isForbidden, setIsForbidden] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -84,10 +76,9 @@ export function StudentModuleDetail({ moduleId }: StudentModuleDetailProps) {
     setIsForbidden(false);
 
     try {
-      const [moduleDetail, sectionList, summaryList] = await Promise.all([
+      const [moduleDetail, sectionList] = await Promise.all([
         api.modules.get(moduleId),
         api.content.listSections(moduleId),
-        api.studentSummaries.listSections(moduleId),
       ]);
       const sectionDetails = await Promise.all(
         sectionList.map(async (section) => {
@@ -101,7 +92,6 @@ export function StudentModuleDetail({ moduleId }: StudentModuleDetailProps) {
 
       setModule(moduleDetail);
       setSections(sectionDetails);
-      setSummaryState(new Map(summaryList.map((item) => [item.id, item.summariesState])));
     } catch (caught) {
       if (caught instanceof ForbiddenError) {
         setIsForbidden(true);
@@ -175,33 +165,9 @@ export function StudentModuleDetail({ moduleId }: StudentModuleDetailProps) {
           data-testid="student-section-list"
           className="grid gap-3.5"
         >
-          {sortedSections.map(({ detail }) => {
-            const badge = SUMMARY_BADGE[summaryState.get(detail.id) ?? "none"] ?? null;
-            return (
-              <div key={detail.id} className="grid gap-2">
-                <StudentSectionView moduleId={moduleId} section={detail} />
-                <div className="flex items-center justify-between gap-3">
-                  {badge ? (
-                    <span
-                      data-testid={`student-section-summary-flag-${detail.id}`}
-                      className={`${SUMMARY_FLAG_BASE} ${badge.cls}`}
-                    >
-                      {badge.label}
-                    </span>
-                  ) : (
-                    <span />
-                  )}
-                  <Link
-                    href={`/student/modules/${moduleId}/sections/${detail.id}`}
-                    data-testid={`student-section-open-${detail.id}`}
-                    className="text-xs font-bold text-primary no-underline hover:underline"
-                  >
-                    View summaries →
-                  </Link>
-                </div>
-              </div>
-            );
-          })}
+          {sortedSections.map(({ detail }) => (
+            <StudentSectionView key={detail.id} moduleId={moduleId} section={detail} />
+          ))}
         </section>
       )}
     </section>

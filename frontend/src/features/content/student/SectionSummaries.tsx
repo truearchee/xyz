@@ -3,17 +3,17 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
-  ApiError,
-  type StudentSectionRead,
   type StudentSectionSummariesRead,
   type StudentSummarySlot,
 } from "../../../lib/api";
-import { ForbiddenError, api } from "../../../lib/api/wrapper";
+import { api } from "../../../lib/api/wrapper";
 import { SummaryMarkdown } from "./SummaryMarkdown";
 
-// Reuse the 4.5d backoff (no hard timeout), narrowed to the student summary sub-resource and bounded to
-// the `generating` state (§11). A generous wall-clock ceiling — detailed via K2-Think is legitimately
-// slow — after which we stop and ask the student to refresh (§10).
+// Post-4.9 Workstream B: extracted VERBATIM from StudentSectionDetail's SummariesPanel/SummarySlot so the
+// brief + detailed summaries render inline inside each section block on the module page (no separate page).
+// Logic unchanged — same bounded polling (no hard timeout, §11), wall-clock ceiling (§10), unmount-safe
+// cleanup, and §4.3 generating/unavailable states. Each section block mounts its own instance (independent
+// poller; a module has few sections, each backs off + caps).
 const POLL_INITIAL_MS = 1500;
 const POLL_MAX_MS = 15_000;
 const POLL_BACKOFF = 1.5;
@@ -21,107 +21,13 @@ const POLL_WALLCLOCK_CAP_MS = 8 * 60_000;
 
 const GENERATING = "generating";
 const READY = "ready";
-const UNAVAILABLE = "unavailable";
 const NOT_APPLICABLE = "not_applicable";
 
 const blockClass = "grid gap-2 rounded-lg border border-border p-4";
 const blockHeadingClass = "m-0 text-xs font-bold uppercase tracking-wide text-text";
 const mutedClass = "m-0 text-sm italic text-text-muted";
 
-type ShellState = "loading" | "loaded" | "missing" | "error";
-
-export function StudentSectionDetail({ moduleId, sectionId }: { moduleId: string; sectionId: string }) {
-  const [section, setSection] = useState<StudentSectionRead | null>(null);
-  const [shellState, setShellState] = useState<ShellState>("loading");
-
-  useEffect(() => {
-    let mounted = true;
-    setShellState("loading");
-    setSection(null);
-    void (async () => {
-      try {
-        const detail = await api.studentSummaries.getSection(sectionId);
-        if (!mounted) return;
-        setSection(detail);
-        setShellState("loaded");
-      } catch (caught) {
-        if (!mounted) return;
-        // 404 (rows D/P/I) and 403 are both "you cannot see this" — never leak which.
-        if (caught instanceof ForbiddenError || (caught instanceof ApiError && caught.status === 404)) {
-          setShellState("missing");
-        } else {
-          setShellState("error");
-        }
-      }
-    })();
-    return () => {
-      mounted = false;
-    };
-  }, [sectionId]);
-
-  if (shellState === "loading") {
-    return (
-      <section aria-busy="true" className="rounded-lg border border-border p-6">
-        <h1 className="m-0 font-display text-lg leading-snug text-text">Loading section…</h1>
-      </section>
-    );
-  }
-  if (shellState === "missing") {
-    return (
-      <section aria-label="Section unavailable" className="rounded-lg border border-border p-6">
-        <h1 className="m-0 font-display text-lg leading-snug text-text">This section is unavailable</h1>
-        <p className="mt-2 text-sm leading-normal text-text-muted">It may be unpublished or you may not have access.</p>
-      </section>
-    );
-  }
-  if (shellState === "error" || section === null) {
-    return (
-      <section role="alert" className="rounded-lg border border-danger p-6 text-danger-text">
-        <h1 className="m-0 font-display text-lg leading-snug">Couldn’t load this section</h1>
-        <p className="mt-2 text-sm leading-normal">Please refresh to try again.</p>
-      </section>
-    );
-  }
-
-  return (
-    <section aria-labelledby="student-section-title" data-testid="student-section-detail" className="grid gap-5">
-      <header>
-        <p className="m-0 mb-1 text-xs font-bold uppercase text-text-muted">{section.type}</p>
-        <h1 id="student-section-title" className="m-0 font-display text-2xl leading-tight text-text">
-          {section.title}
-        </h1>
-      </header>
-
-      <section aria-label="Lecturer notes" className={blockClass}>
-        <h2 className={blockHeadingClass}>Lecturer notes</h2>
-        {section.lecturerNotes ? (
-          <p className="m-0 text-sm leading-normal text-text">{section.lecturerNotes}</p>
-        ) : (
-          <p className={mutedClass}>No lecturer notes</p>
-        )}
-      </section>
-
-      <section aria-label="Learning materials" className={blockClass}>
-        <h2 className={blockHeadingClass}>Learning materials</h2>
-        {section.materials.length === 0 ? (
-          <p className={mutedClass}>No materials</p>
-        ) : (
-          <ul className="m-0 grid list-disc gap-1 pl-[18px] text-text">
-            {section.materials.map((m) => (
-              <li key={m.id} className="text-sm leading-normal text-text">
-                {m.fileName}
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      <SummariesPanel sectionId={sectionId} />
-    </section>
-  );
-}
-
-function SummariesPanel({ sectionId }: { sectionId: string }) {
+export function SectionSummaries({ sectionId }: { sectionId: string }) {
   const [summaries, setSummaries] = useState<StudentSectionSummariesRead | null>(null);
   const [readError, setReadError] = useState(false);
   const [capped, setCapped] = useState(false);
@@ -178,7 +84,7 @@ function SummariesPanel({ sectionId }: { sectionId: string }) {
   if (summaries === null) {
     return (
       <section aria-busy={!readError} aria-label="Summaries" className={blockClass}>
-        <h2 className={blockHeadingClass}>Summaries</h2>
+        <h3 className={blockHeadingClass}>Summaries</h3>
         {readError ? (
           <p role="alert" className={mutedClass}>
             Couldn’t load summaries — refresh to try again.
@@ -219,7 +125,7 @@ function SummarySlot({
   }
   return (
     <div data-testid={testId} data-state={slot.state} className="grid gap-1.5">
-      <h3 className="m-0 text-sm font-bold text-text-muted">{label}</h3>
+      <h4 className="m-0 text-sm font-bold text-text-muted">{label}</h4>
       {slot.state === READY && slot.content ? (
         <SummaryMarkdown content={slot.content} testId={`${testId}-content`} />
       ) : slot.state === GENERATING ? (

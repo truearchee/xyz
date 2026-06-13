@@ -35,11 +35,6 @@
       "route": "/student/modules/20000000-0000-4000-8000-000000000001",
       "overflowPx": 0,
       "ok": true
-    },
-    {
-      "route": "/student/modules/20000000-0000-4000-8000-000000000001/sections/40000000-0000-4000-8000-000000000002",
-      "overflowPx": 0,
-      "ok": true
     }
   ]
 }

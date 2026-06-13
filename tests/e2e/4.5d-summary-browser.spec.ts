@@ -265,8 +265,16 @@ test('4.5d lecturer summary browser gate', async ({ browser }) => {
     expect(studentRead.body).toMatchObject({ detail: 'TRANSCRIPT_FORBIDDEN' });
     await studentPage.goto(`/student/modules/${setup.moduleId}`);
     await expect(studentPage.getByRole('heading', { name: setup.moduleTitle })).toBeVisible();
-    await expect(studentPage.locator('[data-testid^="section-summary-panel-"]')).toHaveCount(0);
-    await expect(studentPage.getByText(BRIEF_MARKER)).toHaveCount(0);
+    // Two-surface authz (updated for post-4.9 Workstream B — summaries are now inline on the student module
+    // page). The boundary preserved: the LECTURER summary surface is unreachable — API 403 (above) AND the
+    // lecturer-only summary panel never leaks onto the student page. What CHANGED (intended): the student
+    // legitimately reads the published+enrolled summary via THEIR OWN inline surface, so the old "no
+    // BRIEF_MARKER text anywhere" check (which asserted the pre-B separate-page presentation) is replaced by
+    // a POSITIVE proof that the summary is reachable ONLY through the student path, scoped to the lab block.
+    // Unpublished/unenrolled leakage stays covered by 4.7 G4/G5/G6.
+    await expect(studentPage.locator('[data-testid^="section-summary-panel-"]')).toHaveCount(0); // no lecturer panel leak
+    const studentLabBlock = studentPage.getByTestId(`student-section-row-${setup.lab.orderIndex}-${setup.lab.id}`);
+    await expect(studentLabBlock.getByTestId('student-summary-brief')).toContainText(BRIEF_MARKER, { timeout: 30_000 });
     expect(studentPage.url()).not.toContain('/login');
 
     // Authz two-surface — unassigned lecturer: API 404 (existence-leak prevention).

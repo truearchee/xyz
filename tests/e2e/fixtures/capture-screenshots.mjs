@@ -31,8 +31,9 @@ const SURFACES = {
   lecturer: [['/lecturer', 'lecturer-home'], [`/lecturer/modules/${MODULE}`, 'lecturer-module-detail']],
   student: [
     ['/student', 'student-home'],
+    // Post-4.9 Workstream B: summaries are inline on the module page now (the section route redirects here),
+    // so the module-detail shot captures the full consolidated block (header · notes · files · brief · detailed).
     [`/student/modules/${MODULE}`, 'student-module-detail'],
-    [`/student/modules/${MODULE}/sections/${SECTION}`, 'student-section-detail'],
   ],
 };
 

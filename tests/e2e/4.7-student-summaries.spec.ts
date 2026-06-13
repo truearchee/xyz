@@ -222,18 +222,22 @@ test('4.7 student summaries browser gate', async ({ browser }) => {
     const studentPage = await signInPage(studentContext, STUDENT_EMAIL, '/student');
     apiStudent = await createApiContext(await getAccessToken(studentPage));
 
-    // G1 — student reads brief + detailed in the browser.
-    await studentPage.goto(`/student/modules/${a.moduleId}/sections/${a1.id}`);
-    await expect(studentPage.getByTestId('student-section-detail')).toBeVisible();
-    const brief = studentPage.getByTestId('student-summary-brief');
-    const detailed = studentPage.getByTestId('student-summary-detailed');
+    // G1 — student reads brief + detailed INLINE in the section block on the module page (post-4.9
+    // Workstream B: summaries consolidated onto the module page; no separate "View summaries →" page). The
+    // summary testids now appear once per section, so each assertion is SCOPED to a1's section block —
+    // identical testids/markers, scoped not loosened.
+    await studentPage.goto(`/student/modules/${a.moduleId}`);
+    const a1Block = studentPage.getByTestId(`student-section-row-${a1.orderIndex}-${a1.id}`);
+    await expect(a1Block).toBeVisible();
+    const brief = a1Block.getByTestId('student-summary-brief');
+    const detailed = a1Block.getByTestId('student-summary-detailed');
     await expect(brief).toHaveAttribute('data-state', 'ready', { timeout: 30_000 });
     await expect(brief).toContainText(BRIEF_MARKER);
     await expect(detailed).toHaveAttribute('data-state', 'ready', { timeout: 30_000 });
     await expect(detailed).toContainText(DETAILED_OVERVIEW_MARKER);
     await expect(detailed).toContainText('Overview');
 
-    // G3a — no raw-transcript affordance on the student page.
+    // G3a — no raw-transcript affordance anywhere on the module page (all published sections rendered).
     const pageText = await studentPage.locator('body').innerText();
     expect(pageText).not.toContain(SENTINEL); // G3b — sentinel never rendered
     expect(pageText).not.toContain(SENTINEL_FILE); // raw transcript filename never rendered
@@ -262,17 +266,19 @@ test('4.7 student summaries browser gate', async ({ browser }) => {
       expect(r.status()).toBe(403);
     }
 
-    // G2 — brief-first: seed detailed back to generating, reload, assert brief READY + detailed GENERATING.
+    // G2 — brief-first: seed detailed back to generating, reload the module page, assert (scoped to a1's
+    // block) brief READY + detailed GENERATING. (Locators re-resolve after reload.)
     seedDetailedSummaryGenerating(transcriptId);
     await studentPage.reload();
-    await expect(studentPage.getByTestId('student-summary-brief')).toHaveAttribute('data-state', 'ready', { timeout: 30_000 });
-    await expect(studentPage.getByTestId('student-summary-detailed')).toHaveAttribute('data-state', 'generating', { timeout: 30_000 });
-    await expect(studentPage.getByTestId('student-summary-detailed')).toContainText('being generated');
+    await expect(a1Block.getByTestId('student-summary-brief')).toHaveAttribute('data-state', 'ready', { timeout: 30_000 });
+    await expect(a1Block.getByTestId('student-summary-detailed')).toHaveAttribute('data-state', 'generating', { timeout: 30_000 });
+    await expect(a1Block.getByTestId('student-summary-detailed')).toContainText('being generated');
 
-    // G7 — UNAVAILABLE renders for a published lecture with no transcript (row 5), no detail leaked.
-    await studentPage.goto(`/student/modules/${a.moduleId}/sections/${a3.id}`);
-    await expect(studentPage.getByTestId('student-summary-brief')).toHaveAttribute('data-state', 'unavailable', { timeout: 30_000 });
-    await expect(studentPage.getByTestId('student-summary-brief')).toContainText('currently unavailable');
+    // G7 — UNAVAILABLE renders for a published lecture with no transcript (a3, row 5), INLINE in its own
+    // block on the SAME module page (no navigation). Scoped to a3's block; no detail leaked.
+    const a3Block = studentPage.getByTestId(`student-section-row-${a3.orderIndex}-${a3.id}`);
+    await expect(a3Block.getByTestId('student-summary-brief')).toHaveAttribute('data-state', 'unavailable', { timeout: 30_000 });
+    await expect(a3Block.getByTestId('student-summary-brief')).toContainText('currently unavailable');
 
     // G4 — unpublished (draft) section → 404 (row D).
     const draftFetch = await apiJson<{ detail: string }>(apiStudent, 'GET', `/student/sections/${a4.id}/summaries`);

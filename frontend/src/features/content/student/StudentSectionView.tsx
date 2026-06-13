@@ -1,4 +1,5 @@
 import type { StudentSectionDetail } from "../../../lib/api";
+import { SectionSummaries } from "./SectionSummaries";
 import { StudentAssetRow } from "./StudentAssetRow";
 
 type StudentSectionViewProps = {
@@ -57,6 +58,9 @@ export function StudentSectionView({
           </ul>
         )}
       </section>
+
+      {/* Post-4.9 Workstream B: brief + detailed summaries inline, in this same block (no separate page). */}
+      <SectionSummaries sectionId={section.id} />
     </article>
   );
 }

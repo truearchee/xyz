@@ -207,3 +207,33 @@ tables (the `min-w-0 overflow-x-auto` table wrappers clip correctly — trace sh
 the desktop screenshots confirm the **2-column form layout is preserved** (`min-width:0` only *enables*
 shrinking). `npm run build` compiles the `[&>*]:min-w-0` arbitrary variants (no purge/validity error); full §8
 gate + full active E2E suite green after the change (selectors intact). No behaviour added (umbrella §3).
+
+---
+
+## F-4.9-7 — Summary content looked contextless during the 4.9 human close-out — IS IT A 4.9 (or 4.5) REGRESSION?
+
+**Raised:** 2026-06-13 (4.9 human close-out — a real lecturer→student run showed generic summaries).
+**Status: RESOLVED — diagnosis: it is the deterministic test adapter (the documented dev default, rule 11), NOT a 4.9 or 4.5 regression.**
+
+**Why it matters for 4.9:** before flipping/keeping 4.9 FULLY VERIFIED we must confirm the generic content
+("First key concept", "Term A — Definition of term A", "A procedure or observation note") is NOT something
+4.9 broke. 4.9 changed no generation code (it's the frontend foundation + hygiene); but the close-out *saw*
+the content, so the question had to be answered, not assumed.
+
+**Diagnosis (Task 0 of the post-4.9 corrective; read-only, on the running stack):**
+- The active provider is the **deterministic test adapter** — `LLM_PROVIDER` is unset in every `.env` →
+  default `deterministic` (`config.py:264`); `get_provider()` (`provider.py:355`) returns
+  `DeterministicTestProvider`. The exact strings the owner saw are its hardcoded canned output
+  (`provider.py:328-348`).
+- `ai_request_logs` (the 2 most-recent summary rows) confirm it: `provider_request_id = det-…`,
+  `last_provider_status_code = NULL`, `latency_ms = 0` — no real HTTP call. (And `prompt_tokens ≈ 13.8k`
+  proves the transcript DID reach the prompt — so even the transcript→prompt path is healthy; the adapter
+  just ignores its input.)
+
+**Resolution (rule 13): RESOLVED — environmental, the documented dev default.** NOT a 4.9 regression (no
+generation code touched) and NOT a 4.5 defect (the path works; the adapter is intentionally canned). **4.9
+FULLY VERIFIED stands.** The real, grounded baseline must come from a **real-provider run** (`LLM_PROVIDER=k2think`)
+— developer-owned (credentials), tracked as the Task 0 step-3 residual in
+[[specs/stage-04/post-4.9-corrective-summary-verification-inline]] (caveat F-4.5-27: K2-V2 may still be
+inaccessible). The brief-length / grounding / inline-presentation follow-ups are scoped there as the corrective's
+own findings (F-C1..C4), not as 4.9 deliverables.
