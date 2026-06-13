@@ -37,7 +37,7 @@ from app.platform.db.models import (
     IngestionJob,
     MapUnitSummary,
 )
-from app.platform.llm.errors import InvalidOutput
+from app.platform.llm.errors import InvalidOutput, ProviderTransient
 from app.platform.llm.gateway import LLMGateway
 from app.platform.llm.models.summary import DetailedSummary, DetailedSummaryPartial
 from app.platform.llm.provider import DeterministicTestProvider
@@ -241,7 +241,7 @@ async def test_detailed_map_reduce_persists_full_coverage(db_session: AsyncSessi
     assert n >= 2  # the small budget produced multiple units
     assert meta["coverageManifest"] == list(range(n))  # EVERY unit consumed
     assert len(meta["sourceMapUnitSummaryIds"]) == n
-    assert meta["mapPromptVersion"] == "v1" and meta["reducePromptVersion"] == "v1"
+    assert meta["mapPromptVersion"] == "v2" and meta["reducePromptVersion"] == "v1"
 
     async with factory() as session:
         units = (
@@ -439,3 +439,77 @@ async def test_migration_0015_objects_exist(db_session: AsyncSession):
         )
     ).scalar()
     assert "detailed_summary_map" in constraint and "detailed_summary_reduce" in constraint
+
+
+# ── 4.5.1c: in-call retry on invalid_output (the reasoning-model reliability hardening) ─────────
+
+
+class _FlakyGateway:
+    """A gateway stub that raises ``InvalidOutput`` for the first ``fail_n`` calls, then succeeds —
+    models K2-Think-v2's occasional unparseable response."""
+
+    def __init__(self, *, fail_n: int, exc=None):
+        self.calls = 0
+        self._fail_n = fail_n
+        self._exc = exc or InvalidOutput("no parseable JSON object found", error_code="not_json")
+
+    async def complete(self, **kwargs):
+        self.calls += 1
+        if self.calls <= self._fail_n:
+            raise self._exc
+        return {"parsed": DetailedSummaryPartial(overview="ok"), "ai_request_log_id": uuid7()}
+
+
+def _runner(factory, gateway):
+    return MapReduceRunner(
+        factory,
+        gateway,
+        ingestion_job_id=uuid7(),
+        transcript_id=uuid7(),
+        section_type="lecture",
+        source_transcript_checksum="ck",
+        attempt_number=1,
+    )
+
+
+@pytest.mark.anyio
+async def test_invalid_output_in_call_retry_recovers(db_session: AsyncSession, monkeypatch):
+    # Two retries configured (3 attempts). A call that returns invalid_output twice then succeeds is
+    # recovered WITHIN the job — no reliance on the absent RQ scheduler (F-4.5-47).
+    monkeypatch.setenv("LLM_SUMMARY_INVALID_OUTPUT_RETRIES", "2")
+    factory = _session_factory(db_session)
+    gw = _FlakyGateway(fail_n=2)
+    runner = _runner(factory, gw)
+    result = await runner._complete_retrying(
+        label="map[0]", prompt_key=None, output_schema=DetailedSummaryPartial,
+        context_refs=None, priority="background", feature="detailed_summary_map", attempt_number=1,
+    )
+    assert result["parsed"].overview == "ok"
+    assert gw.calls == 3  # two invalid_output failures + one success
+
+
+@pytest.mark.anyio
+async def test_invalid_output_retry_exhausts_then_raises(db_session: AsyncSession, monkeypatch):
+    monkeypatch.setenv("LLM_SUMMARY_INVALID_OUTPUT_RETRIES", "2")
+    factory = _session_factory(db_session)
+    gw = _FlakyGateway(fail_n=99)  # always invalid_output
+    with pytest.raises(InvalidOutput):
+        await _runner(factory, gw)._complete_retrying(
+            label="map[0]", prompt_key=None, output_schema=DetailedSummaryPartial,
+            context_refs=None, priority="background", feature="detailed_summary_map", attempt_number=1,
+        )
+    assert gw.calls == 3  # bounded: 1 + 2 retries
+
+
+@pytest.mark.anyio
+async def test_non_invalid_output_error_is_not_retried(db_session: AsyncSession, monkeypatch):
+    # A 408/transient (or any non-invalid_output GatewayError) propagates immediately — NOT retried.
+    monkeypatch.setenv("LLM_SUMMARY_INVALID_OUTPUT_RETRIES", "2")
+    factory = _session_factory(db_session)
+    gw = _FlakyGateway(fail_n=1, exc=ProviderTransient("408", error_code="provider_408", status_code=408))
+    with pytest.raises(ProviderTransient):
+        await _runner(factory, gw)._complete_retrying(
+            label="reduce", prompt_key=None, output_schema=DetailedSummary,
+            context_refs=None, priority="background", feature="detailed_summary_reduce", attempt_number=1,
+        )
+    assert gw.calls == 1  # no retry on a non-invalid_output error

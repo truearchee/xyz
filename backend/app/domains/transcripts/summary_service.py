@@ -200,20 +200,23 @@ async def _fork_brief_after_detailed(
     *,
     transcript_id: UUID,
 ) -> UUID | None:
-    """Brief-from-detailed DAG (4.5.1b): enqueue the transcript's queued brief job once the detailed has
-    completed. Idempotent (the brief claim no-ops on an already-completed/running job; enqueue is keyed on
-    a stable RQ job_id). Returns the enqueued brief job id (or None if there is no queued brief)."""
+    """Brief-from-detailed DAG (4.5.1b): (re)queue the transcript's brief job once the detailed has
+    completed, so the brief (re)derives from it. force=True (4.5.1c) re-queues an ALREADY-COMPLETED brief
+    — required for the backfill: when a stale detailed is regenerated, its old completed brief must
+    re-derive from the new full-coverage detailed (the fork is the trigger; the normal first-run brief is
+    merely 'queued' and force is a no-op there). Returns the (re)queued brief job id, or None if fenced."""
     async with factory() as session:
-        brief_job = (
-            await session.execute(
-                select(IngestionJob).where(
-                    IngestionJob.transcript_id == transcript_id,
-                    IngestionJob.job_type == BRIEF.job_type,
-                    IngestionJob.status == "queued",
+        async with session.begin():
+            transcript = (
+                await session.execute(
+                    select(Transcript).where(Transcript.id == transcript_id).with_for_update()
                 )
+            ).scalar_one_or_none()
+            if transcript is None or transcript.lifecycle_state == "superseded":
+                return None
+            brief_job_id = await _ensure_summary_job(
+                session, transcript=transcript, spec=BRIEF, force=True
             )
-        ).scalar_one_or_none()
-        brief_job_id = brief_job.id if brief_job is not None else None
     if brief_job_id is not None:
         from app.workers.queues import enqueue_generate_brief_summary
 

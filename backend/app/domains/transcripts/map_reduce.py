@@ -37,6 +37,7 @@ from app.domains.transcripts.summary_specs import MAP_PROMPT_KEY, REDUCE_PROMPT_
 from app.platform.config import settings
 from app.platform.db.models import MapUnitSummary, Transcript
 from app.platform.llm.context import CHARS_PER_TOKEN, estimate_tokens
+from app.platform.llm.errors import GatewayError
 from app.platform.llm.gateway import ContextRefs, LLMGateway
 from app.platform.llm.models.summary import DetailedSummary, DetailedSummaryPartial
 
@@ -317,12 +318,32 @@ class MapReduceRunner:
         results = await asyncio.gather(*(one(u) for u in partition.units))
         return sorted(results, key=lambda m: m.unit_index)
 
+    async def _complete_retrying(self, *, label: str, **kwargs) -> dict:
+        """gateway.complete with bounded in-call retry on invalid_output (4.5.1c). K2-Think-v2 is
+        non-deterministic — even with JSON mode a call can occasionally return an unparseable body; a
+        retry almost always yields clean JSON. Retries happen WITHIN the job (no RQ scheduler needed —
+        F-4.5-47). Any non-invalid_output GatewayError (408/auth/limit) propagates immediately."""
+        attempts = settings.LLM_SUMMARY_INVALID_OUTPUT_RETRIES + 1
+        last_exc: GatewayError | None = None
+        for i in range(attempts):
+            try:
+                return await self._gateway.complete(**kwargs)
+            except GatewayError as exc:
+                if exc.status != "invalid_output" or i == attempts - 1:
+                    raise
+                last_exc = exc
+                logger.warning(
+                    "map-reduce %s invalid_output; retrying (%d/%d)", label, i + 1, attempts - 1
+                )
+        raise last_exc  # pragma: no cover - loop always returns or raises above
+
     async def _map_unit(self, unit: MapUnit, partition_hash: str) -> _MappedUnit:
         existing = await self._find_succeeded_partial(unit.unit_index, partition_hash)
         if existing is not None and existing.partial_content is not None:
             return _MappedUnit(unit.unit_index, existing.id, existing.partial_content)
 
-        result = await self._gateway.complete(
+        result = await self._complete_retrying(
+            label=f"map[{unit.unit_index}]",
             prompt_key=MAP_PROMPT_KEY,
             output_schema=DetailedSummaryPartial,
             context_refs=ContextRefs(
@@ -371,7 +392,8 @@ class MapReduceRunner:
         return await self._reduce(reduced, depth=depth + 1)
 
     async def _reduce_call(self, serialized: str) -> dict:
-        return await self._gateway.complete(
+        return await self._complete_retrying(
+            label="reduce",
             prompt_key=REDUCE_PROMPT_KEY,
             output_schema=DetailedSummary,
             context_refs=ContextRefs(

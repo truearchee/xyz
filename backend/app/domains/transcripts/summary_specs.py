@@ -52,7 +52,7 @@ SUMMARY_JOB_TYPES = tuple(SUMMARY_SPECS)
 # engine and the eligibility expectation below can never drift. Detailed is now produced by map → reduce;
 # the DETAILED.prompt_key above is the legacy single-call prompt, retained only for the processor_version
 # label and not used to generate.
-MAP_PROMPT_KEY = PromptKey("detailed_summary_map", "v1")
+MAP_PROMPT_KEY = PromptKey("detailed_summary_map", "v2")  # v2 (4.5.1c): hardened JSON-only directive
 REDUCE_PROMPT_KEY = PromptKey("detailed_summary_reduce", "v1")
 
 # Brief-from-detailed (4.5.1b, ADR-052): the brief is derived from the COMPLETED detailed summary in one

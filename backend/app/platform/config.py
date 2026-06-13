@@ -292,10 +292,14 @@ class Settings:
 
     @property
     def LLM_PROVIDER_JSON_MODE(self) -> bool:
-        """Ask the provider for ``response_format={"type":"json_object"}`` (§7.1). Default OFF until
-        the 4.5b smoke confirms K2-Think-v2 honors it (an unsupported param could 400). The §7
-        tolerant-extract validator is the safety net regardless."""
-        return self._bool("LLM_PROVIDER_JSON_MODE", default=False)
+        """Ask the provider for ``response_format={"type":"json_object"}`` (§7.1). Default ON as of the
+        4.5.1c real-provider smoke, which CONFIRMED K2-Think-v2 honors it on BOTH routes (nvidia map/reduce
+        + cerebras brief: HTTP200, finish_reason=stop, clean JSON). Decisive for the map phase: WITHOUT it
+        the reasoning model spent the whole token budget thinking ("We need to produce…") and hit
+        finish_reason=length before emitting JSON → not_json on ~33% of map calls; WITH it the model emits
+        the JSON object directly. The tolerant-extract validator + the map/reduce in-call retry remain the
+        safety net. (The deterministic test provider ignores this — CI/tests are unaffected.)"""
+        return self._bool("LLM_PROVIDER_JSON_MODE", default=True)
 
     @property
     def LLM_PROVIDER_TIMEOUT_SECONDS(self) -> int:
@@ -367,6 +371,15 @@ class Settings:
         if value > 2:
             raise SettingsError("LLM_SUMMARY_MAP_CONCURRENCY must be between 1 and 2")
         return value
+
+    @property
+    def LLM_SUMMARY_INVALID_OUTPUT_RETRIES(self) -> int:
+        """In-call retries for an ``invalid_output`` on a map/reduce gateway call (4.5.1c). K2-Think-v2 is
+        a reasoning model and is non-deterministic: even with JSON mode a call can occasionally return an
+        unparseable body. Each map unit / reduce call retries up to this many times WITHIN the job (no
+        reliance on the absent RQ scheduler — F-4.5-47) before the job fails. Defense in depth on top of
+        JSON mode + the hardened prompt."""
+        return self._int("LLM_SUMMARY_INVALID_OUTPUT_RETRIES", "2", minimum=0)
 
     @property
     def LLM_DETAILED_MAP_REDUCE_CEILING_SECONDS(self) -> int:
