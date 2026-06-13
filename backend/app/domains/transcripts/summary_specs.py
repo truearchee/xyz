@@ -53,7 +53,12 @@ SUMMARY_JOB_TYPES = tuple(SUMMARY_SPECS)
 # the DETAILED.prompt_key above is the legacy single-call prompt, retained only for the processor_version
 # label and not used to generate.
 MAP_PROMPT_KEY = PromptKey("detailed_summary_map", "v2")  # v2 (4.5.1c): hardened JSON-only directive
-REDUCE_PROMPT_KEY = PromptKey("detailed_summary_reduce", "v2")  # v2 (4.5.1c): JSON-only + faithful merge
+# Reduce redesign (4.5.1c / F-4.5.1c-3): the LLM-merge reduce compressed away the partials' content and
+# dropped required keys on the real reasoning model. The reduce is now PROGRAMMATIC — the map partials'
+# structured lists are unioned + deduped in code (guaranteed coverage) and the model produces ONLY the
+# overview. OVERVIEW_PROMPT_KEY is the (small, reliable) overview call; the legacy detailed_summary_reduce
+# prompts are retired. The persisted detailed's prompt_version is this overview call's (the LLM artifact).
+OVERVIEW_PROMPT_KEY = PromptKey("detailed_summary_overview", "v1")
 
 # Brief-from-detailed (4.5.1b, ADR-052): the brief is derived from the COMPLETED detailed summary in one
 # small call (BRIEF route), NOT re-summarized from the transcript. SINGLE source of truth, imported by
@@ -72,5 +77,5 @@ BRIEF_FROM_DETAILED_FEATURE: SummaryFeature = "brief_from_detailed"
 #    version lives in generationMetadata — strategy-aware quiz gating is is_full_coverage_detailed).
 EXPECTED_PROMPT_VERSION_BY_SUMMARY_TYPE: dict[str, tuple[str, ...]] = {
     BRIEF.summary_type: (BRIEF_FROM_DETAILED_PROMPT_KEY.version, BRIEF.prompt_key.version),
-    DETAILED.summary_type: (REDUCE_PROMPT_KEY.version,),
+    DETAILED.summary_type: (OVERVIEW_PROMPT_KEY.version,),
 }

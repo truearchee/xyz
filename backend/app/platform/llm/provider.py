@@ -402,6 +402,20 @@ class DeterministicTestProvider:
             if forced_invalid:
                 payload.pop("examples")  # drop a required section → missing_section
             return json.dumps(payload)
+        if name == "detailed_summary_overview":
+            # Reduce phase, redesigned (4.5.1c): the LLM writes ONLY the overview; the structured lists are
+            # unioned programmatically from the map partials. Canned BriefSummary-shaped {"text": ...}.
+            if forced_invalid:
+                return json.dumps({"wrong": "shape"})  # missing required `text`
+            return json.dumps(
+                {
+                    "text": (
+                        "This session, taken as a whole, develops its topic across several connected "
+                        "parts, building from foundational definitions toward the points most likely to "
+                        "matter for assessment."
+                    )
+                }
+            )
         if name == "brief_from_detailed":
             # Brief-from-detailed (4.5.1b): the input is the detailed summary's content, not a transcript.
             # Echo a marker from the input tail so a test can prove the brief was derived from the detailed.

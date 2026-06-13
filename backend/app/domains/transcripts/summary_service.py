@@ -596,7 +596,7 @@ async def _persist_summary_success(
         generation_strategy = "map_reduce"
         generation_metadata: dict | None = {
             "mapPromptVersion": outcome.map_prompt_version,
-            "reducePromptVersion": outcome.reduce_prompt_version,
+            "overviewPromptVersion": outcome.overview_prompt_version,
             "mapUnitCount": outcome.map_unit_count,
             "sourceMapUnitSummaryIds": outcome.source_map_unit_summary_ids,
             "coverageManifest": outcome.coverage_manifest,

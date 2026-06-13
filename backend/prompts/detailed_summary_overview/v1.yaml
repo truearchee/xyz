@@ -1,0 +1,27 @@
+name: detailed_summary_overview
+version: v1
+model: MBZUAI-IFM/K2-Think-v2
+backend: nvidia
+# Reduce phase, redesigned (4.5.1c / F-4.5.1c-3): the LLM-merge reduce compressed away the partials'
+# content and dropped required keys on the real model. The reduce is now PROGRAMMATIC — the map partials'
+# structured lists (keyConcepts, examples, definitions, explanations, exam points) are unioned + deduped
+# in code (guaranteeing full coverage), and the model is asked ONLY for the one thing it does reliably: a
+# short, coherent overview of the WHOLE lecture. Small input (per-portion overviews + concepts), cerebras
+# route, JSON mode. Output is the BriefSummary shape {"text": ...}.
+max_tokens: 800
+content: |
+  You are writing the OVERVIEW for a detailed study summary of a single university lecture or lab session.
+
+  Below are the per-portion overviews and the key concepts already extracted from the lecture, in order.
+  Using ONLY this material, write ONE coherent overview of 2-4 sentences that captures what the WHOLE
+  session was about and how its parts fit together. Do not list concepts mechanically; synthesize.
+
+  CRITICAL OUTPUT RULE: respond with the JSON object ONLY. Begin your reply with "{" immediately. No
+  reasoning, narration, or markdown. Exactly one key, "text", whose value is your overview paragraph:
+
+  {"text": "<your 2-4 sentence overview>"}
+
+  Section type: {{section_type}}
+
+  Lecture material (per-portion overviews and key concepts, in order):
+  {{transcript}}

@@ -241,7 +241,7 @@ async def test_detailed_map_reduce_persists_full_coverage(db_session: AsyncSessi
     assert n >= 2  # the small budget produced multiple units
     assert meta["coverageManifest"] == list(range(n))  # EVERY unit consumed
     assert len(meta["sourceMapUnitSummaryIds"]) == n
-    assert meta["mapPromptVersion"] == "v2" and meta["reducePromptVersion"] == "v2"
+    assert meta["mapPromptVersion"] == "v2" and meta["overviewPromptVersion"] == "v1"
 
     async with factory() as session:
         units = (
@@ -279,48 +279,36 @@ async def test_late_topic_sentinel_content_survives_into_reduce(db_session: Asyn
     assert any("LateLectureSentinelTopic" in kc for kc in key_concepts)  # content flow-through
 
 
-@pytest.mark.anyio
-async def test_tiered_reduce_branch_preserves_full_coverage(db_session: AsyncSession, monkeypatch):
-    # Exercise the §3.3 tiered reduce directly with a controlled reduce-call stub, so convergence and
-    # coverage are deterministic (not dependent on adapter output sizes). Coverage is index-based, so a
-    # small fixed summary per call is sufficient to prove the tiers fold without losing any unit.
-    factory = _session_factory(db_session)
-    monkeypatch.setenv("LLM_SUMMARY_REDUCE_INPUT_CHAR_BUDGET", "300")
-    monkeypatch.setenv("LLM_SUMMARY_REDUCE_INPUT_TOKEN_BUDGET", "400")  # char is the binding cap
-    runner = MapReduceRunner(
-        factory,
-        _gateway(factory),
-        ingestion_job_id=uuid7(),
-        transcript_id=uuid7(),
-        section_type="lecture",
-        source_transcript_checksum="ck",
-        attempt_number=1,
-    )
-    calls: list[str] = []
+def test_union_partials_preserves_and_dedupes_all_content():
+    # The programmatic reduce (F-4.5.1c-3): union + dedupe every structured list across the partials, in
+    # order, case-insensitively. This GUARANTEES coverage — no LLM compression can drop map-extracted
+    # content. (Replaces the old tiered-reduce convergence test; tiering is gone.)
+    from app.domains.transcripts.map_reduce import _union_partials
 
-    async def fake_reduce_call(serialized: str) -> dict:
-        calls.append(serialized)
-        return {
-            "parsed": DetailedSummary(
-                overview="o",
-                key_concepts=["k"],
-                important_definitions=[],
-                main_explanations=["m"],
-                examples=["e"],
-                exam_relevant_points=["p"],
-            ),
-            "ai_request_log_id": uuid7(),
-        }
-
-    monkeypatch.setattr(runner, "_reduce_call", fake_reduce_call)
     partials = [
-        ([i], json.loads(_partial(overview="", keyConcepts=[f"m{i}"]))) for i in range(6)
+        {
+            "keyConcepts": ["Functions", "Domain"],
+            "examples": ["f(x)=x^2"],
+            "importantDefinitions": [{"term": "Function", "definition": "a mapping"}],
+            "mainExplanations": ["explain A"],
+            "examRelevantPoints": [],
+            "labNotes": [],
+        },
+        {
+            "keyConcepts": ["domain", "One-sided limits"],  # 'domain' dupes 'Domain' (case-insensitive)
+            "examples": ["lim x->2"],
+            "importantDefinitions": [{"term": "function", "definition": "dup term, dropped"}],
+            "mainExplanations": ["explain B"],
+            "examRelevantPoints": ["quiz covers limits"],
+            "labNotes": [],
+        },
     ]
-
-    _result, coverage = await runner._reduce(partials, depth=0)
-
-    assert coverage == [0, 1, 2, 3, 4, 5]  # tiered fold preserved every unit
-    assert len(calls) > 1  # the tiered branch ran (a single-call reduce would be exactly one call)
+    merged = _union_partials(partials)
+    assert merged["keyConcepts"] == ["Functions", "Domain", "One-sided limits"]  # dedup, first spelling
+    assert merged["examples"] == ["f(x)=x^2", "lim x->2"]  # the LATTER portion's example is preserved
+    assert [d["term"] for d in merged["importantDefinitions"]] == ["Function"]  # term-dedup
+    assert merged["mainExplanations"] == ["explain A", "explain B"]
+    assert merged["examRelevantPoints"] == ["quiz covers limits"]
 
 
 @pytest.mark.anyio

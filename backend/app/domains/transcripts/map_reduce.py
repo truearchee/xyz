@@ -33,23 +33,26 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from uuid6 import uuid7
 
 from app.domains.transcripts.chunker import NORMALIZATION_VERSION
-from app.domains.transcripts.summary_specs import MAP_PROMPT_KEY, REDUCE_PROMPT_KEY
+from app.domains.transcripts.summary_specs import MAP_PROMPT_KEY, OVERVIEW_PROMPT_KEY
 from app.platform.config import settings
 from app.platform.db.models import MapUnitSummary, Transcript
 from app.platform.llm.context import CHARS_PER_TOKEN, estimate_tokens
 from app.platform.llm.errors import GatewayError
 from app.platform.llm.gateway import ContextRefs, LLMGateway
-from app.platform.llm.models.summary import DetailedSummary, DetailedSummaryPartial
+from app.platform.llm.models.summary import (
+    BriefSummary,
+    DetailedSummary,
+    DetailedSummaryPartial,
+    Definition,
+)
 
 logger = logging.getLogger(__name__)
-# Bounds the tiered-reduce recursion. A run that cannot get the serialized partials under the reduce
-# budget within this many tiers fails LOUD (the honest §3.3 boundary) rather than looping. Realistic
-# inputs converge in 1–2 tiers; the cap only catches pathological non-convergence.
-_MAX_REDUCE_DEPTH = 5
+# Cap on each unioned list in the assembled detailed summary (defense against a pathological partial count).
+_MAX_LIST_ITEMS = 60
 
 
 class MapReduceError(RuntimeError):
-    """A terminal map-reduce failure (cost-guard tripped, reduce non-convergence, coverage gap)."""
+    """A terminal map-reduce failure (cost-guard tripped, coverage gap, assemble failure)."""
 
 
 class MapReduceFenced(MapReduceError):
@@ -84,12 +87,12 @@ class Partition:
 
 @dataclass(frozen=True)
 class MapReduceOutcome:
-    """What the detailed handler persists: the reduce result + map-reduce provenance."""
+    """What the detailed handler persists: the assembled detailed + map-reduce provenance."""
 
-    result: dict  # the reduce CompletionResult (parsed DetailedSummary + ai_request_log_id)
+    result: dict  # {"parsed": assembled DetailedSummary, "ai_request_log_id": the overview call's log}
     input_hash: str  # folds partition_config_hash → distinct provenance per budget (decision 4)
     map_prompt_version: str
-    reduce_prompt_version: str
+    overview_prompt_version: str
     map_unit_count: int
     source_map_unit_summary_ids: list[str]
     coverage_manifest: list[int]
@@ -188,30 +191,65 @@ def partition_segments(
     )
 
 
-def _serialize_partials(contents: list[dict]) -> str:
-    """Serialize partials (in order) as a compact JSON array — the reduce input ({{transcript}} slot)."""
-    return json.dumps(contents, ensure_ascii=False, separators=(",", ":"))
+def _dedupe_strings(lists) -> list[str]:
+    """Flatten an iterable of string lists in order, dropping blanks and case-insensitive duplicates while
+    preserving the FIRST original spelling and order. Capped to bound the assembled summary."""
+    seen: set[str] = set()
+    out: list[str] = []
+    for lst in lists:
+        for s in lst or []:
+            text = str(s).strip()
+            key = text.casefold()
+            if text and key not in seen:
+                seen.add(key)
+                out.append(text)
+                if len(out) >= _MAX_LIST_ITEMS:
+                    return out
+    return out
 
 
-def _greedy_groups(
-    items: list[tuple[list[int], dict]], *, char_budget: int, token_budget: int
-) -> list[list[tuple[list[int], dict]]]:
-    """Pack consecutive (coverage, content) items into ordered groups each under the reduce budget. A
-    single item over budget becomes its own group (the tiered reduce will attempt to shrink it)."""
-    groups: list[list[tuple[list[int], dict]]] = []
-    cur: list[tuple[list[int], dict]] = []
-    for item in items:
-        tentative = cur + [item]
-        serialized = _serialize_partials([c for _, c in tentative])
-        over = len(serialized) > char_budget or estimate_tokens(serialized) > token_budget
-        if cur and over:
-            groups.append(cur)
-            cur = [item]
-        else:
-            cur = tentative
-    if cur:
-        groups.append(cur)
-    return groups
+def _dedupe_definitions(partials: list[dict]) -> list[dict]:
+    """Union the partials' importantDefinitions, deduped by term (case-insensitive), first spelling wins."""
+    seen: set[str] = set()
+    out: list[dict] = []
+    for p in partials:
+        for d in p.get("importantDefinitions") or []:
+            term = str(d.get("term", "")).strip()
+            definition = str(d.get("definition", "")).strip()
+            key = term.casefold()
+            if term and definition and key not in seen:
+                seen.add(key)
+                out.append({"term": term, "definition": definition})
+                if len(out) >= _MAX_LIST_ITEMS:
+                    return out
+    return out
+
+
+def _union_partials(partials: list[dict]) -> dict:
+    """Programmatic reduce (F-4.5.1c-3): union + dedupe every structured list across the map partials, in
+    lecture order. Guarantees the detailed summary covers the WHOLE lecture — no LLM compression can drop
+    content the map already extracted."""
+    return {
+        "keyConcepts": _dedupe_strings(p.get("keyConcepts") for p in partials),
+        "importantDefinitions": _dedupe_definitions(partials),
+        "mainExplanations": _dedupe_strings(p.get("mainExplanations") for p in partials),
+        "examples": _dedupe_strings(p.get("examples") for p in partials),
+        "examRelevantPoints": _dedupe_strings(p.get("examRelevantPoints") for p in partials),
+        "labNotes": _dedupe_strings(p.get("labNotes") for p in partials),
+    }
+
+
+def _overview_input(partials: list[dict], merged: dict) -> str:
+    """Small, focused input for the overview LLM call: the per-portion overviews (the lecture arc) + the
+    merged key concepts. Kept compact so the call is fast and reliable."""
+    lines = ["Per-portion overviews (in order):"]
+    for p in partials:
+        ov = (p.get("overview") or "").strip()
+        if ov:
+            lines.append(f"- {ov}")
+    lines.append("")
+    lines.append("Key concepts covered: " + ", ".join(merged["keyConcepts"][:40]))
+    return "\n".join(lines)
 
 
 def _hash(payload: dict) -> str:
@@ -223,8 +261,8 @@ def _unit_input_hash(unit: MapUnit) -> str:
     return _hash({"normalizationVersion": NORMALIZATION_VERSION, "unitIndex": unit.unit_index, "text": unit.text})
 
 
-def _reduce_input_hash(serialized: str) -> str:
-    return _hash({"normalizationVersion": NORMALIZATION_VERSION, "phase": "reduce", "input": serialized})
+def _overview_input_hash(overview_input: str) -> str:
+    return _hash({"normalizationVersion": NORMALIZATION_VERSION, "phase": "overview", "input": overview_input})
 
 
 def detailed_input_hash(full_text: str, partition_config_hash: str) -> str:
@@ -283,22 +321,19 @@ class MapReduceRunner:
             },
         )
         mapped = await self._map_all(partition)
-        # §6.1 fence before the (artifact-bearing) reduce: do not reduce a superseded/changed transcript.
+        # §6.1 fence before the artifact write: do not assemble for a superseded/changed transcript.
         async with self._factory() as session:
             await self._fence(session)
-        partials_with_idx: list[tuple[list[int], dict]] = [([m.unit_index], m.content) for m in mapped]
-        reduce_result, coverage = await self._reduce(partials_with_idx, depth=0)
-
+        # Reduce = programmatic union of the structured partials (full coverage GUARANTEED by construction)
+        # + one LLM call for the overview (F-4.5.1c-3). Coverage is exhaustive: every mapped unit's lists
+        # are merged in.
+        reduce_result = await self._assemble(mapped)
         expected = sorted(u.unit_index for u in partition.units)
-        if sorted(coverage) != expected:
-            raise MapReduceError(
-                f"reduce coverage {sorted(coverage)} does not cover all map-units {expected}"
-            )
         return MapReduceOutcome(
             result=reduce_result,
             input_hash=detailed_input_hash(full_text, partition.partition_config_hash),
             map_prompt_version=MAP_PROMPT_KEY.version,
-            reduce_prompt_version=REDUCE_PROMPT_KEY.version,
+            overview_prompt_version=OVERVIEW_PROMPT_KEY.version,
             map_unit_count=len(partition.units),
             source_map_unit_summary_ids=[str(m.map_unit_summary_id) for m in mapped],
             coverage_manifest=expected,
@@ -362,50 +397,41 @@ class MapReduceRunner:
         )
         return _MappedUnit(unit.unit_index, map_unit_summary_id, content)
 
-    async def _reduce(
-        self, partials_with_idx: list[tuple[list[int], dict]], *, depth: int
-    ) -> tuple[dict, list[int]]:
-        serialized = _serialize_partials([c for _, c in partials_with_idx])
-        within = (
-            len(serialized) <= settings.LLM_SUMMARY_REDUCE_INPUT_CHAR_BUDGET
-            and estimate_tokens(serialized) <= settings.LLM_SUMMARY_REDUCE_INPUT_TOKEN_BUDGET
-        )
-        if within or len(partials_with_idx) == 1:
-            result = await self._reduce_call(serialized)
-            coverage = sorted(i for idxs, _ in partials_with_idx for i in idxs)
-            return result, coverage
-
-        if depth >= _MAX_REDUCE_DEPTH:
-            raise MapReduceError("tiered reduce did not converge under the input budget")
-
-        groups = _greedy_groups(
-            partials_with_idx,
-            char_budget=settings.LLM_SUMMARY_REDUCE_INPUT_CHAR_BUDGET,
-            token_budget=settings.LLM_SUMMARY_REDUCE_INPUT_TOKEN_BUDGET,
-        )
-        reduced: list[tuple[list[int], dict]] = []
-        for group in groups:
-            gserial = _serialize_partials([c for _, c in group])
-            gresult = await self._reduce_call(gserial)
-            gidx = sorted(i for idxs, _ in group for i in idxs)
-            reduced.append((gidx, gresult["parsed"].model_dump(by_alias=True)))
-        return await self._reduce(reduced, depth=depth + 1)
-
-    async def _reduce_call(self, serialized: str) -> dict:
-        return await self._complete_retrying(
-            label="reduce",
-            prompt_key=REDUCE_PROMPT_KEY,
-            output_schema=DetailedSummary,
+    async def _assemble(self, mapped: list[_MappedUnit]) -> dict:
+        """Reduce = programmatic union of the map partials' structured lists (coverage guaranteed) + ONE
+        LLM call for the overview (F-4.5.1c-3). The model only writes the short overview — what it does
+        reliably — instead of being asked to faithfully merge structured content (which it compresses
+        away). Returns {"parsed": assembled DetailedSummary, "ai_request_log_id": the overview call's}."""
+        partials = [m.content for m in mapped]  # in unit order
+        merged = _union_partials(partials)
+        overview_input = _overview_input(partials, merged)
+        ov = await self._complete_retrying(
+            label="overview",
+            prompt_key=OVERVIEW_PROMPT_KEY,
+            output_schema=BriefSummary,
             context_refs=ContextRefs(
                 ingestion_job_id=self._ingestion_job_id,
-                transcript_text=serialized,
-                input_content_hash=_reduce_input_hash(serialized),
+                transcript_text=overview_input,
+                input_content_hash=_overview_input_hash(overview_input),
                 section_type=self._section_type,
             ),
             priority="background",
             feature="detailed_summary_reduce",
             attempt_number=self._attempt_number,
         )
+        assembled = DetailedSummary(
+            overview=ov["parsed"].text.strip(),
+            key_concepts=merged["keyConcepts"],
+            important_definitions=[
+                Definition(term=d["term"], definition=d["definition"])
+                for d in merged["importantDefinitions"]
+            ],
+            main_explanations=merged["mainExplanations"],
+            examples=merged["examples"],
+            exam_relevant_points=merged["examRelevantPoints"],
+            lab_notes=merged["labNotes"] or None,
+        )
+        return {"parsed": assembled, "ai_request_log_id": ov["ai_request_log_id"]}
 
     async def _fence(self, session: AsyncSession) -> None:
         """§6.1 stale-write fence: raise MapReduceFenced if the transcript is superseded or its checksum
