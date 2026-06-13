@@ -37,9 +37,20 @@ Steps 1–2 run by the agent (read-only); step 3 is the developer's (needs real-
 - **Branch taken: (Expected) test adapter was active.** The contextless content is the **documented dev
   default, NOT a 4.5 defect and NOT a 4.9 regression** → F-4.9-7. The real, grounded baseline must come from
   a real-provider run (step 3, developer-owned). Command:
-  `LLM_PROVIDER=k2think LLM_API_KEY=… docker compose … up -d backend ai_worker` then lecturer re-processes
-  the transcript; capture the resulting brief + detailed text. **Caveat (F-4.5-27):** if K2-V2 is still
-  inaccessible, step 3 itself may be blocked — confirm provider reachability first.
+  `LLM_PROVIDER=k2think LLM_API_KEY=<real> docker compose … up -d backend ai_worker` then lecturer re-processes
+  the transcript; capture the resulting brief + detailed text.
+- **Step 3 RESULT (2026-06-13): BLOCKED — branch 2 (reachability/credential finding, F-4.5-27 instance).**
+  The agent checked the running backend: `LLM_API_KEY=your-llm-api-key-here` — the verbatim `.env.example`
+  PLACEHOLDER (`.env`/`.env.e2e` set no real key; `LLM_PROVIDER` unset → `deterministic`). **There is no
+  real K2Think credential in this environment**, so a real-provider summary cannot be produced here. The
+  agent did NOT fire a doomed request against `api.k2think.ai` with the placeholder key, and did NOT re-run
+  the adapter and call it verified. **This reachability state IS the honest outcome** (per the developer's
+  branch framing). **Owner: developer.** To run step 3: put a real `LLM_API_KEY` in `.env` (the base URL
+  `https://api.k2think.ai` is already set) + set `LLM_PROVIDER=k2think`, confirm the `MBZUAI-IFM/K2-Think-v2`
+  deployment is actually accessible (F-4.5-27 noted the intended model was not), restart backend + ai_worker,
+  re-process a transcript, capture brief + detailed. Then re-classify Workstream A: no-op (grounded
+  paragraph) / model-inaccessible (deeper F-4.5-27) / real defect (still short/contextless). **Restore
+  `LLM_PROVIDER=deterministic` after, so the local E2E suite stays on the deterministic pipeline.**
 
 ## Workstream A — Generation (Stage 4.5) — CONDITIONAL on Task 0 step 3
 - **A1 brief length** — product intent: brief = a single ~4–5-sentence paragraph. **The v1 brief prompt
@@ -79,6 +90,11 @@ quiz/glossary/assistant; the "Save notes no-feedback" nit is a separate small fi
 - **F-C3 (Stage 4.7 surface)** — separate summary page → inline single block. **OPEN** → Workstream B.
 - **F-C4 (frontend nit)** — "Save notes" gives no UI confirmation (lecturer side). **OPEN — out of this
   corrective's scope**, logged for a future small frontend pass.
+- **F-C5 (Stage 4.5 / ops, reachability)** — the real-provider summary baseline (Task 0 step 3) is **BLOCKED:
+  no real `LLM_API_KEY` in this environment** (placeholder `your-llm-api-key-here`). Workstream A cannot be
+  resolved to no-op-vs-defect without it. **DEFERRED, owner: developer, trigger: a real key is configured
+  (locally or at staging) + K2-V2 access confirmed (F-4.5-27).** Until then A is *credential-blocked*, NOT
+  "verified no-op" — must not be closed by re-running the adapter.
 
 ## Workflow (§8)
 Each workstream gets its own sub-spec → implementation plan → developer approval BEFORE any source edits.
