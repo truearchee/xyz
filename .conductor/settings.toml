@@ -1,6 +1,7 @@
 [scripts]
 setup = ".conductor/setup.sh"
 run = ".conductor/run.sh"
+archive = ".conductor/archive.sh"
 run_mode = "nonconcurrent"
 
 [git]
@@ -20,8 +21,3 @@ RULES — never violate these:
 5. Never update STATUS.md or roadmap.md on a branch — only on main during merge train.
 6. knowledge/ files: update only your own stage trio on-branch.
 """
-[scripts]
-setup = ".conductor/setup.sh"
-run = ".conductor/run.sh"
-archive = ".conductor/archive.sh"
-run_mode = "nonconcurrent"
