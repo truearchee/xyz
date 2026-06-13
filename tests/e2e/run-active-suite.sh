@@ -38,7 +38,8 @@ done
 cleanup() {
   echo "== [trap] unconditional teardown (runs on ANY exit) =="
   node tests/e2e/fixtures/teardown.mjs "$E2E_RUN_ID" || echo "WARN: teardown best-effort failed — check orphans"
-  docker compose -f docker-compose.yml -f docker-compose.e2e.yml up -d ai_worker >/dev/null 2>&1 || true
+  # restore ai_worker to the gate's deterministic state (not the dev k2think), matching the suite's provider
+  docker compose -f docker-compose.yml -f docker-compose.e2e.yml -f docker-compose.deterministic.yml up -d ai_worker >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
 
@@ -49,12 +50,12 @@ echo "== success set (9; --grep-invert 'fault gate') =="
 npx playwright test --workers=1 --grep-invert "fault gate" --reporter=line; S=$?
 
 echo "== fault: invalid_output =="
-LLM_FAULT_INJECTION=invalid_output docker compose -f docker-compose.yml -f docker-compose.e2e.yml -f docker-compose.fault.yml up -d ai_worker >/dev/null 2>&1
+LLM_FAULT_INJECTION=invalid_output docker compose -f docker-compose.yml -f docker-compose.e2e.yml -f docker-compose.deterministic.yml -f docker-compose.fault.yml up -d ai_worker >/dev/null 2>&1
 sleep 10
 npx playwright test --workers=1 --grep "invalid_output" --reporter=line; FO=$?
 
 echo "== fault: invalid_input =="
-LLM_FAULT_INJECTION=invalid_input docker compose -f docker-compose.yml -f docker-compose.e2e.yml -f docker-compose.fault.yml up -d ai_worker >/dev/null 2>&1
+LLM_FAULT_INJECTION=invalid_input docker compose -f docker-compose.yml -f docker-compose.e2e.yml -f docker-compose.deterministic.yml -f docker-compose.fault.yml up -d ai_worker >/dev/null 2>&1
 sleep 10
 npx playwright test --workers=1 --grep "invalid_input" --reporter=line; FI=$?
 
