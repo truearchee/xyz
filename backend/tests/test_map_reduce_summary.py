@@ -241,7 +241,7 @@ async def test_detailed_map_reduce_persists_full_coverage(db_session: AsyncSessi
     assert n >= 2  # the small budget produced multiple units
     assert meta["coverageManifest"] == list(range(n))  # EVERY unit consumed
     assert len(meta["sourceMapUnitSummaryIds"]) == n
-    assert meta["mapPromptVersion"] == "v2" and meta["reducePromptVersion"] == "v1"
+    assert meta["mapPromptVersion"] == "v2" and meta["reducePromptVersion"] == "v2"
 
     async with factory() as session:
         units = (

@@ -53,7 +53,7 @@ SUMMARY_JOB_TYPES = tuple(SUMMARY_SPECS)
 # the DETAILED.prompt_key above is the legacy single-call prompt, retained only for the processor_version
 # label and not used to generate.
 MAP_PROMPT_KEY = PromptKey("detailed_summary_map", "v2")  # v2 (4.5.1c): hardened JSON-only directive
-REDUCE_PROMPT_KEY = PromptKey("detailed_summary_reduce", "v1")
+REDUCE_PROMPT_KEY = PromptKey("detailed_summary_reduce", "v2")  # v2 (4.5.1c): JSON-only + faithful merge
 
 # Brief-from-detailed (4.5.1b, ADR-052): the brief is derived from the COMPLETED detailed summary in one
 # small call (BRIEF route), NOT re-summarized from the transcript. SINGLE source of truth, imported by

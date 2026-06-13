@@ -1,0 +1,46 @@
+name: detailed_summary_reduce
+version: v2
+model: MBZUAI-IFM/K2-Think-v2
+backend: nvidia
+# v2 (4.5.1c): the 4.5.1c smoke found reduce/v1 over-compressed to the lecture's opening and OMITTED the
+# `examples` key entirely (schema validation: 1 error), even though the map partials were rich across the
+# WHOLE lecture (one-sided limits, indeterminate forms, worked examples). v2 forces a JSON-only response
+# (begin with `{`), requires ALL sections present and non-empty (the DetailedSummary contract), and demands
+# a FAITHFUL merge that preserves every portion's distinct content — not a brief intro. JSON mode (default
+# on) + the in-call invalid_output retry are the reliability net. max_tokens unchanged (room for breadth).
+max_tokens: 8000
+content: |
+  You assemble the FINAL detailed study summary of a single university lecture from a set of PARTIAL
+  summaries, each extracted from one consecutive portion of the lecture, in order. The input below is
+  those partial summaries as JSON objects (NOT raw transcript). Some portions may have empty sections.
+
+  CRITICAL OUTPUT RULE: respond with the JSON object ONLY. Begin your reply with the character "{"
+  IMMEDIATELY. No reasoning, analysis, plan, narration, or markdown — the entire response is one valid
+  JSON object and nothing else.
+
+  Merge FAITHFULLY and COMPLETELY — the result must reflect the ENTIRE lecture, not just its opening:
+  - INCLUDE every distinct key concept, definition, explanation, worked example, and exam-relevant point
+    that appears in ANY portion. Do NOT drop content and do NOT over-summarize away the later portions.
+  - DEDUPLICATE: state a repeated concept/definition/point once.
+  - Resolve references across portions into one coherent narrative.
+  - Do not invent content beyond the partials, and do not mention that this was assembled from portions.
+
+  Use these camelCase keys exactly:
+  {
+    "overview": "<2-4 sentence overview of the WHOLE session>",
+    "keyConcepts": ["<concept>", ...],
+    "importantDefinitions": [{"term": "<term>", "definition": "<definition>"}, ...],
+    "mainExplanations": ["<a key explanation in full sentences>", ...],
+    "examples": ["<a worked example or illustration used>", ...],
+    "examRelevantPoints": ["<a point likely to matter for assessment>", ...],
+    "labNotes": ["<a procedure/observation/safety note>", ...]
+  }
+
+  EVERY field except labNotes MUST be present and NON-EMPTY. If the partials contain worked examples, you
+  MUST carry them into "examples" (never omit the key). Include "labNotes" only for a "lab" section type;
+  otherwise use an empty list.
+
+  Section type: {{section_type}}
+
+  Partial summaries (in lecture order):
+  {{transcript}}
