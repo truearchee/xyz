@@ -2,7 +2,7 @@
 type: architecture
 stage: 04
 created: 2026-06-01
-updated: 2026-06-01 19:58
+updated: 2026-06-10
 related-session: knowledge/specs/stage-04/4.2-transcript-parse-segments.md
 ---
 
@@ -47,6 +47,31 @@ Successful parse completion now creates a queued `chunk` ingestion job in the sa
 The chunk handler locks the `chunk` `ingestion_jobs` row, marks it running, then locks the owning `transcripts` row before replacing any chunk rows. It verifies that a completed parse job exists and uses the parse job's persisted `processor_version` in the chunk idempotency key.
 
 Chunk replacement is atomic: one transaction deletes old chunks, inserts the fresh chunk set, advances the transcript to `completed`, and completes the job with `result_metadata.chunk_count` and `result_metadata.oversized_segment_count`. If insertion fails, that transaction rolls back and preserves the prior committed chunk set. A separate cleanup transaction then marks the job and transcript failed with a sanitized error.
+
+## Embedding encoder (Stage 4.4)
+
+`SentenceTransformersEmbeddingEncoder` in `app/domains/transcripts/embedding_encoder.py` wraps
+`sentence-transformers/all-MiniLM-L6-v2` with:
+
+- **Constants:** `EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"`, `EMBEDDING_DIMENSION = 384`,
+  `EMBEDDING_NORMALIZATION = "l2"`, `EMBEDDING_VERSION = "embedding-v1"`.
+- **Model cache:** `_MODEL_CACHE: dict[tuple[str, str, str], Any]` keyed by `(model_path, revision, device)`,
+  protected by `_MODEL_CACHE_LOCK` (thread-level). On first call the model is loaded and stored; subsequent
+  calls return the cached instance without re-loading from disk.
+- **Snapshot validation** (`validate_model_snapshot()`): called at worker startup for every `embedding`
+  queue worker before `worker.work()` runs. Checks:
+  - `EMBEDDING_MODEL_PATH` exists and is a directory.
+  - `MODEL_REVISION` marker file present and matches `EMBEDDING_MODEL_REVISION`.
+  - Required files present: `config.json`, `modules.json`, `tokenizer_config.json`,
+    `sentence_bert_config.json`, `1_Pooling/config.json`, plus one of `model.safetensors` /
+    `pytorch_model.bin` and one of `tokenizer.json` / `vocab.txt`.
+- **Encode:** calls `model.encode(texts, normalize_embeddings=True, convert_to_numpy=True)`, asserts
+  each output vector has length 384 and L2-norm ≈ 1.0 (rel/abs tol 1e-5), then returns
+  `list[list[float]]`.
+- **Test substitute:** `DeterministicEmbeddingEncoder` produces deterministic SHA-256-derived vectors
+  of the same dimension, L2-normalised, with no model load.
+- **Config vars consumed at startup:** `EMBEDDING_MODEL_PATH`, `EMBEDDING_MODEL_REVISION`,
+  `EMBEDDING_BATCH_SIZE`, `EMBEDDING_WORKER_CONCURRENCY`, `EMBEDDING_DEVICE`.
 
 ## Embedding + AI queues (Stage 4.4 / 4.5)
 Worker isolation extends by queue: `python -m app.workers.worker <queue>` selects `ingestion`
