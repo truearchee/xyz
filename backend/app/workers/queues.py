@@ -15,6 +15,16 @@ EMBEDDING_RQ_RETRY_INTERVALS = [30, 120, 300]
 # RQ retries are reserved for provider_transient + bounded invalid_output (rule 15).
 AI_RQ_RETRY_MAX = 3
 AI_RQ_RETRY_INTERVALS = [30, 120, 300]
+# The RQ work-horse `job_timeout` MUST exceed the HTTP request timeout, else RQ SIGKILLs a legitimate long
+# call (the detailed/reasoning K2-Think-v2 call on a real-sized transcript) mid-flight — before it can return
+# OR fail cleanly — then retries into the same wall ("Work-horse terminated unexpectedly"). RQ's default
+# (180s) is SHORTER than the 240s detailed HTTP timeout, so it was killing real detailed calls. Track the HTTP
+# timeout (env; defaults mirror config.py LLM_*_TIMEOUT_SECONDS) + a buffer for limiter/backoff + persistence.
+_AI_JOB_TIMEOUT_BUFFER_SECONDS = 120
+
+
+def _summary_job_timeout(http_timeout_env: str, default_seconds: int) -> int:
+    return int(os.environ.get(http_timeout_env, str(default_seconds))) + _AI_JOB_TIMEOUT_BUFFER_SECONDS
 
 
 def get_redis_connection() -> Redis:
@@ -64,6 +74,7 @@ def enqueue_generate_brief_summary(ingestion_job_id: UUID) -> None:
         generate_brief_summary,
         str(ingestion_job_id),
         job_id=f"summary-brief-{ingestion_job_id}",
+        job_timeout=_summary_job_timeout("LLM_PROVIDER_TIMEOUT_SECONDS", 60),
         retry=Retry(max=AI_RQ_RETRY_MAX, interval=AI_RQ_RETRY_INTERVALS),
     )
 
@@ -75,6 +86,7 @@ def enqueue_generate_detailed_summary(ingestion_job_id: UUID) -> None:
         generate_detailed_summary,
         str(ingestion_job_id),
         job_id=f"summary-detailed-{ingestion_job_id}",
+        job_timeout=_summary_job_timeout("LLM_DETAILED_TIMEOUT_SECONDS", 240),
         retry=Retry(max=AI_RQ_RETRY_MAX, interval=AI_RQ_RETRY_INTERVALS),
     )
 

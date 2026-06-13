@@ -1,0 +1,17 @@
+# §3A / rule 11 — GATE-ONLY deterministic overlay.
+#
+# The dev/browse stack (`-f docker-compose.yml -f docker-compose.e2e.yml`) follows root .env, which is
+# LLM_PROVIDER=k2think — so a developer sees REAL transcript-grounded summaries in the browser (Stage 4.5
+# corrective / §6). The automated active suite asserts the deterministic adapter's CANNED output, so it MUST
+# run on the test adapter. `run-active-suite.sh` adds THIS overlay (and guards on it) to force deterministic
+# on the LLM-calling services, regardless of the dev .env. `environment` overrides env_file.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.e2e.yml -f docker-compose.deterministic.yml \
+#     up -d --force-recreate backend ai_worker
+services:
+  backend:
+    environment:
+      LLM_PROVIDER: deterministic
+  ai_worker:
+    environment:
+      LLM_PROVIDER: deterministic

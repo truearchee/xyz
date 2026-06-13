@@ -21,6 +21,20 @@ if ! node tests/e2e/fixtures/check-orphans.mjs; then
   exit 1
 fi
 
+# §3A / rule 11: the success-set specs assert the deterministic adapter's CANNED summary output. The
+# dev/browse stack may be on the real provider (LLM_PROVIDER=k2think) — on which these specs fail. Guard
+# loudly rather than waste a run, and give the one-liner to force deterministic (gate-only overlay).
+echo "== [pre-run] provider guard (must be deterministic) =="
+for svc in backend ai_worker; do
+  prov=$(docker compose -f docker-compose.yml -f docker-compose.e2e.yml exec -T "$svc" printenv LLM_PROVIDER 2>/dev/null | tr -d '\r')
+  if [ "$prov" != "deterministic" ]; then
+    echo "ABORT: $svc LLM_PROVIDER='$prov' (not deterministic). The active suite asserts canned output; a real"
+    echo "provider fails it. Force the test adapter first (gate-only overlay), then re-run:"
+    echo "  docker compose -f docker-compose.yml -f docker-compose.e2e.yml -f docker-compose.deterministic.yml up -d --force-recreate backend ai_worker"
+    exit 1
+  fi
+done
+
 cleanup() {
   echo "== [trap] unconditional teardown (runs on ANY exit) =="
   node tests/e2e/fixtures/teardown.mjs "$E2E_RUN_ID" || echo "WARN: teardown best-effort failed — check orphans"
