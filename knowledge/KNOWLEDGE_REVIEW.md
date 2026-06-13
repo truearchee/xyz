@@ -5,6 +5,59 @@
 **Scope:** Every file under `knowledge/` — no exceptions
 **Method:** Direct file reads; all findings based on actual file content
 
+> **Relocated** 2026-06-13 from repo root → `knowledge/` to sit with the cross-cutting docs (STATUS / log /
+> roadmap / open-questions / CODEBASE_REVIEW) per the dev-workflow "Review / audit docs" convention (C-001).
+
+---
+
+## RESOLUTION (2026-06-13) — all 27 carry a rule-13 state
+
+> Resolved by Claude Code (Opus 4.8). **Reality-checked first (sacred rule):** the audit is a 2026-06-10
+> snapshot; by 2026-06-13 a post-audit cleanup had already made most fixes (uncommitted). Each item was
+> verified against current files/source/git, not re-applied blindly. Commits: **c47e7e4** (bucket 1
+> correctness), **c3f640f** (bucket 2 convention), **this commit** (bucket 3 structural + this resolution).
+> Rule-13 vocabulary: **fixed / deferred-to-named-session / accepted-with-rationale / rejected.**
+
+| # | Anomaly | Bucket | Rule-13 state | Resolution |
+|---|---|---|---|---|
+| 1 | S-001 4.2 spec `approved` | 2 | **fixed** | → `done` (c3f640f) |
+| 2 | S-002 4.4 spec `fully-verified` | 2 | **fixed** | → `done` |
+| 3 | S-012 4.3.5d plan `approved` | 2 | **fixed** | → `executed` |
+| 4 | S-013 4.4 plan `approved` | 2 | **fixed** | → `executed` |
+| 5 | L-001 log `[blocker]` | 2 | **fixed** | `blocker` defined in dev-workflow + log Format header |
+| 6 | L-002 log `[docs]` | 2 | **fixed** | `docs` defined likewise |
+| 7 | S-004 4.3.5a spec `approved` | 2 | **fixed** | → `done` |
+| 8 | S-005 4.3.5d spec `ready` | 2 | **fixed** | → `done` |
+| 9 | S-006 4.3.5e spec `complete` | 2 | **fixed** | → `done` |
+| 10 | S-007 E2-B1 spec `complete` | 2 | **fixed** | → `done` |
+| 11 | S-008 E2 spec `complete` | 2 | **fixed** | → `done` |
+| 12 | S-009 checkpoint-A spec `approved` | 2 | **fixed** | → `done` |
+| 13 | S-010 checkpoint-D spec `complete` | 2 | **fixed** | → `done` |
+| 14 | S-011 checkpoint-E spec `complete` | 2 | **fixed** | → `done` |
+| 15 | H-001 1.0 `commit: ""` | 1 | **fixed** | → `0f8132c` (git-verified) (c47e7e4) |
+| 16 | H-002 1.1 `commit: a1b2c3d` | 1 | **fixed** | placeholder **eliminated** → `0f8132c` (git-verified) |
+| 17 | H-003 1.1b `commit: ""` | 1 | **fixed** | → `8144529` (Stage 1 FV commit) |
+| 18 | H-004 2.2 `commit: ""` | 1 | **fixed** | → `2f922c9` (Session 2.2 commit) |
+| 19 | H-005 7 finals omit `commit` | 1 | **fixed** | 7 real SHAs (8860a6e/5f92698/ae8a3c8/77886fd/8a4169c/6361c85/442f221); none unrecoverable |
+| 20 | T-001 worker.md embedding gap | 1 | **fixed** | embedding section documents shipped code; verified vs `embedding_encoder.py`; `updated: 2026-06-10` |
+| 21 | L-003 1.1b `report:` path | 2 | **fixed** | spec+plan → `knowledge/steps/stage-01/1.1b-browser-gate.md` |
+| 22 | F-001 stage `3` vs `"03"` | 2 | **accepted-with-rationale** | bare-int is the 80+-file dominant convention; documented in dev-workflow; mass-rewrite rejected (sacred rule / don't-trade-drift) |
+| 23 | F-002 stage-04 plan formats | 2 | **accepted-with-rationale** | same — convention documented, not churned |
+| 24 | F-003 step-report formats | 2 | **accepted-with-rationale** | same |
+| 25 | C-001 CODEBASE_REVIEW in `knowledge/` | 3 | **fixed** | `knowledge/` confirmed correct (cross-cutting home, documented in dev-workflow); KNOWLEDGE_REVIEW.md **relocated** there to co-locate — inconsistency removed |
+| 26 | P-001 `specs/recovery/` single-file folder | 3 | **accepted-with-rationale** | deliberate cross-block strategy doc (not a session; 22 inbound refs); documented exception in dev-workflow; status is prose not frontmatter, so no status fix |
+| 27 | Q-001 missing roadmap not in open-questions | 2/3 | **fixed** | roadmap now exists (`knowledge/roadmap.md`, v3); recorded in `open-questions.md`; historical `xyz-lms-final-roadmap-v2` refs in closed docs left as history |
+| 28 | non-standard `type:` values (informational) | 2 | **accepted-with-rationale** | defined as accepted extension vocabulary in dev-workflow (intentional recovery/checkpoint/supplemental structure) |
+| 29 | extra frontmatter fields (informational) | 2 | **accepted-with-rationale** | defined as accepted fields in dev-workflow |
+
+**Body anomalies not in the numbered 27** (Parts 5–6), for completeness — all **accepted-with-rationale**:
+L-004 (recovery `report:`→`archive/` paths: factually-correct structural consequence, documented),
+W-001 (folder reference, valid), W-002 (final-report self-`report:` link: template artefact, harmless;
+field now in the accepted-frontmatter set), ADR-stage `"4.3.5"` strings (same as the `stage:` convention).
+
+**Summary:** 21 **fixed**, 6 **accepted-with-rationale** (F-001/002/003, P-001, items 28/29), 0 deferred,
+0 rejected. No fabricated commit hashes; none genuinely unrecoverable. Audit **CLOSED**.
+
 ---
 
 ## Part 1 — Knowledge System Overview
