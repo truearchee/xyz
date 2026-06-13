@@ -232,7 +232,10 @@ async def _ensure_summary_job(
     *,
     transcript: Transcript,
     spec: SummarySpec,
+    force: bool = False,
 ) -> UUID | None:
+    # ``force`` (the 4.5.1b backfill): re-queue an already-COMPLETED job to regenerate a stale summary.
+    # The normal path (force=False) no-ops on a completed job so the pipeline never duplicates work.
     active = await _active_summary_job(session, transcript_id=transcript.id, job_type=spec.job_type)
     if active is not None:
         return active.id
@@ -269,13 +272,14 @@ async def _ensure_summary_job(
     ).scalar_one_or_none()
     if job is None:
         return None
-    if job.status == "completed":
+    if job.status == "completed" and not force:
         return None
-    if job.status == "failed":
+    if job.status == "failed" or (force and job.status == "completed"):
         now = _now()
         job.status = "queued"
         job.error_message = None
         job.failure_category = None
+        job.completed_at = None
         job.updated_at = now
     return job.id
 

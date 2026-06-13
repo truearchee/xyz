@@ -106,7 +106,11 @@ async def backfill_stale_detailed_summaries(
                 ).scalar_one_or_none()
                 if transcript is None or transcript.lifecycle_state != "active":
                     continue  # raced — skip
-                job_id = await _ensure_summary_job(session, transcript=transcript, spec=DETAILED)
+                # force=True: the detailed job is already COMPLETED with a stale summary; re-queue it to
+                # regenerate via map-reduce (the normal _ensure path no-ops on completed).
+                job_id = await _ensure_summary_job(
+                    session, transcript=transcript, spec=DETAILED, force=True
+                )
         if job_id is not None:
             enqueue_summary_job(DETAILED.job_type, job_id)
             report.enqueued.append((str(transcript_id), job_id))

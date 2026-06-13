@@ -14,6 +14,7 @@ from datetime import UTC, datetime
 
 import pytest
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from uuid6 import uuid7
 
@@ -170,14 +171,30 @@ async def _persist_detailed(factory, transcript, *, strategy, truncated):
                 input_content_hash="ich",
                 status="succeeded",
             )
-            # ingestion_job_id is NOT NULL — attach a throwaway completed detailed job.
-            job = IngestionJob(
-                transcript_id=transcript.id,
-                job_type="generate_detailed_summary",
-                status="completed",
-                idempotency_key=f"{transcript.id}:detailed:{uuid7()}",
+            # A COMPLETED detailed job under the CANONICAL idempotency_key — so the backfill's
+            # _ensure_summary_job finds THIS completed job and must force-requeue it (exercising the real
+            # completed-job path). on_conflict-safe + reuse so it composes with a transcript that already
+            # has a detailed job (e.g. from _make_detailed_job).
+            await session.execute(
+                pg_insert(IngestionJob)
+                .values(
+                    id=uuid7(),
+                    transcript_id=transcript.id,
+                    job_type="generate_detailed_summary",
+                    status="completed",
+                    idempotency_key=f"{transcript.id}:generate_detailed_summary:{transcript.checksum}",
+                )
+                .on_conflict_do_nothing(index_elements=["idempotency_key"])
             )
-            session.add(job)
+            job = (
+                await session.execute(
+                    select(IngestionJob).where(
+                        IngestionJob.transcript_id == transcript.id,
+                        IngestionJob.job_type == "generate_detailed_summary",
+                    )
+                )
+            ).scalar_one()
+            job.status = "completed"
             await session.flush()
             log.ingestion_job_id = job.id
             session.add(log)
