@@ -344,15 +344,20 @@ class Settings:
 
     @property
     def LLM_SUMMARY_REDUCE_INPUT_CHAR_BUDGET(self) -> int:
-        """§3.3 C1 guard threshold: if the serialized map partials exceed this, reduce runs TIERED
-        (ordered groups → group-summaries → reduce those) instead of one call — the reduce input is
-        itself a 408 surface and must never be assumed small."""
-        return self._int("LLM_SUMMARY_REDUCE_INPUT_CHAR_BUDGET", "9000", minimum=1)
+        """§3.3 C1 guard threshold: above this, reduce runs TIERED instead of one call (the reduce input is
+        itself a 408 surface). Raised 9000→16000 after the 4.5.1c smoke: a real ~60-min lecture's map
+        partials (~7-9 units) serialize to ~13KB, and the FAITHFUL-merge reduce (v2) does NOT compress, so
+        a 9000 threshold tiered into a non-converging loop (the group-summaries stayed large). 16KB sits at
+        the empirically 408-safe single-call ceiling (~145s < the 240s detailed timeout), so a realistic
+        lecture reduces in ONE call. Lectures whose partials exceed this still tier; faithful-merge tiering
+        convergence for very long lectures is F-4.5.1c-2 (deferred; bounded by LLM_SUMMARY_MAX_MAP_UNITS)."""
+        return self._int("LLM_SUMMARY_REDUCE_INPUT_CHAR_BUDGET", "16000", minimum=1)
 
     @property
     def LLM_SUMMARY_REDUCE_INPUT_TOKEN_BUDGET(self) -> int:
-        """Estimated-token companion to the reduce-input char budget (same guard, token axis)."""
-        return self._int("LLM_SUMMARY_REDUCE_INPUT_TOKEN_BUDGET", "2200", minimum=1)
+        """Estimated-token companion to the reduce-input char budget (same guard, token axis). 16000 chars
+        ≈ 4600 tokens (D2 chars/3.5)."""
+        return self._int("LLM_SUMMARY_REDUCE_INPUT_TOKEN_BUDGET", "4600", minimum=1)
 
     @property
     def LLM_SUMMARY_MAX_MAP_UNITS(self) -> int:
