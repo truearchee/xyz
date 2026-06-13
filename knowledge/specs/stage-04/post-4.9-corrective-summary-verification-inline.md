@@ -39,7 +39,16 @@ Steps 1–2 run by the agent (read-only); step 3 is the developer's (needs real-
   a real-provider run (step 3, developer-owned). Command:
   `LLM_PROVIDER=k2think LLM_API_KEY=<real> docker compose … up -d backend ai_worker` then lecturer re-processes
   the transcript; capture the resulting brief + detailed text.
-- **Step 3 RESULT (2026-06-13): BLOCKED — branch 2 (reachability/credential finding, F-4.5-27 instance).**
+- **Step 3 RESULT — UPDATE (2026-06-13, later): DONE — real key arrived; branch 1 (no-op).** A real
+  K2Think key was placed in `.env`; `MBZUAI-IFM/K2-Think-v2` was curl-confirmed on both routes and the full
+  pipeline ran real (AIRequestLog: model echo, http 200, 31.9s/125.5s, `chatcmpl-` ids; brief + detailed
+  **about the actual transcript**, not "Term A"; both passed the OutputValidator). **F-4.5-27 RESOLVED**
+  (ADR-025 deviation live-verified); **A1 no-op** (brief is an 83-word paragraph). No code change (model was
+  already K2-Think-v2). §3A re-secured by forcing `LLM_PROVIDER: deterministic` in `docker-compose.e2e.yml`
+  (committed) → dev `.env`=k2think, gate/CI=deterministic. Evidence: [[steps/stage-04/4.5-real-provider-smoke]].
+  Workstream A complete → the corrective is CLOSED. *(The earlier BLOCKED result below was the honest
+  interim state before the key arrived.)*
+- **Step 3 RESULT (2026-06-13, interim): BLOCKED — branch 2 (reachability/credential finding, F-4.5-27 instance).**
   The agent checked the running backend: `LLM_API_KEY=your-llm-api-key-here` — the verbatim `.env.example`
   PLACEHOLDER (`.env`/`.env.e2e` set no real key; `LLM_PROVIDER` unset → `deterministic`). **There is no
   real K2Think credential in this environment**, so a real-provider summary cannot be produced here. The
@@ -90,11 +99,10 @@ quiz/glossary/assistant; the "Save notes no-feedback" nit is a separate small fi
 - **F-C3 (Stage 4.7 surface)** — separate summary page → inline single block. **OPEN** → Workstream B.
 - **F-C4 (frontend nit)** — "Save notes" gives no UI confirmation (lecturer side). **OPEN — out of this
   corrective's scope**, logged for a future small frontend pass.
-- **F-C5 (Stage 4.5 / ops, reachability)** — the real-provider summary baseline (Task 0 step 3) is **BLOCKED:
-  no real `LLM_API_KEY` in this environment** (placeholder `your-llm-api-key-here`). Workstream A cannot be
-  resolved to no-op-vs-defect without it. **DEFERRED, owner: developer, trigger: a real key is configured
-  (locally or at staging) + K2-V2 access confirmed (F-4.5-27).** Until then A is *credential-blocked*, NOT
-  "verified no-op" — must not be closed by re-running the adapter.
+- **F-C5 (Stage 4.5 / ops, reachability)** — was BLOCKED (placeholder key). **RESOLVED 2026-06-13:** real key
+  placed in `.env`; `K2-Think-v2` live-verified end-to-end (both routes); real grounded summaries produced +
+  validator-conformant. Workstream A closed as **branch 1 (no-op)** — no code change needed. F-4.5-27 closed.
+  Evidence: [[steps/stage-04/4.5-real-provider-smoke]]. **Residual:** the exposed key must be ROTATED (§7).
 
 ## Workflow (§8)
 Each workstream gets its own sub-spec → implementation plan → developer approval BEFORE any source edits.

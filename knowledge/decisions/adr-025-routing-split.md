@@ -54,6 +54,14 @@ Two further honesty gaps surfaced:
 5. **Detailed generation gated off** (`ENABLE_DETAILED_SUMMARY=false`): the inaccessible `K2-Think-v0`
    is never called; no detailed job/log row is created (lands in 4.5c).
 
+## F-4.5-27 RESOLVED (2026-06-13) — deviation live-verified
+A real K2Think key was obtained and `K2-Think-v2` (the deviation model) was **live-verified end-to-end on
+both routes** — cerebras (brief, HTTP 200, 31.9s) + nvidia (detailed, HTTP 200, 125.5s), model-ID echo
+matching the configured id (rule 11), producing transcript-grounded summaries that pass the `OutputValidator`.
+Evidence: [[steps/stage-04/4.5-real-provider-smoke]]. The deviation is **accepted as the production model**;
+the originally-intended `K2-V2-Instruct`/`K2-Think-v0` remain inaccessible but are no longer on the critical
+path. The switch-back trigger below stays valid if they ever become accessible. F-4.5-27 closed.
+
 ## Switch-back trigger
 When **both** intended models (`K2-V2-Instruct`, `K2-Think-v0`) become accessible:
 - Bump the prompt versions and set `model:` back (brief→`K2-V2-Instruct`, detailed→`K2-Think-v0`);

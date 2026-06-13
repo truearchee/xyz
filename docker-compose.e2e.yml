@@ -1,8 +1,17 @@
 services:
+  # §3A (rule 11): the E2E overlay FORCES the deterministic test adapter on the LLM-calling services,
+  # overriding whatever LLM_PROVIDER the dev .env carries (dev may be k2think). `environment` overrides
+  # env_file, so the local active suite + any clone keep canned output regardless of the real key.
   backend:
     env_file:
       - .env
       - .env.e2e
+    environment:
+      LLM_PROVIDER: deterministic
+
+  ai_worker:
+    environment:
+      LLM_PROVIDER: deterministic
 
   worker:
     env_file:

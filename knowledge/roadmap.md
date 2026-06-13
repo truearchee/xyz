@@ -225,7 +225,10 @@ call, gate 2.B) → 4.5c (detailed summary, routing split live) → 4.5d (lectur
 full E2E + real-provider smoke). All three close-out gates green: full active E2E suite
 ([[steps/stage-04/4.5d]]), forced-fault browser coverage, and the real-provider smoke
 ([[steps/stage-04/4.5d-real-provider-smoke]] — PASS, model-ID echo matched on both routes, rule 11).
-adr-025/026/027/028 recorded. Open (accepted-with-trigger, non-blocking, rule 13): F-4.5-27
+adr-025/026/027/028 recorded. **F-4.5-27 RESOLVED 2026-06-13** — real key obtained; K2-Think-v2 live-verified
+end-to-end on both routes (real grounded summaries, validator-conformant); ADR-025 deviation accepted as
+production (see [[steps/stage-04/4.5-real-provider-smoke]]); dev `.env`=k2think, E2E/CI forced deterministic
+(docker-compose.e2e.yml). Residual: rotate the exposed key. (Was: open, accepted-with-trigger, rule 13.)
 (intended models inaccessible — switch-back = config/prompt edit), F-4.5-28 (backendUsed not
 response-verifiable). Carry-forward to Stage 4.6: F-4.5-47 (RQ scheduler / per-request fault injection).
 
