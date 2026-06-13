@@ -40,6 +40,10 @@ class GeneratedLectureSummary(Base):
             "backend_used IN ('cerebras', 'nvidia')",
             name="ck_gen_summaries_backend_used",
         ),
+        CheckConstraint(
+            "generation_strategy IN ('single_call', 'map_reduce', 'truncated_fallback')",
+            name="ck_gen_summaries_generation_strategy",
+        ),
         UniqueConstraint(
             "transcript_id",
             "summary_type",
@@ -83,6 +87,17 @@ class GeneratedLectureSummary(Base):
     )
     source_char_count: Mapped[int | None] = mapped_column(Integer)
     summarized_char_count: Mapped[int | None] = mapped_column(Integer)
+    # Map-reduce (4.5.1a, F-4.5-51): how this summary was produced. Only `map_reduce` + truncated=false
+    # is a full-coverage artifact; `single_call` is legacy/short; `truncated_fallback` is the Option-A
+    # emergency path. Downstream gating (Stage 5 quiz, §0.1) reads this STATE, never the UI label — wired
+    # in 4.5.1b. Existing rows default `single_call` (they were single calls); combined with their
+    # truncated=true the gate blocks them either way until the 4.5.1c backfill regenerates them.
+    generation_strategy: Mapped[str] = mapped_column(
+        Text, nullable=False, server_default=text("'single_call'")
+    )
+    # Compact provenance for map-reduce: map/reducePromptVersion, mapUnitCount, sourceMapUnitSummaryIds,
+    # coverageManifest. Null for single_call rows.
+    generation_metadata: Mapped[dict | None] = mapped_column(JSONB)
     ai_request_log_id: Mapped[UUID] = mapped_column(
         PostgresUUID(as_uuid=True),
         ForeignKey("ai_request_logs.id"),

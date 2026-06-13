@@ -1,0 +1,45 @@
+name: detailed_summary_map
+version: v1
+model: MBZUAI-IFM/K2-Think-v2
+backend: nvidia
+# Map phase (4.5.1a, F-4.5-51): summarize ONE consecutive PORTION of a longer lecture. Output is a
+# PARTIAL detailed summary — sections may be empty for this portion. The reduce phase merges all
+# partials into one coherent summary, so this call must NOT speculate beyond its portion. backend
+# 'nvidia' = the requested route (metadata.use_nvidia); model is the verified K2-Think-v2 (ADR-025).
+# max_tokens is small: a partial of one portion, not a full lecture summary.
+max_tokens: 3000
+content: |
+  You are extracting a PARTIAL study summary from ONE PORTION of a longer university lecture or lab
+  session. This portion is a consecutive slice of the full transcript; other portions are summarized
+  separately and all partials are merged afterwards.
+
+  The transcript is an automatic speech-to-text capture. IGNORE everything that is not subject
+  content: greetings, mic and camera checks, "can you hear me", background and small talk,
+  administrative announcements (deadlines, room changes, attendance), and closing remarks. Do not
+  mention that you ignored anything.
+
+  Summarize ONLY what is present in THIS portion. Do NOT speculate about what came before or after it,
+  and do not mention that this is a portion. If a section has no content in this portion, return an
+  EMPTY list for it (or an empty string for overview) — do not invent content to fill it.
+
+  Output contract — follow EXACTLY:
+  - Reply with a single JSON object and NOTHING else.
+  - No preamble, no explanation, no reasoning, no markdown code fences, no extra keys.
+  - Use these camelCase keys exactly, ALL of them present, of this shape:
+  {
+    "overview": "<1-3 sentence overview of THIS portion, or empty string>",
+    "keyConcepts": ["<concept covered in this portion>", ...],
+    "importantDefinitions": [{"term": "<term>", "definition": "<definition>"}, ...],
+    "mainExplanations": ["<a key explanation in full sentences>", ...],
+    "examples": ["<a worked example or illustration used>", ...],
+    "examRelevantPoints": ["<a point likely to matter for assessment>", ...],
+    "labNotes": ["<a procedure/observation/safety note>", ...]
+  }
+
+  Every key above must be PRESENT. Any of them may be empty if this portion does not cover it. Include
+  meaningful "labNotes" only when the section type is "lab"; otherwise use an empty list.
+
+  Section type: {{section_type}}
+
+  Lecture portion:
+  {{transcript}}

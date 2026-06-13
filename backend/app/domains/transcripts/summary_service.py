@@ -25,6 +25,11 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from uuid6 import uuid7
 
 from app.domains.transcripts.chunker import NORMALIZATION_VERSION, normalize_segment_text
+from app.domains.transcripts.map_reduce import (
+    MapReduceOutcome,
+    MapReduceRunner,
+    SegmentText,
+)
 from app.domains.transcripts.summary_specs import (
     BRIEF,
     DETAILED,
@@ -89,6 +94,10 @@ class _SummaryContext:
     truncated: bool
     source_char_count: int
     summarized_char_count: int
+    # Map-reduce (4.5.1a): the per-segment normalized text the detailed path partitions over, and the
+    # full (untruncated) transcript. Both are populated for every claim; brief ignores them.
+    segment_texts: tuple[tuple[UUID, str], ...]
+    normalized_full: str
 
 
 def _now() -> datetime:
@@ -267,21 +276,41 @@ async def _generate_summary_async(
     if context is None:
         return
 
+    result: dict | None = None
+    outcome: MapReduceOutcome | None = None
     try:
         maybe_fail_step(spec.feature)
-        result = await active_gateway.complete(
-            prompt_key=spec.prompt_key,
-            output_schema=spec.output_schema,
-            context_refs=ContextRefs(
+        if spec.summary_type == DETAILED.summary_type:
+            # Detailed = map-reduce (4.5.1a): partition → map each unit → reduce. Every sub-call goes
+            # through the gateway; a GatewayError (e.g. a unit times out) or a terminal MapReduceError
+            # propagates to the handlers below exactly like the single-call brief path.
+            runner = MapReduceRunner(
+                factory,
+                active_gateway,
                 ingestion_job_id=ingestion_job_id,
-                transcript_text=context.normalized_text,
-                input_content_hash=context.input_hash,
+                transcript_id=context.transcript_id,
                 section_type=context.section_type,
-            ),
-            priority="background",
-            feature=spec.feature,
-            attempt_number=context.attempts,
-        )
+                source_transcript_checksum=context.source_transcript_checksum,
+                attempt_number=context.attempts,
+            )
+            outcome = await runner.run(
+                [SegmentText(segment_id=sid, text=text) for sid, text in context.segment_texts],
+                context.normalized_full,
+            )
+        else:
+            result = await active_gateway.complete(
+                prompt_key=spec.prompt_key,
+                output_schema=spec.output_schema,
+                context_refs=ContextRefs(
+                    ingestion_job_id=ingestion_job_id,
+                    transcript_text=context.normalized_text,
+                    input_content_hash=context.input_hash,
+                    section_type=context.section_type,
+                ),
+                priority="background",
+                feature=spec.feature,
+                attempt_number=context.attempts,
+            )
     except GatewayError as exc:
         await _mark_summary_failed(
             factory,
@@ -304,7 +333,12 @@ async def _generate_summary_async(
         raise SummaryGenerationError(str(exc)) from None
 
     await _persist_summary_success(
-        factory, ingestion_job_id=ingestion_job_id, spec=spec, context=context, result=result
+        factory,
+        ingestion_job_id=ingestion_job_id,
+        spec=spec,
+        context=context,
+        result=result,
+        outcome=outcome,
     )
 
     # 4.6a (ADR-46-A): if this transcript is a completed pending replacement, swap it in. No-op for
@@ -385,11 +419,26 @@ async def _claim_summary_job(
                     .order_by(TranscriptSegment.sequence_number)
                 )
             ).scalars().all()
-            normalized_full = _normalized_transcript(list(segments))
+            segment_texts = tuple(
+                (segment.id, normalized)
+                for segment in segments
+                if (normalized := normalize_segment_text(segment.text))
+            )
+            normalized_full = " ".join(text for _, text in segment_texts).strip()
             if not normalized_full:
                 raise SummaryGenerationError("no transcript text available")
-            # Option A (F-4.5-50): truncate the cleaned transcript to the char budget BEFORE the model call.
-            normalized, truncated, source_chars, kept_chars = _truncate_for_summary(normalized_full)
+
+            if spec.summary_type == DETAILED.summary_type:
+                # Map-reduce (4.5.1a): the FULL transcript is partitioned downstream — NEVER truncated.
+                # The map-reduce persist path recomputes the provenance input_hash to fold the partition
+                # hash (decision 4), so the value set here is an unused placeholder for the detailed path.
+                normalized = normalized_full
+                truncated = False
+                source_chars = kept_chars = len(normalized_full)
+            else:
+                # Brief stays single-call under Option A (F-4.5-50) until the 4.5.1b brief-from-detailed
+                # rewiring; truncate the cleaned transcript to the char budget before the model call.
+                normalized, truncated, source_chars, kept_chars = _truncate_for_summary(normalized_full)
 
             return _SummaryContext(
                 transcript_id=transcript.id,
@@ -402,6 +451,8 @@ async def _claim_summary_job(
                 truncated=truncated,
                 source_char_count=source_chars,
                 summarized_char_count=kept_chars,
+                segment_texts=segment_texts,
+                normalized_full=normalized_full,
             )
 
 
@@ -411,9 +462,33 @@ async def _persist_summary_success(
     ingestion_job_id: UUID,
     spec: SummarySpec,
     context: _SummaryContext,
-    result: dict,
+    result: dict | None = None,
+    outcome: MapReduceOutcome | None = None,
 ) -> None:
-    content_json = result["parsed"].model_dump(by_alias=True)
+    # Exactly one of result (brief single-call) / outcome (detailed map-reduce) is provided. The
+    # map-reduce outcome carries the REDUCE call's CompletionResult plus the strategy provenance; its
+    # input_hash folds the partition hash so it never collides with the prior truncated single-call row.
+    if outcome is not None:
+        source = outcome.result
+        input_hash = outcome.input_hash
+        generation_strategy = "map_reduce"
+        generation_metadata: dict | None = {
+            "mapPromptVersion": outcome.map_prompt_version,
+            "reducePromptVersion": outcome.reduce_prompt_version,
+            "mapUnitCount": outcome.map_unit_count,
+            "sourceMapUnitSummaryIds": outcome.source_map_unit_summary_ids,
+            "coverageManifest": outcome.coverage_manifest,
+            "partitionConfigHash": outcome.partition_config_hash,
+        }
+    elif result is not None:
+        source = result
+        input_hash = context.input_hash
+        generation_strategy = "single_call"
+        generation_metadata = None
+    else:  # pragma: no cover - defensive
+        raise SummaryGenerationError("persist requires exactly one of result/outcome")
+
+    content_json = source["parsed"].model_dump(by_alias=True)
     async with factory() as session:
         async with session.begin():
             job = (
@@ -440,7 +515,7 @@ async def _persist_summary_success(
                 # Fenced: do not write a summary artifact for a superseded transcript (ADR-46-B §3.2).
                 return
 
-            log = await session.get(AIRequestLog, result["ai_request_log_id"])
+            log = await session.get(AIRequestLog, source["ai_request_log_id"])
             if log is None:  # pragma: no cover - defensive
                 raise SummaryGenerationError("AIRequestLog row missing for generated summary")
 
@@ -459,12 +534,14 @@ async def _persist_summary_success(
                     backend_used=log.backend_used,
                     reasoning_level=log.reasoning_level,
                     source_transcript_checksum=context.source_transcript_checksum,
-                    input_hash=context.input_hash,
+                    input_hash=input_hash,
                     ai_request_log_id=log.id,
                     created_by_ingestion_job_id=ingestion_job_id,
                     truncated=context.truncated,
                     source_char_count=context.source_char_count,
                     summarized_char_count=context.summarized_char_count,
+                    generation_strategy=generation_strategy,
+                    generation_metadata=generation_metadata,
                 )
                 .on_conflict_do_nothing(constraint="uq_gen_summaries_provenance")
             )

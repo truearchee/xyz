@@ -59,6 +59,7 @@ DONE             — governance stages where no browser gate applies (Stage 0 on
 ✅ Stage 4.3.5 Client Edge Recovery                       COMPLETE
 ✅ Stage 4.4   Embeddings                                 FULLY VERIFIED  (gate: 4.4 embedding browser run)
 ✅ Stage 4.5   AI infrastructure + summary generation   FULLY VERIFIED  (gate: 4.5d browser gate + full E2E + real-provider smoke)
+   Stage 4.5.1 Map-reduce summarization (F-4.5-51)        4.5.1a BACKEND VERIFIED  (engine: partition→map→reduce + §3.3 tiered guard + C3 resume; backend 436/0; deterministic sentinel content-flow proof). 4.5.1b (brief-from-detailed + gating + backfill) + 4.5.1c (real-provider smoke + browser gate + 4.7 RE-GATE + backfill) PENDING. NOTE: 4.7 already shipped on the Option-A truncation path → 4.5.1c MUST backfill existing truncated summaries before Stage 5 reads them.
 ✅ Stage 4.6   Replacement / retry / supersession         FULLY VERIFIED  (gate: 4.6d replace+retry browser run)
 ✅ Stage 4.7   Student-facing summaries                   FULLY VERIFIED  (gate: 4.7 student-summaries browser run)
 Stage 4.8   First hosted deploy (staging)              BACKEND VERIFIED  (4.8a–d built + locally verified; hosted browser gate deferred — trigger: before Stage 8.3 or demo/real-user exposure)

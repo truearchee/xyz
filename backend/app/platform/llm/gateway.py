@@ -36,7 +36,11 @@ from app.platform.llm.models.prompt import (
     SummaryFeature,
     Usage,
 )
-from app.platform.llm.models.summary import BriefSummary, DetailedSummary
+from app.platform.llm.models.summary import (
+    BriefSummary,
+    DetailedSummary,
+    DetailedSummaryPartial,
+)
 from app.platform.llm.provider import LLMProvider, get_provider
 from app.platform.llm.registry import PromptRegistry, get_prompt_registry
 from app.platform.llm.validation import OutputValidator
@@ -53,7 +57,7 @@ class ContextRefs:
 
 
 class CompletionResult(TypedDict):
-    parsed: BriefSummary | DetailedSummary
+    parsed: BriefSummary | DetailedSummary | DetailedSummaryPartial
     model_id_echoed: str
     usage: Usage
     backend_used: Backend
@@ -113,7 +117,7 @@ class LLMGateway:
         self,
         *,
         prompt_key: PromptKey,
-        output_schema: type[BriefSummary] | type[DetailedSummary],
+        output_schema: type[BriefSummary] | type[DetailedSummary] | type[DetailedSummaryPartial],
         context_refs: ContextRefs,
         priority: Priority,
         feature: SummaryFeature,

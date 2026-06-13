@@ -48,9 +48,20 @@ DETAILED = SummarySpec(
 SUMMARY_SPECS: dict[str, SummarySpec] = {BRIEF.job_type: BRIEF, DETAILED.job_type: DETAILED}
 SUMMARY_JOB_TYPES = tuple(SUMMARY_SPECS)
 
+# Map-reduce prompt keys (4.5.1a, F-4.5-51) — SINGLE source of truth, imported by map_reduce.py so the
+# engine and the eligibility expectation below can never drift. Detailed is now produced by map → reduce;
+# the DETAILED.prompt_key above is the legacy single-call prompt, retained only for the processor_version
+# label and not used to generate.
+MAP_PROMPT_KEY = PromptKey("detailed_summary_map", "v1")
+REDUCE_PROMPT_KEY = PromptKey("detailed_summary_reduce", "v1")
+
 # Expected prompt version per summary_type — the activation/eligibility layer requires the stored
-# summary row to match the current prompt version for the active transcript (ADR-46-A §3.3).
+# summary row to match the current prompt version for the active transcript (ADR-46-A §3.3). The
+# persisted GeneratedLectureSummary.prompt_version comes from the artifact-producing AIRequestLog: the
+# brief's own call for brief, and the REDUCE call for the map-reduce detailed summary — so detailed
+# expects the reduce version (the map prompt version lives in generationMetadata; strategy-aware gating
+# is Stage 4.5.1b).
 EXPECTED_PROMPT_VERSION_BY_SUMMARY_TYPE: dict[str, str] = {
     BRIEF.summary_type: BRIEF.prompt_key.version,
-    DETAILED.summary_type: DETAILED.prompt_key.version,
+    DETAILED.summary_type: REDUCE_PROMPT_KEY.version,
 }

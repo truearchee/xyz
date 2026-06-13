@@ -5,7 +5,14 @@ from typing import Literal, TypedDict
 
 Backend = Literal["cerebras", "nvidia"]
 Priority = Literal["interactive", "background"]
-SummaryFeature = Literal["summary_brief", "summary_detailed"]
+# `detailed_summary_map` / `detailed_summary_reduce` are the map-reduce phases (4.5.1a, F-4.5-51);
+# `brief_from_detailed` (the 4.5.1b DAG change) is added when that path lands.
+SummaryFeature = Literal[
+    "summary_brief",
+    "summary_detailed",
+    "detailed_summary_map",
+    "detailed_summary_reduce",
+]
 
 
 class Usage(TypedDict):

@@ -33,7 +33,8 @@ class AIRequestLog(Base):
     __table_args__ = (
         CheckConstraint("attempt_number >= 1", name="ck_ai_request_logs_attempt_number"),
         CheckConstraint(
-            "feature IN ('summary_brief', 'summary_detailed')",
+            "feature IN ('summary_brief', 'summary_detailed', "
+            "'detailed_summary_map', 'detailed_summary_reduce')",
             name="ck_ai_request_logs_feature",
         ),
         CheckConstraint(

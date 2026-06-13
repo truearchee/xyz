@@ -14,10 +14,22 @@ import json
 from pydantic import ValidationError
 
 from app.platform.llm.errors import InvalidOutput
-from app.platform.llm.models.summary import BriefSummary, DetailedSummary
+from app.platform.llm.models.summary import BriefSummary, DetailedSummary, DetailedSummaryPartial
 
 BRIEF_MIN_CHARS = 20
 BRIEF_MAX_CHARS = 2000
+# A valid map-PARTIAL must carry every standard section key (the prompt contract: "use these keys
+# exactly"), even where the value is empty for this portion. Requiring the keys PRESENT is what lets
+# the last-valid-object selection still skip a reasoning model's brace-bearing thinking fragments
+# (F-4.5-48) — a permissive schema alone would match `{}` and pick the wrong object.
+_DETAILED_PARTIAL_REQUIRED_KEYS = (
+    "overview",
+    "keyConcepts",
+    "importantDefinitions",
+    "mainExplanations",
+    "examples",
+    "examRelevantPoints",
+)
 _REFUSAL_MARKERS = (
     "i cannot",
     "i can't",
@@ -126,13 +138,16 @@ class OutputValidator:
         self,
         *,
         raw_text: str,
-        output_schema: type[BriefSummary] | type[DetailedSummary],
+        output_schema: type[BriefSummary] | type[DetailedSummary] | type[DetailedSummaryPartial],
         section_type: str,
-    ) -> BriefSummary | DetailedSummary:
+    ) -> BriefSummary | DetailedSummary | DetailedSummaryPartial:
         if output_schema is BriefSummary:
             return self._validate_brief(raw_text)
         if output_schema is DetailedSummary:
             return self._validate_detailed(raw_text, section_type=section_type)
+        if output_schema is DetailedSummaryPartial:
+            # Map phase (4.5.1a): lenient — sections may be empty; reduce keeps the strict path.
+            return self._validate_detailed_partial(raw_text)
         raise InvalidOutput(
             f"unsupported output schema: {getattr(output_schema, '__name__', output_schema)!r}",
             error_code="unsupported_schema",
@@ -160,6 +175,33 @@ class OutputValidator:
         if any(marker in lowered for marker in _REFUSAL_MARKERS):
             raise InvalidOutput("brief summary looks like a refusal", error_code="refusal")
         return brief
+
+    def _validate_detailed_partial(self, raw_text: str) -> DetailedSummaryPartial:
+        # Same last-valid-object selection as the strict paths, so a reasoning model's inline thinking
+        # never wins (§7). Lenient on CONTENT (sections may be empty for this portion), strict on SHAPE
+        # (all standard keys present) so the selection can still discriminate the real answer.
+        return _select_last_valid(
+            _candidate_objects(raw_text), self._validate_detailed_partial_object
+        )
+
+    def _validate_detailed_partial_object(self, data: dict) -> DetailedSummaryPartial:
+        missing = [k for k in _DETAILED_PARTIAL_REQUIRED_KEYS if k not in data]
+        if missing:
+            raise InvalidOutput(
+                f"detailed partial missing required keys: {missing}",
+                error_code="partial_missing_keys",
+            )
+        try:
+            partial = DetailedSummaryPartial.model_validate(data)
+        except ValidationError as exc:
+            raise InvalidOutput(
+                f"detailed partial failed schema validation: {exc.error_count()} error(s)",
+                error_code="schema",
+            ) from exc
+        lowered = partial.overview.strip().lower()
+        if lowered and any(marker in lowered for marker in _REFUSAL_MARKERS):
+            raise InvalidOutput("detailed partial looks like a refusal", error_code="refusal")
+        return partial
 
     def _validate_detailed(self, raw_text: str, *, section_type: str) -> DetailedSummary:
         # Detailed runs on the reasoning-lineage K2-Think-v2; same last-valid-object selection (§4/§7).

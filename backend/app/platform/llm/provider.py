@@ -20,6 +20,7 @@ from __future__ import annotations
 import json
 import math
 import os
+import re
 from dataclasses import dataclass
 from typing import Iterator, Protocol
 
@@ -73,6 +74,16 @@ def _model_for_backend(backend: Backend) -> str:
 
 def _estimate(text: str) -> int:
     return math.ceil(len(text) / 3.5)
+
+
+def _input_marker(rendered_content: str, *, length: int = 160) -> str:
+    """A stable, bounded marker derived from the TAIL of a rendered prompt. The ``{{transcript}}`` slot
+    is last in every summary template, so the tail is the variable (input) content — this lets the
+    deterministic map double echo a per-unit fingerprint. Whitespace-collapsed and quote/backslash-free
+    so the marker survives a JSON round-trip into the reduce input intact."""
+    tail = rendered_content.strip()[-length:]
+    tail = re.sub(r'["\\]', " ", tail)
+    return re.sub(r"\s+", " ", tail).strip()
 
 
 class K2ThinkProvider:
@@ -348,6 +359,48 @@ class DeterministicTestProvider:
             }
             if forced_invalid:
                 payload.pop("examples")  # drop a required section
+            return json.dumps(payload)
+        if name == "detailed_summary_map":
+            # Map phase (4.5.1a). INPUT-AWARE: echo a per-unit marker derived from this unit's text (the
+            # tail of the rendered prompt is the {{transcript}} slot) so each partial is distinct and
+            # traceable to its input. The reduce double aggregates these markers, making full-lecture
+            # COVERAGE provable content-wise without a real provider (the late-topic-sentinel proof).
+            marker = "map-echo:" + _input_marker(rendered.content)
+            payload = {
+                "overview": "Partial overview of this portion of the session.",
+                "keyConcepts": [marker, "A concept covered in this portion."],
+                "importantDefinitions": [],
+                "mainExplanations": ["A portion-scoped explanation in full sentences."],
+                "examples": [],
+                "examRelevantPoints": [],
+                "labNotes": [],
+            }
+            if forced_invalid:
+                payload.pop("keyConcepts")  # drop a required key → partial_missing_keys
+            return json.dumps(payload)
+        if name == "detailed_summary_reduce":
+            # Reduce phase (4.5.1a). INPUT-AWARE: collect EVERY unit marker present in the input (the
+            # serialized partials, or carried-forward group summaries in a tiered reduce) and emit them
+            # all — so the final summary's content demonstrably combines every map-unit. The output is a
+            # full DetailedSummary (strict validation).
+            markers: list[str] = []
+            for found in re.findall(r'map-echo:[^"\\]*', rendered.content):
+                cleaned = found.strip()
+                if cleaned and cleaned not in markers:
+                    markers.append(cleaned)
+            payload = {
+                "overview": "A merged overview of the whole session, assembled from every portion.",
+                "keyConcepts": markers or ["A merged key concept."],
+                "importantDefinitions": [
+                    {"term": "Merged term", "definition": "A definition merged across portions."}
+                ],
+                "mainExplanations": ["A merged explanation spanning the whole session."],
+                "examples": ["A worked example drawn from the session."],
+                "examRelevantPoints": ["A point likely to matter for assessment."],
+                "labNotes": ["A procedure or observation note."],
+            }
+            if forced_invalid:
+                payload.pop("examples")  # drop a required section → missing_section
             return json.dumps(payload)
         raise ValueError(f"deterministic provider has no canned output for prompt {name!r}")
 

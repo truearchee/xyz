@@ -29,6 +29,7 @@ TRUNCATE_TABLES = """
 TRUNCATE TABLE
     maintenance_runs,
     generated_lecture_summaries,
+    map_unit_summaries,
     ai_request_logs,
     transcript_chunks,
     ingestion_jobs,

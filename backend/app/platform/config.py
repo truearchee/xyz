@@ -321,6 +321,53 @@ class Settings:
         of over-budget transcripts is map-reduce = F-4.5-51 (own spec, out of Stage 4.5)."""
         return self._int("LLM_SUMMARY_INPUT_CHAR_BUDGET", "12000", minimum=1)
 
+    # ─── map-reduce summarization (Stage 4.5.1, F-4.5-51) ────────────────────
+    # Removes the single-call size ceiling: the transcript is PARTITIONED into consecutive map-units
+    # each under BOTH a char and an estimated-token budget, each summarized in its own (background)
+    # call, then REDUCED into one coherent detailed summary. Budgets are HEADROOM under the empirical
+    # 115–145s provider ceiling (8K≈90s comfortable; 12K≈115s = zero margin), NOT the last passing value.
+    @property
+    def LLM_SUMMARY_MAP_UNIT_CHAR_BUDGET(self) -> int:
+        """Max chars of normalized transcript per map-unit. Partition packs the FEWEST consecutive
+        segments under this (and the token budget); never splits a segment."""
+        return self._int("LLM_SUMMARY_MAP_UNIT_CHAR_BUDGET", "9000", minimum=1)
+
+    @property
+    def LLM_SUMMARY_MAP_UNIT_TOKEN_BUDGET(self) -> int:
+        """Max ESTIMATED prompt tokens (D2 chars/3.5) per map-unit — the second cap, so a dense unit
+        that fits the char budget but not the token budget is still split."""
+        return self._int("LLM_SUMMARY_MAP_UNIT_TOKEN_BUDGET", "2200", minimum=1)
+
+    @property
+    def LLM_SUMMARY_REDUCE_INPUT_CHAR_BUDGET(self) -> int:
+        """§3.3 C1 guard threshold: if the serialized map partials exceed this, reduce runs TIERED
+        (ordered groups → group-summaries → reduce those) instead of one call — the reduce input is
+        itself a 408 surface and must never be assumed small."""
+        return self._int("LLM_SUMMARY_REDUCE_INPUT_CHAR_BUDGET", "9000", minimum=1)
+
+    @property
+    def LLM_SUMMARY_REDUCE_INPUT_TOKEN_BUDGET(self) -> int:
+        """Estimated-token companion to the reduce-input char budget (same guard, token axis)."""
+        return self._int("LLM_SUMMARY_REDUCE_INPUT_TOKEN_BUDGET", "2200", minimum=1)
+
+    @property
+    def LLM_SUMMARY_MAX_MAP_UNITS(self) -> int:
+        """Cost guard: a partition exceeding this many units fails LOUD rather than firing an absurd
+        number of background calls. SINGLE source of truth — it is BOTH the partition cap AND the input
+        to the detailed job's RQ timeout scaling (queues.py): raising it raises the timeout ceiling in
+        lock-step, so the two can never drift (a sequential N-call job keeping the single-call timeout is
+        the same work-horse SIGKILL we already hit once)."""
+        return self._int("LLM_SUMMARY_MAX_MAP_UNITS", "20", minimum=1)
+
+    @property
+    def LLM_SUMMARY_MAP_CONCURRENCY(self) -> int:
+        """Map calls run SEQUENTIALLY by default (1): cheapest on the shared background limiter and
+        keeps ordering trivial. Hard-capped at 2 — higher would contend with interactive headroom."""
+        value = self._int("LLM_SUMMARY_MAP_CONCURRENCY", "1", minimum=1)
+        if value > 2:
+            raise SettingsError("LLM_SUMMARY_MAP_CONCURRENCY must be between 1 and 2")
+        return value
+
     @property
     def LLM_CONTEXT_FALLBACK_ENABLED(self) -> bool:
         """Whether ContextBuilder may fall back brief Cerebras→Nvidia on over-context (§12, adr-025).

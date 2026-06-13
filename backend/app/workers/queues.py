@@ -6,6 +6,8 @@ from uuid import UUID
 from redis import Redis
 from rq import Queue, Retry
 
+from app.platform.config import settings
+
 
 INGESTION_QUEUE_NAME = "ingestion"
 EMBEDDING_QUEUE_NAME = "embedding"
@@ -25,6 +27,21 @@ _AI_JOB_TIMEOUT_BUFFER_SECONDS = 120
 
 def _summary_job_timeout(http_timeout_env: str, default_seconds: int) -> int:
     return int(os.environ.get(http_timeout_env, str(default_seconds))) + _AI_JOB_TIMEOUT_BUFFER_SECONDS
+
+
+def _detailed_summary_job_timeout() -> int:
+    """Detailed = map-reduce (4.5.1a): up to MAX_MAP_UNITS sequential map calls + a bounded tiered reduce
+    (≤ MAP_UNITS reduce calls across tiers), each capped at the detailed HTTP timeout. Budget the RQ
+    work-horse timeout as (map units + an equal reduce allowance) × the detailed timeout + buffer — a
+    CEILING, not the expected run (a real ~60-min lecture is ~9 units, ~20 min). A sequential N-call job
+    keeping the single-call timeout is the same SIGKILL we already hit once.
+
+    MAX_MAP_UNITS is read from the SAME ``settings`` the partition cost-guard reads — raising it raises
+    this ceiling in lock-step, so the cap and the timeout can never drift into two copies (decision 3)."""
+    return (
+        2 * settings.LLM_SUMMARY_MAX_MAP_UNITS * settings.LLM_DETAILED_TIMEOUT_SECONDS
+        + _AI_JOB_TIMEOUT_BUFFER_SECONDS
+    )
 
 
 def get_redis_connection() -> Redis:
@@ -86,7 +103,7 @@ def enqueue_generate_detailed_summary(ingestion_job_id: UUID) -> None:
         generate_detailed_summary,
         str(ingestion_job_id),
         job_id=f"summary-detailed-{ingestion_job_id}",
-        job_timeout=_summary_job_timeout("LLM_DETAILED_TIMEOUT_SECONDS", 240),
+        job_timeout=_detailed_summary_job_timeout(),
         retry=Retry(max=AI_RQ_RETRY_MAX, interval=AI_RQ_RETRY_INTERVALS),
     )
 

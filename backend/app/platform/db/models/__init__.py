@@ -5,6 +5,7 @@ from app.platform.db.models.course_module import CourseModule
 from app.platform.db.models.generated_lecture_summary import GeneratedLectureSummary
 from app.platform.db.models.ingestion_job import IngestionJob
 from app.platform.db.models.maintenance_run import MaintenanceRun
+from app.platform.db.models.map_unit_summary import MapUnitSummary
 from app.platform.db.models.module_section import ModuleSection
 from app.platform.db.models.section_asset import SectionAsset
 from app.platform.db.models.transcript import Transcript
@@ -21,6 +22,7 @@ __all__ = [
     "GeneratedLectureSummary",
     "IngestionJob",
     "MaintenanceRun",
+    "MapUnitSummary",
     "ModuleSection",
     "SectionAsset",
     "Transcript",

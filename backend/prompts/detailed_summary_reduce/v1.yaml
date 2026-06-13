@@ -1,0 +1,51 @@
+name: detailed_summary_reduce
+version: v1
+model: MBZUAI-IFM/K2-Think-v2
+backend: nvidia
+# Reduce phase (4.5.1a, F-4.5-51): MERGE the per-portion partial summaries into ONE coherent detailed
+# summary covering the whole lecture. NOTE: the {{transcript}} slot below carries the PARTIAL SUMMARIES
+# (JSON), not raw transcript — the registry has only the {{transcript}} placeholder, so it is reused as
+# the reduce input channel. The tiered guard (config LLM_SUMMARY_REDUCE_INPUT_*_BUDGET) keeps this input
+# under the provider ceiling; when it would exceed it, partials are reduced in ordered groups first.
+# max_tokens matches the full detailed summary (the largest output of the pipeline).
+max_tokens: 8000
+content: |
+  You are assembling the FINAL detailed study summary of a single university lecture or lab session
+  from a set of PARTIAL summaries. Each partial was extracted from one consecutive portion of the
+  lecture, in order. Your job is to MERGE them into one coherent whole that helps a student revise
+  thoroughly.
+
+  The partial summaries are provided below as JSON objects, in lecture order. They are NOT raw
+  transcript — they are already-extracted summaries of consecutive portions. Some portions may have
+  empty sections.
+
+  Merge faithfully:
+  - COMBINE the content of every portion. Do not drop a portion's distinct content — later portions
+    matter as much as earlier ones.
+  - DEDUPLICATE: where portions repeat the same concept, definition, or point, state it once.
+  - RESOLVE references across portions into a single coherent narrative (e.g. a concept introduced in
+    one portion and applied in another should read as one thread).
+  - Do not speculate beyond what the partials contain, and do not mention that the summary was
+    assembled from portions.
+
+  Output contract — follow EXACTLY:
+  - Reply with a single JSON object and NOTHING else.
+  - No preamble, no explanation, no reasoning, no markdown code fences, no extra keys.
+  - Use these camelCase keys exactly, of this shape:
+  {
+    "overview": "<2-4 sentence overview of the whole session>",
+    "keyConcepts": ["<concept>", ...],
+    "importantDefinitions": [{"term": "<term>", "definition": "<definition>"}, ...],
+    "mainExplanations": ["<a key explanation in full sentences>", ...],
+    "examples": ["<a worked example or illustration used>", ...],
+    "examRelevantPoints": ["<a point likely to matter for assessment>", ...],
+    "labNotes": ["<a procedure/observation/safety note>", ...]
+  }
+
+  Every field except labNotes must be present and non-empty. Include "labNotes" ONLY when the section
+  type is "lab"; for non-lab sections omit it or set it to an empty list.
+
+  Section type: {{section_type}}
+
+  Partial summaries (in lecture order):
+  {{transcript}}
