@@ -34,7 +34,7 @@ class AIRequestLog(Base):
         CheckConstraint("attempt_number >= 1", name="ck_ai_request_logs_attempt_number"),
         CheckConstraint(
             "feature IN ('summary_brief', 'summary_detailed', "
-            "'detailed_summary_map', 'detailed_summary_reduce')",
+            "'detailed_summary_map', 'detailed_summary_reduce', 'brief_from_detailed')",
             name="ck_ai_request_logs_feature",
         ),
         CheckConstraint(

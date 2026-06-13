@@ -384,7 +384,12 @@ async def test_budget_change_invalidates_partials_and_remaps(db_session: AsyncSe
 
 
 @pytest.mark.anyio
-async def test_brief_summary_stays_single_call_strategy(db_session: AsyncSession):
+async def test_brief_fallback_is_single_call_when_detailed_disabled(
+    db_session: AsyncSession, monkeypatch
+):
+    # OB1: with detailed disabled, the brief falls back to the transcript-based single-call path —
+    # honestly degraded (single_call, no derived-from-detailed metadata).
+    monkeypatch.setenv("ENABLE_DETAILED_SUMMARY", "false")
     factory = _session_factory(db_session)
     transcript, _ = await _create_parsed_transcript(db_session, texts=["A short brief transcript body."])
     async with factory() as session:

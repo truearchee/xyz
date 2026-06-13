@@ -41,7 +41,8 @@ class GeneratedLectureSummary(Base):
             name="ck_gen_summaries_backend_used",
         ),
         CheckConstraint(
-            "generation_strategy IN ('single_call', 'map_reduce', 'truncated_fallback')",
+            "generation_strategy IN ('single_call', 'map_reduce', 'truncated_fallback', "
+            "'derived_from_detailed')",
             name="ck_gen_summaries_generation_strategy",
         ),
         UniqueConstraint(

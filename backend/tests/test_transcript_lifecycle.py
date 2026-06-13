@@ -117,7 +117,9 @@ async def _create_summary_row(
 ) -> GeneratedLectureSummary:
     # Default to the CURRENT expected version for this summary type (brief / map-reduce reduce) so the
     # row is activation-eligible without a hardcoded literal that rots on a version bump (4.5.1a finding).
-    resolved_version = prompt_version or EXPECTED_PROMPT_VERSION_BY_SUMMARY_TYPE.get(summary_type, "v1")
+    resolved_version = prompt_version or EXPECTED_PROMPT_VERSION_BY_SUMMARY_TYPE.get(
+        summary_type, ("v1",)
+    )[0]  # accept-set is a tuple of current versions; the primary is the default stamp
     log = AIRequestLog(
         ingestion_job_id=job.id,
         feature=feature,
@@ -177,9 +179,9 @@ async def _make_summarized(
     rots whenever a prompt version is bumped (the 4.5.1a finding: the 4.5 v2 bump left this at "v1").
     Pass ``prompt_version`` to force a specific (e.g. stale) version for staleness tests."""
     now = _now()
-    brief_version = prompt_version or EXPECTED_PROMPT_VERSION_BY_SUMMARY_TYPE[BRIEF.summary_type]
+    brief_version = prompt_version or EXPECTED_PROMPT_VERSION_BY_SUMMARY_TYPE[BRIEF.summary_type][0]
     detailed_version = (
-        prompt_version or EXPECTED_PROMPT_VERSION_BY_SUMMARY_TYPE[DETAILED.summary_type]
+        prompt_version or EXPECTED_PROMPT_VERSION_BY_SUMMARY_TYPE[DETAILED.summary_type][0]
     )
     segment = TranscriptSegment(
         transcript_id=transcript.id, sequence_number=0, start_ms=0, end_ms=1000, text="hello"

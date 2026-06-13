@@ -35,7 +35,7 @@ from uuid6 import uuid7
 from app.domains.transcripts.chunker import NORMALIZATION_VERSION
 from app.domains.transcripts.summary_specs import MAP_PROMPT_KEY, REDUCE_PROMPT_KEY
 from app.platform.config import settings
-from app.platform.db.models import MapUnitSummary
+from app.platform.db.models import MapUnitSummary, Transcript
 from app.platform.llm.context import CHARS_PER_TOKEN, estimate_tokens
 from app.platform.llm.gateway import ContextRefs, LLMGateway
 from app.platform.llm.models.summary import DetailedSummary, DetailedSummaryPartial
@@ -49,6 +49,12 @@ _MAX_REDUCE_DEPTH = 5
 
 class MapReduceError(RuntimeError):
     """A terminal map-reduce failure (cost-guard tripped, reduce non-convergence, coverage gap)."""
+
+
+class MapReduceFenced(MapReduceError):
+    """The transcript was superseded or its checksum changed mid-flight (§6.1 stale-write fence). The
+    caller treats this as a CLEAN abort — no partial/reduce artifact is written, and it is NOT a job
+    failure (the transcript is being replaced; activation of the replacement proceeds independently)."""
 
 
 @dataclass(frozen=True)
@@ -256,6 +262,9 @@ class MapReduceRunner:
         self._attempt_number = attempt_number
 
     async def run(self, segments: list[SegmentText], full_text: str) -> MapReduceOutcome:
+        # §6.1 early abort: never spend map calls on an already-superseded/changed transcript.
+        async with self._factory() as session:
+            await self._fence(session)
         partition = partition_segments(
             segments,
             char_budget=settings.LLM_SUMMARY_MAP_UNIT_CHAR_BUDGET,
@@ -273,6 +282,9 @@ class MapReduceRunner:
             },
         )
         mapped = await self._map_all(partition)
+        # §6.1 fence before the (artifact-bearing) reduce: do not reduce a superseded/changed transcript.
+        async with self._factory() as session:
+            await self._fence(session)
         partials_with_idx: list[tuple[list[int], dict]] = [([m.unit_index], m.content) for m in mapped]
         reduce_result, coverage = await self._reduce(partials_with_idx, depth=0)
 
@@ -373,6 +385,21 @@ class MapReduceRunner:
             attempt_number=self._attempt_number,
         )
 
+    async def _fence(self, session: AsyncSession) -> None:
+        """§6.1 stale-write fence: raise MapReduceFenced if the transcript is superseded or its checksum
+        no longer matches the one this run partitioned. Called before each persisted write."""
+        transcript = (
+            await session.execute(select(Transcript).where(Transcript.id == self._transcript_id))
+        ).scalar_one_or_none()
+        if (
+            transcript is None
+            or transcript.lifecycle_state == "superseded"
+            or transcript.checksum != self._checksum
+        ):
+            raise MapReduceFenced(
+                f"transcript {self._transcript_id} superseded/changed mid map-reduce; aborting clean"
+            )
+
     async def _find_succeeded_partial(
         self, unit_index: int, partition_hash: str
     ) -> MapUnitSummary | None:
@@ -394,6 +421,7 @@ class MapReduceRunner:
     ) -> UUID:
         async with self._factory() as session:
             async with session.begin():
+                await self._fence(session)  # §6.1: never write a partial for a superseded transcript
                 await session.execute(
                     pg_insert(MapUnitSummary)
                     .values(

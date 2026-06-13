@@ -26,12 +26,15 @@ from uuid6 import uuid7
 
 from app.domains.transcripts.chunker import NORMALIZATION_VERSION, normalize_segment_text
 from app.domains.transcripts.map_reduce import (
+    MapReduceFenced,
     MapReduceOutcome,
     MapReduceRunner,
     SegmentText,
 )
 from app.domains.transcripts.summary_specs import (
     BRIEF,
+    BRIEF_FROM_DETAILED_FEATURE,
+    BRIEF_FROM_DETAILED_PROMPT_KEY,
     DETAILED,
     SUMMARY_JOB_TYPES,
     SUMMARY_SPECS,
@@ -50,6 +53,7 @@ from app.platform.db.session import async_session
 from app.platform.faults.pipeline_faults import maybe_fail_step
 from app.platform.llm.errors import GatewayError
 from app.platform.llm.gateway import ContextRefs, LLMGateway
+from app.platform.query.summary_read import get_latest_transcript_summaries
 
 logger = logging.getLogger(__name__)
 
@@ -98,6 +102,12 @@ class _SummaryContext:
     # full (untruncated) transcript. Both are populated for every claim; brief ignores them.
     segment_texts: tuple[tuple[UUID, str], ...]
     normalized_full: str
+    # Brief-from-detailed (4.5.1b, ADR-052): when True the brief input (normalized_text) is the COMPLETED
+    # detailed summary's content_json, not the transcript — the brief uses the brief_from_detailed prompt
+    # + feature and persists generation_strategy='derived_from_detailed'. False = the OB1 transcript-based
+    # fallback (detailed disabled) or the detailed spec itself.
+    brief_from_detailed: bool = False
+    brief_source_detailed_id: UUID | None = None
 
 
 def _now() -> datetime:
@@ -139,6 +149,18 @@ def _summary_input_hash(normalized_text: str) -> str:
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
+def _brief_from_detailed_input_hash(detailed: GeneratedLectureSummary) -> str:
+    """Provenance hash for a brief derived from a specific detailed summary (4.5.1b). Tied to the source
+    detailed row's identity so a REGENERATED detailed (new id + input_hash) yields a distinct brief row."""
+    payload = {
+        "briefFromDetailed": True,
+        "detailedSummaryId": str(detailed.id),
+        "detailedInputHash": detailed.input_hash,
+    }
+    canonical = json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
 async def insert_summary_jobs(
     session: AsyncSession,
     *,
@@ -157,13 +179,52 @@ async def insert_summary_jobs(
     detailed_enabled = (
         settings.ENABLE_DETAILED_SUMMARY if enable_detailed is None else enable_detailed
     )
+    # Always create the brief job ROW. Create detailed only when enabled (§5 — gated at creation).
     specs = [BRIEF] + ([DETAILED] if detailed_enabled else [])
-    to_enqueue: list[tuple[str, UUID]] = []
+    created: dict[str, UUID] = {}
     for spec in specs:
         job_id = await _ensure_summary_job(session, transcript=transcript, spec=spec)
         if job_id is not None:
-            to_enqueue.append((spec.job_type, job_id))
-    return to_enqueue
+            created[spec.job_type] = job_id
+
+    # DAG (4.5.1b, ADR-052): when detailed is enabled, enqueue ONLY the detailed job now — the brief forks
+    # from the COMPLETED detailed (the detailed handler enqueues the already-created brief row). When
+    # detailed is disabled (OB1), enqueue the brief now: it falls back to the transcript-based truncated
+    # path (degraded + labeled + non-quiz-eligible). Returns the (job_type, job_id) pairs to enqueue NOW.
+    primary = DETAILED.job_type if detailed_enabled else BRIEF.job_type
+    return [(primary, created[primary])] if primary in created else []
+
+
+async def _fork_brief_after_detailed(
+    factory: async_sessionmaker[AsyncSession],
+    *,
+    transcript_id: UUID,
+) -> UUID | None:
+    """Brief-from-detailed DAG (4.5.1b): enqueue the transcript's queued brief job once the detailed has
+    completed. Idempotent (the brief claim no-ops on an already-completed/running job; enqueue is keyed on
+    a stable RQ job_id). Returns the enqueued brief job id (or None if there is no queued brief)."""
+    async with factory() as session:
+        brief_job = (
+            await session.execute(
+                select(IngestionJob).where(
+                    IngestionJob.transcript_id == transcript_id,
+                    IngestionJob.job_type == BRIEF.job_type,
+                    IngestionJob.status == "queued",
+                )
+            )
+        ).scalar_one_or_none()
+        brief_job_id = brief_job.id if brief_job is not None else None
+    if brief_job_id is not None:
+        from app.workers.queues import enqueue_generate_brief_summary
+
+        try:
+            enqueue_generate_brief_summary(brief_job_id)
+        except Exception:  # pragma: no cover - best-effort, like activation; reaper/retry re-forks
+            logger.warning(
+                "failed to enqueue brief after detailed; will be re-forked on retry",
+                extra={"brief_job_id": str(brief_job_id), "transcript_id": str(transcript_id)},
+            )
+    return brief_job_id
 
 
 async def _ensure_summary_job(
@@ -298,8 +359,18 @@ async def _generate_summary_async(
                 context.normalized_full,
             )
         else:
+            # Brief (4.5.1b): mode-A (brief-from-detailed) uses the brief_from_detailed prompt + feature
+            # over the completed detailed's content; mode-B (OB1 fallback, detailed disabled) uses the
+            # transcript-based brief_summary prompt. `maybe_fail_step(spec.feature)` above stays keyed on
+            # the STEP name "summary_brief" (the 4.6 pipeline fault), distinct from the LLM feature here.
+            brief_prompt_key = (
+                BRIEF_FROM_DETAILED_PROMPT_KEY if context.brief_from_detailed else spec.prompt_key
+            )
+            brief_feature = (
+                BRIEF_FROM_DETAILED_FEATURE if context.brief_from_detailed else spec.feature
+            )
             result = await active_gateway.complete(
-                prompt_key=spec.prompt_key,
+                prompt_key=brief_prompt_key,
                 output_schema=spec.output_schema,
                 context_refs=ContextRefs(
                     ingestion_job_id=ingestion_job_id,
@@ -308,9 +379,17 @@ async def _generate_summary_async(
                     section_type=context.section_type,
                 ),
                 priority="background",
-                feature=spec.feature,
+                feature=brief_feature,
                 attempt_number=context.attempts,
             )
+    except MapReduceFenced:
+        # §6.1: the transcript was superseded/changed mid map-reduce. Clean abort — no artifact written,
+        # NOT a failure (the replacement's own jobs proceed; the reaper reclaims this stale running job).
+        logger.info(
+            "map-reduce fenced (transcript superseded mid-flight)",
+            extra={"ingestion_job_id": str(ingestion_job_id)},
+        )
+        return
     except GatewayError as exc:
         await _mark_summary_failed(
             factory,
@@ -340,6 +419,12 @@ async def _generate_summary_async(
         result=result,
         outcome=outcome,
     )
+
+    # Brief-from-detailed DAG (4.5.1b, ADR-052): once the DETAILED summary is persisted, fork the brief —
+    # it derives from the completed detailed and was created (not enqueued) at embed-time. Best-effort: a
+    # superseded transcript's brief claim re-fences. No-op when detailed is disabled (no detailed runs).
+    if spec.summary_type == DETAILED.summary_type:
+        await _fork_brief_after_detailed(factory, transcript_id=context.transcript_id)
 
     # 4.6a (ADR-46-A): if this transcript is a completed pending replacement, swap it in. No-op for
     # the common active-first-upload path and for a pending that is not yet fully summarized. Never
@@ -393,15 +478,6 @@ async def _claim_summary_job(
                 # Fenced before any mutation: do not summarize a superseded transcript (ADR-46-B §3.2).
                 return None
 
-            now = _now()
-            job.status = "running"
-            job.attempts += 1
-            job.started_at = now
-            job.completed_at = None
-            job.updated_at = now
-            job.error_message = None
-            job.failure_category = None
-
             section = (
                 await session.execute(
                     select(ModuleSection).where(
@@ -428,17 +504,54 @@ async def _claim_summary_job(
             if not normalized_full:
                 raise SummaryGenerationError("no transcript text available")
 
+            # Resolve the model input BEFORE marking the job running, so a brief that must wait for the
+            # detailed (brief-from-detailed) can DEFER without leaving a dangling 'running' job.
+            brief_from_detailed = False
+            brief_source_detailed_id: UUID | None = None
             if spec.summary_type == DETAILED.summary_type:
                 # Map-reduce (4.5.1a): the FULL transcript is partitioned downstream — NEVER truncated.
-                # The map-reduce persist path recomputes the provenance input_hash to fold the partition
-                # hash (decision 4), so the value set here is an unused placeholder for the detailed path.
+                # The persist path recomputes the provenance input_hash to fold the partition hash.
                 normalized = normalized_full
                 truncated = False
                 source_chars = kept_chars = len(normalized_full)
+                input_hash = _summary_input_hash(normalized)
+            elif settings.ENABLE_DETAILED_SUMMARY:
+                # Brief-from-detailed (4.5.1b, ADR-052): derive the brief from the COMPLETED detailed
+                # summary, not the transcript. §6.1 fence: the detailed must be bound to THIS active
+                # transcript (matching checksum) — a brief firing after a replacement reads the NEW
+                # detailed or DEFERS, never staples a stale detailed's brief onto a replaced transcript.
+                _brief_row, detailed_row = await get_latest_transcript_summaries(
+                    session, transcript_id=transcript.id
+                )
+                if (
+                    detailed_row is None
+                    or detailed_row.source_transcript_checksum != transcript.checksum
+                ):
+                    # Not ready / stale → defer (leave the job queued; the detailed-completion fork
+                    # re-enqueues it). No 'running' mark, no attempt consumed.
+                    return None
+                normalized = json.dumps(
+                    detailed_row.content_json, ensure_ascii=False, separators=(",", ":")
+                )
+                truncated = bool(detailed_row.truncated)  # the brief is as truncated as its source
+                source_chars = kept_chars = len(normalized)
+                input_hash = _brief_from_detailed_input_hash(detailed_row)
+                brief_from_detailed = True
+                brief_source_detailed_id = detailed_row.id
             else:
-                # Brief stays single-call under Option A (F-4.5-50) until the 4.5.1b brief-from-detailed
-                # rewiring; truncate the cleaned transcript to the char budget before the model call.
+                # OB1 fallback (detailed disabled): transcript-based single-call brief (Option A). Honestly
+                # degraded — truncated, labeled, NOT quiz-eligible — never a back door for full coverage.
                 normalized, truncated, source_chars, kept_chars = _truncate_for_summary(normalized_full)
+                input_hash = _summary_input_hash(normalized)
+
+            now = _now()
+            job.status = "running"
+            job.attempts += 1
+            job.started_at = now
+            job.completed_at = None
+            job.updated_at = now
+            job.error_message = None
+            job.failure_category = None
 
             return _SummaryContext(
                 transcript_id=transcript.id,
@@ -446,13 +559,15 @@ async def _claim_summary_job(
                 source_transcript_checksum=transcript.checksum,
                 section_type=section.type,
                 normalized_text=normalized,
-                input_hash=_summary_input_hash(normalized),
+                input_hash=input_hash,
                 attempts=job.attempts,
                 truncated=truncated,
                 source_char_count=source_chars,
                 summarized_char_count=kept_chars,
                 segment_texts=segment_texts,
                 normalized_full=normalized_full,
+                brief_from_detailed=brief_from_detailed,
+                brief_source_detailed_id=brief_source_detailed_id,
             )
 
 
@@ -483,8 +598,19 @@ async def _persist_summary_success(
     elif result is not None:
         source = result
         input_hash = context.input_hash
-        generation_strategy = "single_call"
-        generation_metadata = None
+        if context.brief_from_detailed:
+            # Mode-A brief: derived from the completed detailed. The strategy label is INFORMATIONAL
+            # provenance — quiz-eligibility is a property of the DETAILED (is_full_coverage_detailed),
+            # never the brief. `truncated` was inherited from the source detailed in the claim.
+            generation_strategy = "derived_from_detailed"
+            generation_metadata = {
+                "sourceDetailedSummaryId": str(context.brief_source_detailed_id),
+                "briefPromptVersion": BRIEF_FROM_DETAILED_PROMPT_KEY.version,
+            }
+        else:
+            # Mode-B brief (OB1 fallback) or any legacy transcript-based brief.
+            generation_strategy = "single_call"
+            generation_metadata = None
     else:  # pragma: no cover - defensive
         raise SummaryGenerationError("persist requires exactly one of result/outcome")
 

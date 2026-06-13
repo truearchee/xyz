@@ -402,6 +402,21 @@ class DeterministicTestProvider:
             if forced_invalid:
                 payload.pop("examples")  # drop a required section → missing_section
             return json.dumps(payload)
+        if name == "brief_from_detailed":
+            # Brief-from-detailed (4.5.1b): the input is the detailed summary's content, not a transcript.
+            # Echo a marker from the input tail so a test can prove the brief was derived from the detailed.
+            if forced_invalid:
+                return json.dumps({"wrong": "shape"})  # missing required `text`
+            marker = _input_marker(rendered.content)
+            return json.dumps(
+                {
+                    "text": (
+                        "This brief was distilled from the session's detailed summary, capturing its "
+                        "core ideas and the points most likely to matter for assessment. "
+                        f"[source: {marker}]"
+                    )
+                }
+            )
         raise ValueError(f"deterministic provider has no canned output for prompt {name!r}")
 
 

@@ -6,12 +6,13 @@ from typing import Literal, TypedDict
 Backend = Literal["cerebras", "nvidia"]
 Priority = Literal["interactive", "background"]
 # `detailed_summary_map` / `detailed_summary_reduce` are the map-reduce phases (4.5.1a, F-4.5-51);
-# `brief_from_detailed` (the 4.5.1b DAG change) is added when that path lands.
+# `brief_from_detailed` is the 4.5.1b DAG change (the brief derived from the completed detailed).
 SummaryFeature = Literal[
     "summary_brief",
     "summary_detailed",
     "detailed_summary_map",
     "detailed_summary_reduce",
+    "brief_from_detailed",
 ]
 
 

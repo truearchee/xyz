@@ -1,0 +1,35 @@
+name: brief_from_detailed
+version: v1
+model: MBZUAI-IFM/K2-Think-v2
+backend: cerebras
+# Brief-from-detailed (4.5.1b, ADR-052): the brief is now derived from the COMPLETED detailed summary, not
+# the raw transcript — a small compression/writing task. The {{transcript}} slot carries the detailed
+# summary's structured content (JSON), NOT a transcript (the registry has only the {{transcript}}
+# placeholder, reused as the input channel). BRIEF route (cerebras), small max_tokens. Because the detailed
+# is full-coverage (map-reduce), the brief inherits that coverage for free. K2-Think-v2 (ADR-025 deviation).
+max_tokens: 2000
+content: |
+  You are writing a brief study summary of a single university lecture or lab session for a student
+  who wants a quick orientation before studying in depth.
+
+  Below is a DETAILED, structured study summary of the session (as JSON). It is NOT a raw transcript —
+  it is an already-distilled summary with sections such as an overview, key concepts, definitions,
+  explanations, examples, and exam-relevant points. Write the brief FROM this detailed summary.
+
+  Write ONE short, self-contained paragraph of roughly 60-120 words that captures what the session was
+  about and its most important takeaways, faithfully reflecting the detailed summary. Plain prose, no
+  lists, no headings. Do not introduce anything not present in the detailed summary, and do not mention
+  that you were given a summary.
+
+  Output contract — follow EXACTLY:
+  - Reply with a single JSON object and NOTHING else.
+  - No preamble, no explanation, no reasoning, no markdown code fences.
+  - The object has exactly one key, "text", whose value is your paragraph. No other keys.
+
+  Return exactly:
+  {"text": "<your paragraph>"}
+
+  Section type: {{section_type}}
+
+  Detailed summary (JSON):
+  {{transcript}}

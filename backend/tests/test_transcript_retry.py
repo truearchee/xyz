@@ -246,7 +246,8 @@ async def test_chunk_failure_then_retry_completes_without_duplicate(
 async def test_parse_success_enqueues_chunk_brief_and_detailed(
     db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # Summaries fork from PARSE (not embed), so the parse worker enqueues chunk + brief + detailed.
+    # Summaries fork from PARSE (not embed). 4.5.1b DAG (ADR-052): BOTH summary job rows are created, but
+    # the parse worker ENQUEUES only the detailed — the brief forks from the completed detailed.
     monkeypatch.setenv("ENABLE_DETAILED_SUMMARY", "true")
     raw = (
         b"WEBVTT\n\n"
@@ -273,10 +274,8 @@ async def test_parse_success_enqueues_chunk_brief_and_detailed(
     db_session.expire_all()
 
     assert len(enqueued_chunk) == 1
-    assert {jt for jt, _ in enqueued_summaries} == {
-        "generate_brief_summary",
-        "generate_detailed_summary",
-    }
+    # 4.5.1b DAG: only the DETAILED is enqueued at parse; the brief forks from the completed detailed.
+    assert {jt for jt, _ in enqueued_summaries} == {"generate_detailed_summary"}
     summary_jobs = (
         await db_session.execute(
             select(IngestionJob).where(

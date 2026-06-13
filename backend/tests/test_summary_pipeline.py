@@ -46,10 +46,22 @@ async def _make_summary_jobs(db_session: AsyncSession, factory, *, enable_detail
     transcript, _ = await _create_parsed_transcript(db_session, texts=TEXTS)
     async with factory() as session:
         async with session.begin():
-            jobs = await insert_summary_jobs(
+            await insert_summary_jobs(
                 session, transcript=transcript, enable_detailed=enable_detailed
             )
-    return transcript, dict(jobs)
+        # 4.5.1b DAG: insert_summary_jobs returns only the primary-to-enqueue (detailed when enabled,
+        # else brief). Query the created job ROWS so tests can drive either handler directly.
+        rows = (
+            await session.execute(
+                select(IngestionJob).where(
+                    IngestionJob.transcript_id == transcript.id,
+                    IngestionJob.job_type.in_(
+                        ("generate_brief_summary", "generate_detailed_summary")
+                    ),
+                )
+            )
+        ).scalars().all()
+    return transcript, {row.job_type: row.id for row in rows}
 
 
 # --- job creation -----------------------------------------------------------
@@ -62,13 +74,14 @@ async def test_insert_summary_jobs_creates_two_queued_jobs_idempotently(db_sessi
     transcript, jobs = await _make_summary_jobs(db_session, factory, enable_detailed=True)
     assert set(jobs) == {"generate_brief_summary", "generate_detailed_summary"}
 
-    # Idempotent: a second call returns the same job ids and does not duplicate.
+    # Idempotent: a second call does not duplicate; it returns the SAME primary-to-enqueue. Under the
+    # 4.5.1b DAG the primary is the detailed (the brief forks from it), so the return is detailed-only.
     async with factory() as session:
         async with session.begin():
             again = dict(
                 await insert_summary_jobs(session, transcript=transcript, enable_detailed=True)
             )
-    assert again == jobs
+    assert again == {"generate_detailed_summary": jobs["generate_detailed_summary"]}
 
     async with factory() as session:
         count = (
@@ -87,7 +100,12 @@ async def test_insert_summary_jobs_creates_two_queued_jobs_idempotently(db_sessi
 # --- handler success contract ----------------------------------------------
 
 @pytest.mark.anyio
-async def test_brief_handler_stores_artifact_with_full_provenance(db_session: AsyncSession):
+async def test_brief_handler_stores_artifact_with_full_provenance(
+    db_session: AsyncSession, monkeypatch
+):
+    # 4.5.1b: brief-from-detailed is the default; this exercises the transcript-based brief (the OB1
+    # fallback, detailed disabled) — the same single-call gateway path it has always covered.
+    monkeypatch.setenv("ENABLE_DETAILED_SUMMARY", "false")
     factory = _session_factory(db_session)
     transcript, jobs = await _make_summary_jobs(db_session, factory)
     brief_id = jobs["generate_brief_summary"]
@@ -144,7 +162,8 @@ async def test_detailed_handler_stores_structured_summary(db_session: AsyncSessi
 
 
 @pytest.mark.anyio
-async def test_brief_handler_is_idempotent_on_completed_job(db_session: AsyncSession):
+async def test_brief_handler_is_idempotent_on_completed_job(db_session: AsyncSession, monkeypatch):
+    monkeypatch.setenv("ENABLE_DETAILED_SUMMARY", "false")  # transcript-based brief (OB1 fallback path)
     factory = _session_factory(db_session)
     transcript, jobs = await _make_summary_jobs(db_session, factory)
     brief_id = jobs["generate_brief_summary"]
@@ -168,7 +187,10 @@ async def test_brief_handler_is_idempotent_on_completed_job(db_session: AsyncSes
 # --- handler failure contract (§11) ----------------------------------------
 
 @pytest.mark.anyio
-async def test_invalid_input_is_non_retryable_and_writes_no_artifact(db_session: AsyncSession):
+async def test_invalid_input_is_non_retryable_and_writes_no_artifact(
+    db_session: AsyncSession, monkeypatch
+):
+    monkeypatch.setenv("ENABLE_DETAILED_SUMMARY", "false")  # transcript-based brief (OB1 fallback path)
     factory = _session_factory(db_session)
     transcript, jobs = await _make_summary_jobs(db_session, factory)
     brief_id = jobs["generate_brief_summary"]
@@ -202,13 +224,25 @@ async def test_invalid_input_is_non_retryable_and_writes_no_artifact(db_session:
 
 @pytest.mark.anyio
 async def test_detailed_enabled_by_default_creates_both_jobs(db_session: AsyncSession):
-    # 4.5c default ENABLE_DETAILED_SUMMARY=true: insert_summary_jobs (no override) creates BOTH.
+    # 4.5c default ENABLE_DETAILED_SUMMARY=true: BOTH job rows are created. 4.5.1b DAG: only the DETAILED
+    # is enqueued now (returned); the brief forks from the completed detailed.
     factory = _session_factory(db_session)
     transcript, _ = await _create_parsed_transcript(db_session, texts=TEXTS)
     async with factory() as session:
         async with session.begin():
-            jobs = dict(await insert_summary_jobs(session, transcript=transcript))
-    assert set(jobs) == {"generate_brief_summary", "generate_detailed_summary"}
+            to_enqueue = dict(await insert_summary_jobs(session, transcript=transcript))
+        rows = (
+            await session.execute(
+                select(IngestionJob).where(
+                    IngestionJob.transcript_id == transcript.id,
+                    IngestionJob.job_type.in_(
+                        ("generate_brief_summary", "generate_detailed_summary")
+                    ),
+                )
+            )
+        ).scalars().all()
+    assert {row.job_type for row in rows} == {"generate_brief_summary", "generate_detailed_summary"}
+    assert set(to_enqueue) == {"generate_detailed_summary"}  # brief forks later, not enqueued at embed
 
 
 @pytest.mark.anyio
@@ -224,14 +258,17 @@ async def test_both_summaries_complete_with_separate_route_budgets(db_session: A
             provider=DeterministicTestProvider(), limiter=limiter, session_factory=factory
         )
 
-    await generate_brief_summary_async(
-        jobs["generate_brief_summary"], gateway=gateway(), session_factory=factory
-    )
+    # 4.5.1b DAG: detailed (map-reduce, nvidia) FIRST, then the brief derives from the completed
+    # detailed (cerebras). The detailed handler also forks the brief onto the queue; here we drive it
+    # directly to assert both end states in one test.
     await generate_detailed_summary_async(
         jobs["generate_detailed_summary"], gateway=gateway(), session_factory=factory
     )
+    await generate_brief_summary_async(
+        jobs["generate_brief_summary"], gateway=gateway(), session_factory=factory
+    )
 
-    # Routing split exercised end-to-end: brief→cerebras budget, detailed→nvidia budget.
+    # Routing split exercised end-to-end: detailed map+reduce on the nvidia budget, brief on cerebras.
     assert {backend for backend, _tokens, _priority in limiter.acquired} == {"cerebras", "nvidia"}
 
     async with factory() as session:
@@ -256,7 +293,9 @@ async def test_both_summaries_complete_with_separate_route_budgets(db_session: A
         by_type = {s.summary_type: s for s in summaries}
         assert set(by_type) == {"brief", "detailed_study"}
         assert by_type["brief"].backend_used == "cerebras"
+        assert by_type["brief"].generation_strategy == "derived_from_detailed"
         assert by_type["detailed_study"].backend_used == "nvidia"  # detailed on the Nvidia route
+        assert by_type["detailed_study"].generation_strategy == "map_reduce"
         assert "overview" in by_type["detailed_study"].content_json
 
 
@@ -267,9 +306,13 @@ async def _no_sleep(_seconds: float) -> None:
 
 
 @pytest.mark.anyio
-async def test_detailed_enqueue_gated_off_creates_no_detailed_row_or_log(db_session: AsyncSession):
+async def test_detailed_enqueue_gated_off_creates_no_detailed_row_or_log(
+    db_session: AsyncSession, monkeypatch
+):
+    monkeypatch.setenv("ENABLE_DETAILED_SUMMARY", "false")  # the detailed-off mode this test covers
     factory = _session_factory(db_session)
-    # Default (ENABLE_DETAILED_SUMMARY off): only the brief job is created — gated at CREATION (§5).
+    # ENABLE_DETAILED_SUMMARY off: only the brief job is created — gated at CREATION (§5); the brief uses
+    # the transcript-based fallback (OB1), Think-v0 is never called.
     transcript, jobs = await _make_summary_jobs(db_session, factory)
     assert set(jobs) == {"generate_brief_summary"}
 
@@ -300,7 +343,10 @@ async def test_detailed_enqueue_gated_off_creates_no_detailed_row_or_log(db_sess
 
 
 @pytest.mark.anyio
-async def test_provider_config_error_is_terminal_category_no_retry(db_session: AsyncSession):
+async def test_provider_config_error_is_terminal_category_no_retry(
+    db_session: AsyncSession, monkeypatch
+):
+    monkeypatch.setenv("ENABLE_DETAILED_SUMMARY", "false")  # transcript-based brief (OB1 fallback path)
     factory = _session_factory(db_session)
     transcript, jobs = await _make_summary_jobs(db_session, factory)
     brief_id = jobs["generate_brief_summary"]
@@ -325,7 +371,8 @@ async def test_provider_config_error_is_terminal_category_no_retry(db_session: A
 
 
 @pytest.mark.anyio
-async def test_rate_limited_exhaustion_is_terminal_not_retried(db_session: AsyncSession):
+async def test_rate_limited_exhaustion_is_terminal_not_retried(db_session: AsyncSession, monkeypatch):
+    monkeypatch.setenv("ENABLE_DETAILED_SUMMARY", "false")  # transcript-based brief (OB1 fallback path)
     factory = _session_factory(db_session)
     transcript, jobs = await _make_summary_jobs(db_session, factory)
     brief_id = jobs["generate_brief_summary"]
@@ -348,7 +395,10 @@ async def test_rate_limited_exhaustion_is_terminal_not_retried(db_session: Async
 
 
 @pytest.mark.anyio
-async def test_provider_transient_raises_for_rq_retry_and_marks_failed(db_session: AsyncSession):
+async def test_provider_transient_raises_for_rq_retry_and_marks_failed(
+    db_session: AsyncSession, monkeypatch
+):
+    monkeypatch.setenv("ENABLE_DETAILED_SUMMARY", "false")  # transcript-based brief (OB1 fallback path)
     factory = _session_factory(db_session)
     transcript, jobs = await _make_summary_jobs(db_session, factory)
     brief_id = jobs["generate_brief_summary"]

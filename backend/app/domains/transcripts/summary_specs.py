@@ -55,13 +55,22 @@ SUMMARY_JOB_TYPES = tuple(SUMMARY_SPECS)
 MAP_PROMPT_KEY = PromptKey("detailed_summary_map", "v1")
 REDUCE_PROMPT_KEY = PromptKey("detailed_summary_reduce", "v1")
 
-# Expected prompt version per summary_type — the activation/eligibility layer requires the stored
-# summary row to match the current prompt version for the active transcript (ADR-46-A §3.3). The
-# persisted GeneratedLectureSummary.prompt_version comes from the artifact-producing AIRequestLog: the
-# brief's own call for brief, and the REDUCE call for the map-reduce detailed summary — so detailed
-# expects the reduce version (the map prompt version lives in generationMetadata; strategy-aware gating
-# is Stage 4.5.1b).
-EXPECTED_PROMPT_VERSION_BY_SUMMARY_TYPE: dict[str, str] = {
-    BRIEF.summary_type: BRIEF.prompt_key.version,
-    DETAILED.summary_type: REDUCE_PROMPT_KEY.version,
+# Brief-from-detailed (4.5.1b, ADR-052): the brief is derived from the COMPLETED detailed summary in one
+# small call (BRIEF route), NOT re-summarized from the transcript. SINGLE source of truth, imported by
+# summary_service. The legacy BRIEF.prompt_key (brief_summary/v2) remains the transcript-based fallback
+# used only when ENABLE_DETAILED_SUMMARY is off (OB1 — a degraded, truncated, non-quiz-eligible mode).
+BRIEF_FROM_DETAILED_PROMPT_KEY = PromptKey("brief_from_detailed", "v1")
+BRIEF_FROM_DETAILED_FEATURE: SummaryFeature = "brief_from_detailed"
+
+# Accepted prompt versions per summary_type — the activation/eligibility layer requires the stored
+# summary row to match a CURRENT prompt version for the active transcript (ADR-46-A §3.3). A TUPLE
+# (accept-set) because a type can legitimately carry more than one current producing-prompt version:
+#  - brief: the brief-from-detailed prompt (the default mode-A) OR the transcript-based fallback used
+#    when detailed is disabled (mode-B). Both are "current"; prompt_version stays the true producing
+#    prompt's version (no contract-version stamping). A future bump drops the old version from the set.
+#  - detailed: the REDUCE prompt (the artifact-producing call of the map-reduce DAG; the map prompt
+#    version lives in generationMetadata — strategy-aware quiz gating is is_full_coverage_detailed).
+EXPECTED_PROMPT_VERSION_BY_SUMMARY_TYPE: dict[str, tuple[str, ...]] = {
+    BRIEF.summary_type: (BRIEF_FROM_DETAILED_PROMPT_KEY.version, BRIEF.prompt_key.version),
+    DETAILED.summary_type: (REDUCE_PROMPT_KEY.version,),
 }
