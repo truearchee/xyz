@@ -1,3 +1,4 @@
+import logging
 from typing import Any
 
 from fastapi import HTTPException, status
@@ -6,6 +7,8 @@ from jwt.exceptions import PyJWKClientError, PyJWTError
 
 from app.platform.config import SettingsError, settings
 
+
+logger = logging.getLogger(__name__)
 
 AUTHENTICATE_HEADER = {"WWW-Authenticate": "Bearer"}
 INVALID_CREDENTIALS_DETAIL = "Invalid authentication credentials"
@@ -44,4 +47,11 @@ def decode_and_verify_jwt(token: str) -> dict[str, Any]:
             options={"require": ["sub", "exp", "role"]},
         )
     except (SettingsError, PyJWKClientError, PyJWTError) as exc:
+        # Path A — token failed JWT verification. Log the exact reason (type + message;
+        # NEVER the token) so a 401 is not swallowed into a generic, undiagnosable error.
+        logger.warning(
+            "AUTH 401 path=verification jwt verification failed: %s: %s",
+            type(exc).__name__,
+            exc,
+        )
         raise credentials_exception() from exc
