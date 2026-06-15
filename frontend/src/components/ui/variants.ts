@@ -7,8 +7,11 @@ export const focusRing =
   "focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface";
 
 // ---- Button ----------------------------------------------------------------
+// Pill-shaped (design-system §4/§6 — Apple's action signal; icon-only buttons are circular via the
+// same rounded-full). `transition` (not transition-colors) so the press `scale(.96)` animates too;
+// motion-safe gates it under the reduced-motion guard.
 export const buttonBase =
-  "inline-flex items-center justify-center gap-2 rounded-md font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60 " +
+  "inline-flex items-center justify-center gap-2 rounded-full font-medium transition motion-safe:active:scale-[0.96] disabled:cursor-not-allowed disabled:opacity-60 " +
   focusRing;
 
 export type ButtonVariant = "primary" | "secondary" | "ghost" | "destructive";
@@ -34,7 +37,9 @@ export const badgeBase =
   "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium";
 export const badgeTones: Record<BadgeTone, string> = {
   neutral: "border-border bg-surface-muted text-text-muted",
-  info: "border-info bg-info-surface text-info-text",
+  // info → NEUTRAL graphite (design-system §4): hairline border (not the graphite --color-info) so the
+  // tonal info pair (gray-100/gray-500) renders identically to `neutral`. Never a 4th hue.
+  info: "border-border bg-info-surface text-info-text",
   success: "border-success bg-success-surface text-success-text",
   warning: "border-warning bg-warning-surface text-warning-text",
   danger: "border-danger bg-danger-surface text-danger-text",

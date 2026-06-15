@@ -11,7 +11,7 @@ type ModuleListViewProps = {
 };
 
 const itemBase =
-  "grid gap-2 rounded-lg border border-border bg-surface-raised p-4 text-text no-underline shadow-sm transition-colors hover:bg-surface-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2";
+  "grid gap-2 rounded-lg border border-border bg-surface-raised p-4 text-text no-underline transition-colors hover:bg-surface-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2";
 
 export function ModuleListView({
   modules,
@@ -57,7 +57,7 @@ export function ModuleListView({
             key={module.id}
             className={cn(itemBase, isSelected && "border-primary ring-1 ring-focus-ring")}
           >
-            <span className="text-base font-bold leading-snug">{module.title}</span>
+            <span className="text-base font-semibold leading-snug">{module.title}</span>
             <span className="flex flex-wrap items-center gap-2 text-xs capitalize text-text-muted">
               <Badge tone={module.isActive ? "success" : "neutral"}>
                 {module.isActive ? "Active" : "Inactive"}

@@ -24,7 +24,7 @@ const READY = "ready";
 const NOT_APPLICABLE = "not_applicable";
 
 const blockClass = "grid gap-2 rounded-lg border border-border p-4";
-const blockHeadingClass = "m-0 text-xs font-bold uppercase tracking-wide text-text";
+const blockHeadingClass = "m-0 text-xs font-semibold uppercase tracking-wide text-text";
 const mutedClass = "m-0 text-sm italic text-text-muted";
 
 export function SectionSummaries({ sectionId }: { sectionId: string }) {
@@ -125,7 +125,7 @@ function SummarySlot({
   }
   return (
     <div data-testid={testId} data-state={slot.state} className="grid gap-1.5">
-      <h4 className="m-0 text-sm font-bold text-text-muted">{label}</h4>
+      <h4 className="m-0 text-sm font-semibold text-text-muted">{label}</h4>
       {slot.state === READY && slot.truncated ? (
         // F-4.5-50: truncation is never silent — the student sees that this covers only the first portion.
         <p data-testid={`${testId}-truncated`} className="m-0 flex items-center gap-1.5 text-xs text-warning-text">

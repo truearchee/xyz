@@ -14,9 +14,9 @@ type SectionUploadControlProps = {
 const inputClass =
   "min-h-[38px] rounded-md border border-border-strong px-2.5 py-[7px] text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2";
 const btnPrimary =
-  "min-h-[38px] rounded-md border border-primary bg-primary px-3.5 text-sm font-bold text-on-primary hover:bg-primary-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2";
+  "min-h-[38px] rounded-full border border-primary bg-primary px-3.5 text-sm font-medium text-on-primary hover:bg-primary-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2";
 const btnDisabled =
-  "min-h-[38px] cursor-not-allowed rounded-md border border-border bg-surface-muted px-3.5 text-sm font-bold text-text-muted";
+  "min-h-[38px] cursor-not-allowed rounded-full border border-border bg-surface-muted px-3.5 text-sm font-medium text-text-muted";
 
 export function SectionUploadControl({
   disabled = false,
@@ -49,7 +49,7 @@ export function SectionUploadControl({
       className="grid gap-2 border-t border-border pt-3.5"
     >
       <div className="grid items-end gap-2.5 [grid-template-columns:repeat(auto-fit,minmax(160px,1fr))]">
-        <label htmlFor={fileInputId} className="text-xs font-bold text-text-muted [grid-column:1/-1]">
+        <label htmlFor={fileInputId} className="text-xs font-medium text-text-muted [grid-column:1/-1]">
           PDF file
         </label>
         <input

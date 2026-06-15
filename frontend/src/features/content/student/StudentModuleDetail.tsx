@@ -140,7 +140,7 @@ export function StudentModuleDetail({ moduleId }: StudentModuleDetailProps) {
     <section aria-labelledby="student-module-title" className="grid gap-5">
       <header className="flex items-start justify-between gap-4">
         <div>
-          <p className="m-0 mb-1.5 text-xs font-bold uppercase text-text-muted">Student module</p>
+          <p className="m-0 mb-1.5 text-xs font-medium uppercase text-text-muted">Student module</p>
           <h1 id="student-module-title" className="m-0 break-words font-display text-2xl leading-tight text-text">
             {module?.title ?? "Module"}
           </h1>

@@ -158,12 +158,12 @@ export function SectionTranscriptControl({
         <div>
           <h3 className="m-0 font-display text-base leading-snug text-text">Transcript</h3>
         </div>
-        {isLoading ? <span className="shrink-0 text-xs font-bold text-text-muted">Loading status</span> : null}
+        {isLoading ? <span className="shrink-0 text-xs font-medium text-text-muted">Loading status</span> : null}
       </div>
 
       {transcript ? (
         <div className="grid gap-1.5">
-          <span className="break-words text-sm font-bold text-text">{transcript.originalFileName}</span>
+          <span className="break-words text-sm font-semibold text-text">{transcript.originalFileName}</span>
           <span className="break-words text-xs text-text-muted">
             {transcript.mimeType} · {formatBytes(transcript.fileSize)}
           </span>
@@ -178,7 +178,7 @@ export function SectionTranscriptControl({
             <p
               data-testid={`section-transcript-pending-${sectionKey}`}
               role="status"
-              className="m-0 rounded-md border border-info bg-info-surface px-2.5 py-2 text-xs font-bold text-info-text"
+              className="m-0 rounded-md border border-border bg-info-surface px-2.5 py-2 text-xs font-medium text-info-text"
             >
               New version processing… the current summaries stay until it completes.
             </p>
@@ -310,15 +310,15 @@ export function SectionTranscriptControl({
 // Token class constants (semantic tokens only). Buttons stay raw <button> to preserve their exact
 // data-testids/names/disabled logic byte-for-byte (lower risk than threading data-testid through Button).
 const fieldsClass = "grid items-end gap-2.5 [grid-template-columns:repeat(auto-fit,minmax(180px,1fr))]";
-const labelClass = "text-xs font-bold text-text-muted [grid-column:1/-1]";
+const labelClass = "text-xs font-medium text-text-muted [grid-column:1/-1]";
 const inputClass =
   "min-h-[38px] rounded-md border border-border-strong px-2.5 py-[7px] text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2";
 const btnPrimary =
-  "min-h-[38px] rounded-md border border-primary bg-primary px-3.5 text-sm font-bold text-on-primary hover:bg-primary-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2";
+  "min-h-[38px] rounded-full border border-primary bg-primary px-3.5 text-sm font-medium text-on-primary hover:bg-primary-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2";
 const btnDisabled =
-  "min-h-[38px] cursor-not-allowed rounded-md border border-border bg-surface-muted px-3.5 text-sm font-bold text-text-muted";
+  "min-h-[38px] cursor-not-allowed rounded-full border border-border bg-surface-muted px-3.5 text-sm font-medium text-text-muted";
 const btnSecondary =
-  "min-h-[38px] rounded-md border border-border-strong bg-surface px-3.5 text-sm font-bold text-text hover:bg-surface-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2";
+  "min-h-[38px] rounded-full border border-border-strong bg-surface px-3.5 text-sm font-medium text-text hover:bg-surface-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2";
 
 function hasAcceptedExtension(fileName: string): boolean {
   const lowerName = fileName.toLowerCase();

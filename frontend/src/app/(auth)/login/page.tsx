@@ -123,7 +123,7 @@ export default function LoginPage() {
   return (
     <main className="mx-auto flex min-h-dvh max-w-md flex-col justify-center gap-4 px-4 py-10">
       <div className="text-center">
-        <strong className="font-display text-2xl font-bold text-primary">XYZ LMS</strong>
+        <strong className="font-display text-2xl font-semibold text-primary">XYZ LMS</strong>
         <h1 className="mt-1 font-display text-lg font-semibold text-text">Login</h1>
       </div>
 

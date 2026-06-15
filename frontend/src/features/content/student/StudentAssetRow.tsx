@@ -57,7 +57,7 @@ export function StudentAssetRow({
       className="flex min-h-[54px] items-center justify-between gap-3 rounded-md border border-border px-3 py-2.5"
     >
       <div className="grid min-w-0 gap-0.5">
-        <span className="break-words text-sm font-bold leading-snug text-text">{asset.fileName}</span>
+        <span className="break-words text-sm font-semibold leading-snug text-text">{asset.fileName}</span>
         <span className="break-words text-xs leading-snug text-text-muted">
           {asset.mimeType} · {formatBytes(asset.fileSize)}
         </span>
@@ -69,7 +69,7 @@ export function StudentAssetRow({
           onClick={() => {
             void openAsset();
           }}
-          className="min-h-[34px] shrink-0 rounded-md border border-primary bg-primary px-3 text-xs font-bold text-on-primary hover:bg-primary-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
+          className="min-h-[34px] shrink-0 rounded-full border border-primary bg-primary px-3 text-xs font-medium text-on-primary hover:bg-primary-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
           type="button"
         >
           {isOpening ? "Opening" : "Open file"}

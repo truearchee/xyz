@@ -81,7 +81,7 @@ export function TranscriptSummaryPanel({
       className="grid gap-3"
     >
       <div className="grid gap-1.5">
-        <h4 className="m-0 text-sm font-bold uppercase tracking-wide text-text">Brief summary</h4>
+        <h4 className="m-0 text-sm font-semibold uppercase tracking-wide text-text">Brief summary</h4>
         {summaries.brief ? (
           <p
             data-testid={`section-summary-brief-${sectionKey}`}
@@ -101,7 +101,7 @@ export function TranscriptSummaryPanel({
       </div>
 
       <div className="grid gap-1.5">
-        <h4 className="m-0 text-sm font-bold uppercase tracking-wide text-text">Detailed study summary</h4>
+        <h4 className="m-0 text-sm font-semibold uppercase tracking-wide text-text">Detailed study summary</h4>
         {summaries.detailed ? (
           <DetailedSummaryView
             detailed={summaries.detailed}
@@ -178,7 +178,7 @@ function DetailedSummaryView({
         <dl className="m-0 grid gap-1.5">
           {detailed.importantDefinitions.map((definition, index) => (
             <div key={index} className="grid gap-0.5">
-              <dt className="m-0 text-sm font-bold text-text">{definition.term}</dt>
+              <dt className="m-0 text-sm font-semibold text-text">{definition.term}</dt>
               <dd className="m-0 text-sm leading-normal text-text-muted">{definition.definition}</dd>
             </div>
           ))}
@@ -211,7 +211,7 @@ function DetailedSection({
 }) {
   return (
     <div className="grid gap-1">
-      <h5 className="m-0 text-sm font-bold text-text-muted">{title}</h5>
+      <h5 className="m-0 text-sm font-semibold text-text-muted">{title}</h5>
       {children}
     </div>
   );

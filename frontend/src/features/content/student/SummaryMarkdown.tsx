@@ -23,7 +23,7 @@ function SafeLink({ href, children }: { href?: string; children?: React.ReactNod
 
 export function SummaryMarkdown({ content, testId }: { content: string; testId?: string }) {
   return (
-    <div data-testid={testId} className="text-sm leading-relaxed text-text">
+    <div data-testid={testId} className="text-lg leading-[1.65] text-text">
       <Markdown
         disallowedElements={DISALLOWED}
         unwrapDisallowed

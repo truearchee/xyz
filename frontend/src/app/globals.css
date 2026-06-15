@@ -10,47 +10,34 @@
 /* ============================================================================
    Layer 1 — RAW PALETTE (private). Components NEVER reference these directly;
    they exist only to be mapped into the Layer-2 semantic roles below.
-   Values: design-plan.md Part 1.2 (Violet / AI-forward, LOCKED 2026-06-12).
+   Values: design-plan.md Part 1.2 (Monochrome Apple×Linear, LOCKED 2026-06-15).
+   Warm-gray ramp (near-black ink #1d1d1f, never pure black for text) + functional
+   status raws (green/amber/red: solid-600 + tint-50 + dark text-700). No brand hue.
    ============================================================================ */
 :root {
-  /* Brand — Violet */
-  --palette-violet-50: #f5f3ff;
-  --palette-violet-100: #ede9fe;
-  --palette-violet-200: #ddd6fe;
-  --palette-violet-300: #c4b5fd;
-  --palette-violet-400: #a78bfa;
-  --palette-violet-500: #8b5cf6;
-  --palette-violet-600: #7c3aed;
-  --palette-violet-700: #6d28d9;
-  --palette-violet-800: #5b21b6;
-  --palette-violet-900: #4c1d95;
-
-  /* Neutral — Zinc */
+  /* Neutral — warm gray */
   --palette-white: #ffffff;
-  --palette-zinc-50: #fafafa;
-  --palette-zinc-100: #f4f4f5;
-  --palette-zinc-200: #e4e4e7;
-  --palette-zinc-300: #d4d4d8;
-  --palette-zinc-400: #a1a1aa;
-  --palette-zinc-500: #71717a;
-  --palette-zinc-600: #52525b;
-  --palette-zinc-700: #3f3f46;
-  --palette-zinc-800: #27272a;
-  --palette-zinc-900: #18181b;
+  --palette-gray-50: #fafafa;
+  --palette-gray-100: #f5f5f7;
+  --palette-gray-200: #e8e8ed;
+  --palette-gray-300: #d2d2d7;
+  --palette-gray-400: #a1a1a6;
+  --palette-gray-500: #6e6e73;
+  --palette-gray-600: #48484a;
+  --palette-gray-700: #333336;
+  --palette-gray-800: #1d1d1f;
+  --palette-black: #000000;
 
-  /* Status raws (solid 600 + light 50 tint + dark 700 text-on-light) */
+  /* Status raws (functional only — solid 600 + light 50 tint + dark 700 text-on-light) */
   --palette-green-50: #f0fdf4;
   --palette-green-600: #16a34a;
   --palette-green-700: #15803d;
   --palette-amber-50: #fffbeb;
   --palette-amber-600: #d97706;
   --palette-amber-700: #b45309;
-  --palette-rose-50: #fff1f2;
-  --palette-rose-600: #e11d48;
-  --palette-rose-700: #be123c;
-  --palette-indigo-50: #eef2ff;
-  --palette-indigo-500: #6366f1;
-  --palette-indigo-700: #4338ca;
+  --palette-red-50: #fef2f2;
+  --palette-red-600: #dc2626;
+  --palette-red-700: #b91c1c;
 
   /* Layering — z-index TOKENS (single source of magic numbers; the .z-* utilities below
      reference these, so stacking is deterministic: base < dropdown < assistant < modal < toast). */
@@ -78,19 +65,21 @@
      scales are untouched. */
   --color-*: initial;
 
-  /* Surfaces / text / borders */
+  /* Surfaces / text / borders. The PAGE is parchment (surface-muted); content cards are white
+     (surface) — that tone step IS the divider (no resting shadow). */
   --color-surface: var(--palette-white);
-  --color-surface-muted: var(--palette-zinc-50);
+  --color-surface-muted: var(--palette-gray-100);
   --color-surface-raised: var(--palette-white);
-  --color-overlay: rgb(24 24 27 / 0.55); /* modal/dialog scrim (zinc-900 @ 55%) — 4.9b; deepened 4.9e so the dialog reads >=3:1 over the dimmed page (contrast re-validation) */
-  --color-border: var(--palette-zinc-200);
-  --color-border-strong: var(--palette-zinc-500);
-  --color-text: var(--palette-zinc-900);
-  --color-text-muted: var(--palette-zinc-500);
+  --color-overlay: rgb(29 29 31 / 0.55); /* modal/dialog scrim (gray-800 @ 55%) — composited + validated in check-contrast.mjs */
+  --color-border: var(--palette-gray-200);
+  --color-border-strong: var(--palette-gray-500);
+  --color-text: var(--palette-gray-800);
+  --color-text-muted: var(--palette-gray-500);
+  --color-text-subtle: var(--palette-gray-400); /* hints / disabled — large·UI only, NOT body */
 
-  /* Primary */
-  --color-primary: var(--palette-violet-600);
-  --color-primary-hover: var(--palette-violet-700);
+  /* Primary — graphite (the only accent; no brand hue) */
+  --color-primary: var(--palette-gray-800);
+  --color-primary-hover: var(--palette-black);
   --color-on-primary: var(--palette-white);
 
   /* Status — solid (on-* white = large/bold/UI only, per the validated AA table) */
@@ -98,10 +87,13 @@
   --color-on-success: var(--palette-white);
   --color-warning: var(--palette-amber-600);
   --color-on-warning: var(--palette-white);
-  --color-danger: var(--palette-rose-600);
+  --color-danger: var(--palette-red-600);
   --color-on-danger: var(--palette-white);
-  --color-danger-hover: var(--palette-rose-700);
-  --color-info: var(--palette-indigo-500);
+  --color-danger-hover: var(--palette-red-700);
+  /* "info" is NEUTRAL graphite — never a 4th hue. The tonal info pair resolves to the neutral
+     surface-muted/text-muted greys, so the `info` Badge/Toast tone renders identical to `neutral`
+     (component APIs unchanged). */
+  --color-info: var(--palette-gray-800);
   --color-on-info: var(--palette-white);
 
   /* Status — tonal (badge default: dark -text on light -surface; body-AA-safe) */
@@ -109,46 +101,59 @@
   --color-success-text: var(--palette-green-700);
   --color-warning-surface: var(--palette-amber-50);
   --color-warning-text: var(--palette-amber-700);
-  --color-danger-surface: var(--palette-rose-50);
-  --color-danger-text: var(--palette-rose-700);
-  --color-info-surface: var(--palette-indigo-50);
-  --color-info-text: var(--palette-indigo-700);
+  --color-danger-surface: var(--palette-red-50);
+  --color-danger-text: var(--palette-red-700);
+  --color-info-surface: var(--palette-gray-100);
+  --color-info-text: var(--palette-gray-500);
 
-  /* Focus */
-  --color-focus-ring: var(--palette-violet-500);
+  /* Focus — graphite ring */
+  --color-focus-ring: var(--palette-gray-800);
 
-  /* Type — families (next/font local vars are wired in layout.tsx; the *-src indirection avoids a
-     self-referential cycle). Body/UI = Inter (--font-sans); headings opt into Space Grotesk. */
-  --font-sans: var(--font-sans-src), ui-sans-serif, system-ui, sans-serif;
-  --font-display: var(--font-display-src), ui-sans-serif, system-ui, sans-serif;
+  /* Type — ONE family, system stack (no web-font request; design-system §3). `--font-display`
+     is aliased to the same stack so existing `font-display` heading usages keep resolving to the
+     single family (no feature-file churn). */
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial,
+    sans-serif;
+  --font-display: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial,
+    sans-serif;
 
-  /* Type — scale (design-plan 1.2b) */
-  --text-xs: 0.75rem;
-  --text-xs--line-height: 1rem;
-  --text-sm: 0.875rem;
-  --text-sm--line-height: 1.25rem;
-  --text-base: 1rem;
-  --text-base--line-height: 1.5rem;
-  --text-lg: 1.125rem;
-  --text-lg--line-height: 1.75rem;
-  --text-xl: 1.25rem;
-  --text-xl--line-height: 1.75rem;
-  --text-2xl: 1.5rem;
-  --text-2xl--line-height: 2rem;
-  --text-3xl: 1.875rem;
-  --text-3xl--line-height: 2.25rem;
-  --text-4xl: 2.25rem;
-  --text-4xl--line-height: 2.5rem;
+  /* Type — scale (design-system §3 / design-plan 1.2b). Body 17px (Apple cadence), reading 19px.
+     Negative tracking on headings; the generic ladder is monotonic. The 19/1.65 long-form *reading*
+     line-height is applied on the student summary surface (text-lg + leading-[1.65]). */
+  --text-xs: 0.75rem; /* micro 12 */
+  --text-xs--line-height: 1.4;
+  --text-sm: 0.875rem; /* small 14 */
+  --text-sm--line-height: 1.5;
+  --text-base: 1.0625rem; /* body 17 */
+  --text-base--line-height: 1.5;
+  --text-base--letter-spacing: -0.01em;
+  --text-lg: 1.1875rem; /* reading 19 (also serves subheads/h4) */
+  --text-lg--line-height: 1.5;
+  --text-lg--letter-spacing: -0.005em;
+  --text-xl: 1.375rem; /* h3 22 */
+  --text-xl--line-height: 1.3;
+  --text-xl--letter-spacing: -0.01em;
+  --text-2xl: 1.75rem; /* h2 28 */
+  --text-2xl--line-height: 1.2;
+  --text-2xl--letter-spacing: -0.02em;
+  --text-3xl: 2rem; /* 32 */
+  --text-3xl--line-height: 1.15;
+  --text-3xl--letter-spacing: -0.02em;
+  --text-4xl: 2.25rem; /* display 36 */
+  --text-4xl--line-height: 1.1;
+  --text-4xl--letter-spacing: -0.02em;
 
-  /* Radius (design-plan 1.2b) */
-  --radius-sm: 6px;
-  --radius-md: 8px;
-  --radius-lg: 12px;
+  /* Radius (design-system §6) — sm 8 (chips) · md 12 (inputs) · lg 16 (cards) · xl 20 (modals).
+     Buttons/badges/toggles use the pill (rounded-full) at the call site. */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
 
-  /* Elevation */
-  --shadow-sm: 0 1px 2px 0 rgb(24 24 27 / 0.06);
-  --shadow-md: 0 4px 12px -2px rgb(24 24 27 / 0.1);
-  --shadow-lg: 0 12px 32px -8px rgb(24 24 27 / 0.18);
+  /* Elevation — soft shadow ONLY on overlays (md = popover/toast, lg = modal). No resting-card
+     shadow (cards separate by the parchment→white tone step + hairline). No gradients. */
+  --shadow-md: 0 4px 12px -2px rgb(29 29 31 / 0.1);
+  --shadow-lg: 0 12px 32px -8px rgb(29 29 31 / 0.18);
 }
 
 /* Spacing scale: keep Tailwind v4's default multiplier (ADR-045) — it maps the inline-style

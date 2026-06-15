@@ -1,8 +1,11 @@
 #!/usr/bin/env node
-// Stage 4.9e — token-contrast re-validation against the SHIPPED globals.css (umbrella §4.1; carry-forward
-// from 4.9a + the developer's 4.9e hold). Re-confirms the original semantic pairs AND the two tokens 4.9b
-// added — `--color-danger-hover` and `--color-overlay`. `--color-overlay` is a SEMI-TRANSPARENT scrim, so
-// it is COMPOSITED over the surface beneath (not skipped, not choked on the alpha) and validated as a layer.
+// Stage 4.9f — token-contrast validation against the SHIPPED globals.css for the MONOCHROME Apple×Linear
+// system (umbrella §4.1; rewrites the 4.9e violet/zinc pairs onto the warm-gray + functional-status tokens).
+// Same colour math + AA thresholds (4.5:1 body, 3:1 large/UI). `--color-info` is NEUTRAL graphite and its
+// tonal pair resolves to the neutral greys, so the info badge reads identically to `neutral`. `--color-overlay`
+// is a SEMI-TRANSPARENT scrim — COMPOSITED over the parchment page (not skipped, not choked on alpha) and
+// validated as a layer. `--color-text-subtle` (gray-400) is the disabled/hint role (large·UI only, WCAG-exempt)
+// and is intentionally NOT gated here.
 import { readFileSync } from "node:fs";
 
 const css = readFileSync(new URL("../src/app/globals.css", import.meta.url), "utf8");
@@ -31,24 +34,25 @@ const P = (k) => {
 };
 const white = P("white");
 
+// Semantic pairs as MAPPED in globals.css Layer 2 (graphite primary/info/focus-ring; warm-gray text/border;
+// functional status only). Each entry: [name, fg, bg, threshold, kind].
 const pairs = [
-  ["text on surface", P("zinc-900"), white, 4.5, "body"],
-  ["text-muted on surface", P("zinc-500"), white, 4.5, "body"],
-  ["text-muted on surface-muted", P("zinc-500"), P("zinc-50"), 4.5, "body"],
-  ["primary text on surface", P("violet-600"), white, 4.5, "body"],
-  ["on-primary white/violet-600", white, P("violet-600"), 3.0, "large"],
-  ["on-danger white/rose-600", white, P("rose-600"), 3.0, "large"],
-  ["on-info white/indigo-500", white, P("indigo-500"), 3.0, "large"],
+  ["text on surface (gray-800/white)", P("gray-800"), white, 4.5, "body"],
+  ["text-muted on surface (gray-500/white)", P("gray-500"), white, 4.5, "body"],
+  ["text-muted on surface-muted/parchment (gray-500/gray-100)", P("gray-500"), P("gray-100"), 4.5, "body"],
+  ["primary graphite as text on surface (gray-800/white)", P("gray-800"), white, 4.5, "body"],
+  ["on-primary white/gray-800", white, P("gray-800"), 3.0, "large"],
+  ["on-info white/gray-800 (NEUTRAL graphite)", white, P("gray-800"), 3.0, "large"],
+  ["on-danger white/red-600", white, P("red-600"), 3.0, "large"],
   ["on-success white/green-600", white, P("green-600"), 3.0, "large"],
   ["on-warning white/amber-600", white, P("amber-600"), 3.0, "large"],
   ["tonal success-700/50", P("green-700"), P("green-50"), 4.5, "body"],
   ["tonal warning-700/50", P("amber-700"), P("amber-50"), 4.5, "body"],
-  ["tonal danger-700/50", P("rose-700"), P("rose-50"), 4.5, "body"],
-  ["tonal info-700/50", P("indigo-700"), P("indigo-50"), 4.5, "body"],
-  ["focus-ring violet-500/white (UI)", P("violet-500"), white, 3.0, "ui"],
-  ["border-strong zinc-500/white (UI)", P("zinc-500"), white, 3.0, "ui"],
-  // NEW (4.9b tokens):
-  ["on-danger-hover white/rose-700 (destructive btn hover; large/UI)", white, P("rose-700"), 3.0, "large"],
+  ["tonal danger-700/50", P("red-700"), P("red-50"), 4.5, "body"],
+  ["tonal info NEUTRAL (info-text/info-surface = gray-500/gray-100)", P("gray-500"), P("gray-100"), 4.5, "body"],
+  ["focus-ring gray-800/white (UI)", P("gray-800"), white, 3.0, "ui"],
+  ["border-strong gray-500/white (UI)", P("gray-500"), white, 3.0, "ui"],
+  ["on-danger-hover white/red-700 (destructive btn hover; large/UI)", white, P("red-700"), 3.0, "large"],
 ];
 
 let failed = 0;
@@ -60,20 +64,21 @@ for (const [name, fg, bg, t] of pairs) {
   console.log(`${ok ? "PASS" : "FAIL"}  ${r.toFixed(2).padStart(6)}:1  (>=${t})  ${name}`);
 }
 
-// ---- the scrim, validated as a LAYER (composited, alpha handled) ---------------------------------
+// ---- the scrim, validated as a LAYER (composited over the parchment page, alpha handled) ---------
 if (!overlayMatch) {
   console.error("FAIL  --color-overlay not parsed (expected rgb(r g b / a) scrim) — must not be silently skipped");
   failed++;
 } else {
   const [, r, g, b, a] = overlayMatch;
   const scrim = [Number(r), Number(g), Number(b)];
-  const composited = over(scrim, white, Number(a)); // scrim over the page surface (white)
+  const page = P("gray-100"); // the page beneath the scrim is parchment (surface-muted)
+  const composited = over(scrim, page, Number(a)); // scrim over the parchment page
   const dialogVsScrim = ratio(white, composited); // the white modal must read as a layer above the dimmed page
   const ok = dialogVsScrim >= 3.0;
   if (!ok) failed++;
   console.log(
     `${ok ? "PASS" : "FAIL"}  ${dialogVsScrim.toFixed(2).padStart(6)}:1  (>=3 UI-layer)  ` +
-      `overlay scrim zinc-900@${a} composited over surface → white dialog reads as a distinct layer` +
+      `overlay scrim gray-800@${a} composited over parchment → white dialog reads as a distinct layer` +
       ` [scrim≈rgb(${composited.join(",")})]`,
   );
 }

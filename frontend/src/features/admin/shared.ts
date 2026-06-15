@@ -31,7 +31,7 @@ export function errorMessage(caught: unknown): string {
 // lets the panel's children shrink, which (a) makes the auto-fit grid see a DEFINITE 343px width so it
 // collapses to one column on mobile, and (b) lets the `overflow-x-auto` table wrappers actually clip.
 export const panelClasses = {
-  panel: "grid min-w-0 gap-4 rounded-lg border border-border bg-surface-raised p-4 shadow-sm [&>*]:min-w-0",
+  panel: "grid min-w-0 gap-4 rounded-lg border border-border bg-surface-raised p-4 [&>*]:min-w-0",
   stack: "grid gap-3 [&>*]:min-w-0",
   grid: "grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(220px,1fr))]",
   table: "w-full border-collapse",
@@ -47,7 +47,7 @@ export const panelClasses = {
   alert: "rounded-md border border-danger bg-danger-surface p-2.5 text-sm text-danger-text",
   status: "rounded-md border border-success bg-success-surface p-2.5 text-sm text-success-text",
   button:
-    "min-h-[38px] rounded-md border border-primary bg-primary px-3.5 text-sm font-bold text-on-primary hover:bg-primary-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60",
+    "min-h-[38px] rounded-full border border-primary bg-primary px-3.5 text-sm font-medium text-on-primary hover:bg-primary-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60",
   buttonSecondary:
-    "min-h-[34px] rounded-md border border-border-strong bg-surface px-3 text-sm font-medium text-text hover:bg-surface-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60",
+    "min-h-[34px] rounded-full border border-border-strong bg-surface px-3 text-sm font-medium text-text hover:bg-surface-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60",
 } as const;

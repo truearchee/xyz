@@ -4,9 +4,9 @@
 > **Product/brand authority:** locked in a design-direction session (2026-06-15); supersedes Design Plan v1
 > (violet). An engineer may not invent or override it.
 >
-> **Supersession:** v1 = Violet / AI-forward. v2 = **monochrome Apple×Linear** (below). Stage 4.9 code still
-> ships v1 until the repaint lands ([[specs/stage-04/4.9f-monochrome-restyle]]); until then **code wins** and
-> `design-system.md` carries a TARGET banner.
+> **Supersession:** v1 = Violet / AI-forward. v2 = **monochrome Apple×Linear** (below) — **SHIPPED 2026-06-15**
+> by the repaint ([[specs/stage-04/4.9f-monochrome-restyle]]). The frontend now renders this system end-to-end;
+> `design-system.md` is reconciled against the shipped CSS (TARGET banner removed — code wins).
 >
 > **Hand-off:** from Stage 5, `design-system.md` (written from SHIPPED code) is the living authority for
 > tokens/components; this plan's Part 2 (screen specs) is the per-stage seed. Stage 5 specs = roadmap +
@@ -190,8 +190,8 @@ no horizontal scroll on mobile-first surfaces.
             - Elevation: surface-tone step (parchment page ↔ white cards) + hairline; soft shadow ONLY on
               overlays (modals/popovers/toasts), never on resting cards — per Apple's "one-shadow" philosophy.
             - Signature pipeline + AA target + mobile-first split: carried from v1.
-            - Triggers the repaint ([[specs/stage-04/4.9f-monochrome-restyle]]); until it lands code is violet
-              and code wins (design-system.md carries a TARGET banner).
+            - SHIPPED by the repaint ([[specs/stage-04/4.9f-monochrome-restyle]], 2026-06-15): frontend is
+              monochrome end-to-end; design-system.md reconciled against shipped CSS (TARGET banner removed).
 ```
 
 ---

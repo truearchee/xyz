@@ -20,10 +20,10 @@ export function StudentSectionView({
   return (
     <article
       data-testid={`student-section-row-${sectionKey}`}
-      className="grid gap-3.5 rounded-lg border border-border bg-surface-raised p-4 shadow-sm"
+      className="grid gap-3.5 rounded-lg border border-border bg-surface-raised p-4"
     >
       <header className="grid gap-1">
-        <p className="m-0 text-xs font-bold capitalize text-text-muted">
+        <p className="m-0 text-xs font-medium capitalize text-text-muted">
           Section {section.orderIndex} · {formatSectionType(section.type)}
         </p>
         <h2 className="m-0 break-words font-display text-lg leading-snug text-text">{section.title}</h2>

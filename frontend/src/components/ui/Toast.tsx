@@ -25,7 +25,8 @@ const AUTO_DISMISS_MS = 5000;
 let nextId = 0;
 
 const toneClass: Record<ToastTone, string> = {
-  info: "border-info bg-info-surface text-info-text",
+  // info → NEUTRAL graphite (design-system §4): hairline border so info reads like neutral, not a 4th hue.
+  info: "border-border bg-info-surface text-info-text",
   success: "border-success bg-success-surface text-success-text",
   error: "border-danger bg-danger-surface text-danger-text",
 };

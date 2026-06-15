@@ -24,7 +24,7 @@ export function Modal({ isOpen, onOpenChange, title, children, footer, variant =
       isDismissable
       className="fixed inset-0 z-modal flex items-center justify-center bg-overlay p-4"
     >
-      <AriaModal className="w-full max-w-lg rounded-lg bg-surface-raised shadow-lg outline-none">
+      <AriaModal className="w-full max-w-lg rounded-xl bg-surface-raised shadow-lg outline-none">
         <Dialog role={variant === "confirm" ? "alertdialog" : "dialog"} className="outline-none">
           <div className="flex flex-col gap-4 p-5">
             <Heading slot="title" className="font-display text-lg font-semibold text-text">

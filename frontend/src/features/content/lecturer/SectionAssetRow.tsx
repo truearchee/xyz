@@ -13,9 +13,9 @@ type SectionAssetRowProps = {
 };
 
 const btnPrimary =
-  "min-h-[34px] rounded-md border border-primary bg-primary px-3 text-xs font-bold text-on-primary hover:bg-primary-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2";
+  "min-h-[34px] rounded-full border border-primary bg-primary px-3 text-xs font-medium text-on-primary hover:bg-primary-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2";
 const btnDisabled =
-  "min-h-[34px] cursor-not-allowed rounded-md border border-border bg-surface-muted px-3 text-xs font-bold text-text-muted";
+  "min-h-[34px] cursor-not-allowed rounded-full border border-border bg-surface-muted px-3 text-xs font-medium text-text-muted";
 
 export function SectionAssetRow({
   asset,
@@ -46,19 +46,19 @@ export function SectionAssetRow({
       className="grid items-start gap-3 rounded-lg border border-border p-3 [grid-template-columns:repeat(auto-fit,minmax(190px,1fr))]"
     >
       <div className="grid min-w-0 gap-1">
-        <span className="break-words text-sm font-bold text-text">{asset.fileName}</span>
+        <span className="break-words text-sm font-semibold text-text">{asset.fileName}</span>
         <span className="text-xs text-text-muted">
           {formatBytes(asset.fileSize)} · {asset.mimeType}
         </span>
       </div>
       <span
         data-testid={`section-asset-processing-status-${asset.id}`}
-        className="w-fit self-start rounded-full border border-success bg-success-surface px-2.5 py-1 text-xs font-bold capitalize text-success-text"
+        className="w-fit self-start rounded-full border border-success bg-success-surface px-2.5 py-1 text-xs font-medium capitalize text-success-text"
       >
         {formatProcessingStatus(asset.processingStatus)}
       </span>
       <div data-testid={`section-asset-replace-${asset.id}`} className="grid gap-2">
-        <label htmlFor={inputId} className="text-xs font-bold text-text-muted">
+        <label htmlFor={inputId} className="text-xs font-medium text-text-muted">
           Replacement PDF
         </label>
         <input

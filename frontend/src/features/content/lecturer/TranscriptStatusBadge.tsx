@@ -138,7 +138,7 @@ export function TranscriptStatusBadge({
           disabled={isRetrying}
           onClick={() => void onRetry()}
           className={cn(
-            "min-h-[38px] justify-self-start rounded-md border px-3.5 text-sm font-bold focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2",
+            "min-h-[38px] justify-self-start rounded-full border px-3.5 text-sm font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2",
             isRetrying
               ? "cursor-not-allowed border-border bg-surface-muted text-text-muted"
               : "border-primary bg-primary text-on-primary hover:bg-primary-hover",
@@ -184,10 +184,10 @@ function StepStates({
         return (
           <li
             key={key}
-            className="flex items-center gap-1.5 rounded-md border border-border bg-surface-muted px-2 py-1 text-xs"
+            className="flex items-center gap-1.5 rounded-full border border-border bg-surface-muted px-2 py-1 text-xs"
           >
-            <span className="font-bold text-text">{label}</span>
-            <span className={cn("font-bold", stepStatusClass(status))}>{stepStatusText(status)}</span>
+            <span className="font-semibold text-text">{label}</span>
+            <span className={cn("font-semibold", stepStatusClass(status))}>{stepStatusText(status)}</span>
           </li>
         );
       })}
@@ -351,7 +351,7 @@ function formatStatusLabel(status: string): string {
 
 // Token-based status pill classes (the tonal pairs — AA-safe at body size; status by text label, not
 // color alone). statusBaseClass is the shared shape; STATUS_KIND_CLASS the per-kind tonal tokens.
-const statusBaseClass = "m-0 rounded-md border px-2.5 py-2 text-sm font-bold leading-snug";
+const statusBaseClass = "m-0 rounded-md border px-2.5 py-2 text-sm font-semibold leading-snug";
 
 const STATUS_KIND_CLASS = {
   completed: "bg-success-surface border-success text-success-text",

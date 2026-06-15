@@ -1,14 +1,12 @@
 # Design System v2 — XYZ LMS
 
-> **⚠ TARGET STATE — not yet shipped.** Stage 4.9 code currently ships the v1 **violet** system. This document
-> describes the **monochrome Apple×Linear** target locked in design-plan v2. The repaint session
-> ([[specs/stage-04/4.9f-monochrome-restyle]]) makes `frontend/src/app/globals.css` + `frontend/src/components/ui/*`
-> match this file; **until that PR lands, code wins (sacred rule)** and the violet values are live truth. When
-> 4.9f ships, this banner is removed and the file is reconciled against shipped CSS.
->
-> From Stage 5 this is the living authority for tokens/components; design-plan §2.x screen specs are the
-> per-stage seed. **Version 2.0.0** · changelog at bottom. Breaking contract change → version bump + ADR;
-> additive → changelog only.
+> **SHIPPED 2026-06-15** — session [[specs/stage-04/4.9f-monochrome-restyle]] repainted the frontend from v1
+> violet to this **monochrome Apple×Linear** system. The values below are **reconciled against the shipped
+> `frontend/src/app/globals.css` + `frontend/src/components/ui/*`** (sacred rule — code wins). Contrast validated
+> 17/17 (`frontend/scripts/check-contrast.mjs`); `check:design-tokens` + `check:inline-styles` green; `vitest`
+> a11y/unit green; `next build` compiles the arbitrary variants. From Stage 5 this is the living authority for
+> tokens/components; design-plan §2.x screen specs are the per-stage seed. **Version 2.0.0** · changelog at
+> bottom. Breaking contract change → version bump + ADR; additive → changelog only.
 
 ## 1. Visual theme & atmosphere
 Calm, premium, monochrome — "if Apple built an LMS," with Linear's working-tool discipline on dense surfaces.
@@ -40,20 +38,31 @@ Non-colour: type scale (`--text-*` w/ line-heights + tracking), `--radius-sm/md/
 `--shadow-md/lg` (overlays only; soft, diffuse, low-opacity), 4px spacing unit, `.z-*`, reduced-motion guard.
 
 **No brand hue** — every affordance is graphite. **Solid status fills are large/bold/UI-only**; body status text
-uses the tonal `-text`-on-`-surface` pair. Contrast validated in 4.9f (`scripts/check-contrast.mjs`; AA: 4.5:1
-body, 3:1 large/UI).
+uses the tonal `-text`-on-`-surface` pair. **`info` renders identical to `neutral`** (shipped): the tonal info
+pair is the neutral greys (`info-surface`=gray-100, `info-text`=gray-500) and the `info` Badge/Toast tone uses the
+hairline `border-border` (not the graphite `--color-info`), so info is never a 4th hue. `--color-text-subtle`
+(gray-400) is the disabled/hint role (large·UI only) and is intentionally NOT contrast-gated (WCAG-exempt).
+Contrast validated 17/17 (`frontend/scripts/check-contrast.mjs`; AA: 4.5:1 body, 3:1 large/UI; tightest pair
+text-muted/parchment 4.66:1; modal scrim composited 4.05:1).
 
-## 3. Typography (`frontend/src/app/layout.tsx`)
-**One family — system stack**, no web-font request: `-apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI",
-Roboto, Helvetica, Arial, sans-serif`. Headings, body, UI all use it. Weights **400 / 500 / 600** (no 700 except
-optional largest display). Scale (px / line-height / tracking):
+## 3. Typography (`frontend/src/app/globals.css` `@theme` + `frontend/src/app/layout.tsx`)
+**One family — system stack**, no web-font request: `--font-sans` = `-apple-system, BlinkMacSystemFont, "SF Pro
+Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif` (and `--font-display` is **aliased to the same stack**,
+so the existing `font-display` heading usages keep resolving to the one family — zero feature churn). No
+`next/font`, no committed `.woff2`. Weights **400 / 500 / 600** applied via utilities (body 400 · labels/buttons
+500 `font-medium` · headings/emphasis 600 `font-semibold`); no 700.
+
+**Shipped scale** (the design ladder is realized via Tailwind's numeric `--text-*` tokens — components consume
+those, not named tokens — each with `--text-{n}--line-height` + `--text-{n}--letter-spacing`):
 ```
-display 36/1.10/-0.02em(600) · h2 28/1.20/-0.02em(600) · h3 22/1.30/-0.01em(600) · h4 18/1.40/-0.01em(600)
-reading 19/1.65/-0.005em(400, long-form/summaries) · body 17/1.50/-0.01em(400, default — Apple cadence)
-small 14/1.50(400) · micro 12/1.40(400) · button 14/1.20(500) · eyebrow 13/1.30/+0.04em(500)
+xs micro 12 /1.4    · sm small 14 /1.5  · base BODY 17 /1.5/-0.01em (Apple cadence) · lg READING 19 /1.5/-0.005em
+xl h3 22 /1.3/-0.01em · 2xl h2 28 /1.2/-0.02em · 3xl 32 /1.15/-0.02em · 4xl display 36 /1.1/-0.02em
 ```
-Negative tracking on display/headings; +0.04em on eyebrow (taxonomy). Body is 17px, not 16px — the Apple
-reading move. Long-form summaries use 19/1.65.
+Body is 17px (not 16). **Long-form reading is 19px**: `--text-lg`=19 also serves subheads, and the **19/1.65
+long-form line-height** is applied specifically on the student summary surface (`SummaryMarkdown` =
+`text-lg leading-[1.65]`) rather than loosening the generic `text-lg` (so headings reusing `text-lg` keep tight
+leading). Eyebrows/overlines render as `text-xs uppercase` (`font-medium` on `text-text`-headings, muted on
+subtle taxonomy) — not a separate token. Negative tracking on body + headings.
 
 ## 4. Components (`frontend/src/components/ui/` — contracts unchanged; only styling is remapped in 4.9f)
 Component **API does not change** in the repaint — token values + button shape do.
@@ -113,8 +122,11 @@ never a raw hex or a reach into `--palette-*`. Mark interactive leaves `"use cli
 literal; add a co-located `*.a11y.test.tsx` smoke. Breaking changes need an ADR.
 
 ## Changelog
-- **2.0.0** (2026-06-15, TARGET) — full monochrome redesign superseding v1 violet: warm-gray two-layer tokens,
-  graphite accent (no brand hue), functional status colour only, single system-font family (17px body),
-  surface-tone + hairline depth with shadow on overlays only, **pill-shaped buttons**, medium card radii.
-  Component contracts unchanged. Ships when [[specs/stage-04/4.9f-monochrome-restyle]] lands; banner removed +
-  reconciled against shipped CSS then.
+- **2.0.0** (2026-06-15, **SHIPPED** — [[specs/stage-04/4.9f-monochrome-restyle]]) — full monochrome redesign
+  superseding v1 violet: warm-gray two-layer tokens, graphite accent (no brand hue), functional status colour
+  only (`info` neutral), single system-font family (17px body / 19px reading), surface-tone + hairline depth with
+  shadow on overlays only (resting-card `shadow-sm` removed), **pill-shaped buttons** + `scale(.96)` press,
+  radii 8/12/16/20. Component contracts unchanged. Banner removed + this file reconciled against the shipped
+  `globals.css` + `components/ui/*` (code wins). Verified: contrast 17/17, `check:design-tokens` /
+  `check:inline-styles` green, tsc clean, vitest 13+11, `next build` ✓; UI E2E (routing/admin/content-visibility)
+  + 375px mobile sanity green; visual screenshots recaptured.
