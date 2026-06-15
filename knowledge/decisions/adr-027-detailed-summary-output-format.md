@@ -11,7 +11,7 @@ related-session: knowledge/specs/stage-04/4.5c-detailed-summary-generation.md
 
 ## Linked documents
 - Master spec: [[specs/stage-04/4.5-ai-infra-summary-generation]]
-- Spec: [[specs/stage-04/4.5c-detailed-summary-generation]]
+- Spec: [[specs/stage-04/4.5-ai-infra-summary-generation]]
 - Report: [[steps/stage-04/4.5c]]
 - Related: [[adr-025-routing-split]] · [[adr-028-llm-gateway-provider-separation]]
 

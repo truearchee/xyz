@@ -26,6 +26,8 @@ by both YAML frontmatter field and Obsidian wikilink.
 ### 1. Orient
 Read `knowledge/STATUS.md` and the relevant spec before touching anything.
 If `STATUS.md` is stale, ask the developer to clarify before proceeding.
+Read narrowly: only your spec and the files it explicitly links. Do not scan the
+knowledge tree. `knowledge/archive/` is history — never treat it as current state.
 
 ### 2. File the spec
 If the developer hands you a document:
@@ -67,9 +69,9 @@ Complete all items in the report's **Close-the-loop checklist**:
 - [ ] Stayed in scope; deviations recorded in the report
 - [ ] Verification commands run; real output recorded in the report
 - [ ] Report written from `git diff` + command output, not memory
-- [ ] `spec ↔ plan ↔ report` links all resolve (YAML frontmatter + wikilinks)
-- [ ] `STATUS.md` overwritten with current state
-- [ ] `log.md` appended with a single summary line
+- [ ] Links resolve within your own stage-trio (spec ↔ plan ↔ report)
+- [ ] Shared files (`STATUS.md`, `log.md`, `roadmap.md`) are updated on **main
+      during the merge train** — NOT on a branch / in a worktree (parallel rule)
 - [ ] `architecture/` updated **only if** source paths changed
 - [ ] ADR added to `decisions/` **only if** a durable decision was made
 - [ ] `open-questions.md` updated if anything is unresolved
@@ -80,10 +82,11 @@ Complete all items in the report's **Close-the-loop checklist**:
 
 | Part | Rule |
 |---|---|
-| `stage` | Roadmap stage number (01–05). Zero-padded. |
+| `stage` | Roadmap stage number (01–12). Zero-padded. |
 | `session` | `<stage>.<n>` — e.g. `1.1`, `1.2`, `2.1`. Monotonically increasing within a stage. |
 | `slug` | Short kebab-case description — e.g. `repo-skeleton`, `auth-jwt`, `db-migrations`. |
 | Full filename | `<session>-<slug>.md` — e.g. `1.1-repo-skeleton.md` |
+| Decomposed stage | Sub-sessions nest under a parent folder: `stage-NN/<parent>/<parent><letter>-<slug>.md` — e.g. `stage-04/4.5/4.5a-llm-foundation.md`. Forward convention (Stage 5+); don't move historical files. |
 
 ---
 
@@ -151,11 +154,29 @@ outside the `stage-NN/` session tree. Documented exception, not drift.
 
 | File | Rule |
 |---|---|
-| `STATUS.md` | Overwrite at the end of every session. Keep it current-state only. |
-| `log.md` | Append one line per session. Never edit old lines. |
+| `STATUS.md` | Current-state only. Updated on **main during the merge train**, not on a branch. |
+| `log.md` | One line per session, appended on **main during the merge train**. Never edit old lines. |
 | `open-questions.md` | Add questions cheaply. Promote to ADR when durable; mark resolved with link. |
 | `architecture/` | Update only when source paths actually change. Do not speculatively edit. |
 | `decisions/` | One ADR per durable, cross-cutting decision. Do not add ADRs for local implementation choices. |
+
+---
+
+## Parallel work & merge train
+
+From Stage 5 onward, work runs in parallel Conductor worktrees — one agent per
+workspace, each on its own branch. Git isolates files; it does not isolate shared
+knowledge files or the database. Therefore:
+
+- **Branch-local:** your own stage-trio (spec/plan/report), your source code,
+  your migrations (using your stage's assigned number block).
+- **Main-only (developer, during the merge train):** `STATUS.md`, `log.md`,
+  `roadmap.md` status table, and OpenAPI client regeneration.
+- **Merge train per stage close:** merge → migrate → regenerate OpenAPI client →
+  full active E2E suite → update STATUS/roadmap/log on main → next merge.
+
+These rules are injected into every Conductor agent via `.conductor/settings.toml`.
+This section is their constitutional record; the settings file is their enforcement.
 
 ---
 
