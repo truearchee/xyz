@@ -17,7 +17,8 @@ from app.domains.content.validators import (
     normalize_section_notes,
     spool_and_validate_pdf,
 )
-from app.domains.content.schemas import AssetDownloadUrl
+from app.domains.admin.section_generation import DEFAULT_WEEK_START_DAY, week_number_for
+from app.domains.content.schemas import AssetDownloadUrl, SectionMetadataPatchRequest
 from app.platform.auth.context import CurrentUserContext, ModuleAccessContext
 from app.platform.config import settings
 from app.platform.db.models import CourseMembership, CourseModule, ModuleSection, SectionAsset
@@ -50,6 +51,9 @@ SECTION_NOT_FOUND = "SECTION_NOT_FOUND"
 SECTION_ARCHIVED = "SECTION_ARCHIVED"
 SECTION_TRANSITION_INVALID = "SECTION_TRANSITION_INVALID"
 SECTION_NOTES_TOO_LONG = "SECTION_NOTES_TOO_LONG"
+SECTION_METADATA_TYPE_INVALID = "SECTION_METADATA_TYPE_INVALID"
+SECTION_DUE_AT_LAB_ONLY = "SECTION_DUE_AT_LAB_ONLY"
+MODULE_SCHEDULE_REQUIRED = "MODULE_SCHEDULE_REQUIRED"
 
 
 def _http_error(status_code: int, detail: str) -> HTTPException:
@@ -109,6 +113,45 @@ async def _get_assigned_lecturer_section(
         raise _coded_error(status.HTTP_409_CONFLICT, SECTION_ARCHIVED)
 
     return section
+
+
+async def _get_metadata_edit_section(
+    db: AsyncSession,
+    *,
+    current_user: CurrentUserContext,
+    module_id: UUID,
+    section_id: UUID,
+) -> tuple[ModuleSection, CourseModule]:
+    query = (
+        select(ModuleSection, CourseModule)
+        .join(CourseModule, ModuleSection.course_module_id == CourseModule.id)
+        .where(
+            ModuleSection.id == section_id,
+            ModuleSection.course_module_id == module_id,
+            CourseModule.is_active.is_(True),
+        )
+        .with_for_update(of=ModuleSection)
+    )
+
+    if current_user.role == "lecturer":
+        query = query.join(CourseMembership, CourseMembership.module_id == CourseModule.id).where(
+            CourseMembership.user_id == current_user.user_id,
+            CourseMembership.role == "lecturer",
+            CourseMembership.status == "active",
+        )
+    elif current_user.role != "admin":
+        raise _coded_error(status.HTTP_403_FORBIDDEN, CONTENT_FORBIDDEN)
+
+    row = (await db.execute(query)).one_or_none()
+    if row is None:
+        raise _coded_error(status.HTTP_404_NOT_FOUND, SECTION_NOT_FOUND)
+
+    section, module = row
+    if section.status == "archived":
+        raise _coded_error(status.HTTP_409_CONFLICT, SECTION_ARCHIVED)
+    if section.type not in {"lecture", "lab"}:
+        raise _coded_error(422, SECTION_METADATA_TYPE_INVALID)
+    return section, module
 
 
 def resolve_publish_status_transition(current_status: str, target_status: str) -> str:
@@ -576,3 +619,65 @@ async def update_section_notes(
 
     await db.refresh(section)
     return _section_detail_from_model(section)
+
+
+async def update_section_metadata(
+    db: AsyncSession,
+    *,
+    current_user: CurrentUserContext,
+    module_id: UUID,
+    section_id: UUID,
+    payload: SectionMetadataPatchRequest,
+) -> ModuleSection:
+    section, module = await _get_metadata_edit_section(
+        db,
+        current_user=current_user,
+        module_id=module_id,
+        section_id=section_id,
+    )
+    fields = payload.model_fields_set
+
+    if "due_at" in fields and section.type != "lab":
+        raise _coded_error(422, SECTION_DUE_AT_LAB_ONLY)
+
+    next_session_date = section.session_date
+    next_week_number = section.week_number
+    next_due_at = section.due_at
+
+    if "session_date" in fields:
+        next_session_date = payload.session_date
+    if "week_number" in fields:
+        next_week_number = payload.week_number
+    elif "session_date" in fields:
+        if module.starts_on is None or next_session_date is None:
+            raise _coded_error(422, MODULE_SCHEDULE_REQUIRED)
+        next_week_number = week_number_for(
+            next_session_date,
+            start=module.starts_on,
+            week_start_day=module.week_start_day or DEFAULT_WEEK_START_DAY,
+        )
+    if "due_at" in fields:
+        next_due_at = payload.due_at
+
+    if (
+        next_session_date == section.session_date
+        and next_week_number == section.week_number
+        and next_due_at == section.due_at
+    ):
+        return section
+
+    section.session_date = next_session_date
+    section.week_number = next_week_number
+    section.due_at = next_due_at
+    section.updated_at = datetime.now(UTC)
+    try:
+        await db.commit()
+    except SQLAlchemyError as exc:
+        await db.rollback()
+        raise _http_error(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            "Could not update section metadata",
+        ) from exc
+
+    await db.refresh(section)
+    return section

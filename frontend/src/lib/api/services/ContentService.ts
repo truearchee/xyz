@@ -7,6 +7,8 @@ import type { SectionAssetListResponse } from '../models/SectionAssetListRespons
 import type { SectionAssetResponse } from '../models/SectionAssetResponse';
 import type { SectionDetail } from '../models/SectionDetail';
 import type { SectionListItem } from '../models/SectionListItem';
+import type { SectionMetadataDetail } from '../models/SectionMetadataDetail';
+import type { SectionMetadataPatchRequest } from '../models/SectionMetadataPatchRequest';
 import type { StudentSectionDetail } from '../models/StudentSectionDetail';
 import type { UpdateSectionNotesRequest } from '../models/UpdateSectionNotesRequest';
 import type { CancelablePromise } from '../core/CancelablePromise';
@@ -214,6 +216,38 @@ export class ContentService {
         return __request(OpenAPI, {
             method: 'PATCH',
             url: '/modules/{module_id}/sections/{section_id}/notes',
+            path: {
+                'module_id': moduleId,
+                'section_id': sectionId,
+            },
+            headers: {
+                'Authorization': authorization,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Update Metadata
+     * @param moduleId
+     * @param sectionId
+     * @param requestBody
+     * @param authorization
+     * @returns SectionMetadataDetail Successful Response
+     * @throws ApiError
+     */
+    public static updateMetadataModulesModuleIdSectionsSectionIdMetadataPatch(
+        moduleId: string,
+        sectionId: string,
+        requestBody: SectionMetadataPatchRequest,
+        authorization?: (string | null),
+    ): CancelablePromise<SectionMetadataDetail> {
+        return __request(OpenAPI, {
+            method: 'PATCH',
+            url: '/modules/{module_id}/sections/{section_id}/metadata',
             path: {
                 'module_id': moduleId,
                 'section_id': sectionId,

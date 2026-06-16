@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import inspect
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from io import BytesIO
 from uuid import UUID, uuid4
 
@@ -138,11 +138,21 @@ async def _create_module(
     *,
     owner_id: UUID,
     title: str = "Module",
+    starts_on: date | None = None,
+    ends_on: date | None = None,
+    week_start_day: str | None = None,
+    session_pattern: list[dict[str, str]] | None = None,
+    quiz_day: str | None = None,
 ) -> CourseModule:
     module = CourseModule(
         title=title,
         owner_id=owner_id,
         timezone="UTC",
+        starts_on=starts_on,
+        ends_on=ends_on,
+        week_start_day=week_start_day,
+        session_pattern=session_pattern,
+        quiz_day=quiz_day,
         is_active=True,
     )
     session.add(module)
@@ -175,6 +185,9 @@ async def _create_section(
     title: str = "Lecture 1",
     section_type: str = "lecture",
     order_index: int = 0,
+    week_number: int | None = None,
+    session_date: date | None = None,
+    due_at: datetime | None = None,
     publish_status: str = "draft",
     lecturer_notes: str | None = None,
     status: str = "active",
@@ -184,6 +197,9 @@ async def _create_section(
         title=title,
         type=section_type,
         order_index=order_index,
+        week_number=week_number,
+        session_date=session_date,
+        due_at=due_at,
         publish_status=publish_status,
         lecturer_notes=lecturer_notes,
         status=status,
@@ -777,6 +793,191 @@ async def test_publish_unpublish_and_notes_round_trip(
     assert null_clear_response.json()["lecturerNotes"] is None
     assert persisted is not None
     assert persisted.lecturer_notes is None
+
+
+@pytest.mark.anyio
+async def test_metadata_patch_whitelist_d13_due_at_and_admin_access(
+    auth_client: AsyncClient,
+    db_session: AsyncSession,
+    jwt_factory,
+    mock_jwks_client,
+) -> None:
+    lecturer = await _create_user(db_session, email="metadata-lecturer@example.com", role="lecturer")
+    admin = await _create_user(db_session, email="metadata-admin@example.com", role="admin")
+    module = await _create_module(
+        db_session,
+        owner_id=lecturer.id,
+        starts_on=date(2026, 5, 11),
+        ends_on=date(2026, 6, 26),
+        week_start_day="monday",
+        session_pattern=[
+            {"weekday": "monday", "sectionType": "lecture"},
+            {"weekday": "thursday", "sectionType": "lab"},
+        ],
+        quiz_day="friday",
+    )
+    await _create_membership(
+        db_session,
+        user_id=lecturer.id,
+        module_id=module.id,
+        role="lecturer",
+    )
+    lecture = await _create_section(
+        db_session,
+        module_id=module.id,
+        week_number=1,
+        session_date=date(2026, 5, 11),
+    )
+    lab = await _create_section(
+        db_session,
+        module_id=module.id,
+        title="Lab 1",
+        section_type="lab",
+        order_index=1,
+        week_number=1,
+        session_date=date(2026, 5, 14),
+    )
+    lecturer_headers = _headers(lecturer, jwt_factory)
+    admin_headers = _headers(admin, jwt_factory)
+
+    recompute_response = await auth_client.patch(
+        f"/modules/{module.id}/sections/{lecture.id}/metadata",
+        json={"sessionDate": "2026-05-20"},
+        headers=lecturer_headers,
+    )
+    explicit_override_response = await auth_client.patch(
+        f"/modules/{module.id}/sections/{lecture.id}/metadata",
+        json={"sessionDate": "2026-05-25", "weekNumber": 9},
+        headers=lecturer_headers,
+    )
+    week_only_response = await auth_client.patch(
+        f"/modules/{module.id}/sections/{lecture.id}/metadata",
+        json={"weekNumber": 3},
+        headers=admin_headers,
+    )
+    due_at = datetime(2026, 5, 22, 12, 0, tzinfo=UTC)
+    due_response = await auth_client.patch(
+        f"/modules/{module.id}/sections/{lab.id}/metadata",
+        json={"dueAt": due_at.isoformat().replace("+00:00", "Z")},
+        headers=lecturer_headers,
+    )
+    extra_field_response = await auth_client.patch(
+        f"/modules/{module.id}/sections/{lecture.id}/metadata",
+        json={"title": "Not allowed"},
+        headers=lecturer_headers,
+    )
+    lecture_due_response = await auth_client.patch(
+        f"/modules/{module.id}/sections/{lecture.id}/metadata",
+        json={"dueAt": due_at.isoformat().replace("+00:00", "Z")},
+        headers=lecturer_headers,
+    )
+    persisted_lecture = await db_session.get(ModuleSection, lecture.id)
+    persisted_lab = await db_session.get(ModuleSection, lab.id)
+
+    assert recompute_response.status_code == 200
+    assert recompute_response.json()["sessionDate"] == "2026-05-20"
+    assert recompute_response.json()["weekNumber"] == 2
+    assert explicit_override_response.status_code == 200
+    assert explicit_override_response.json()["sessionDate"] == "2026-05-25"
+    assert explicit_override_response.json()["weekNumber"] == 9
+    assert week_only_response.status_code == 200
+    assert week_only_response.json()["sessionDate"] == "2026-05-25"
+    assert week_only_response.json()["weekNumber"] == 3
+    assert due_response.status_code == 200
+    assert due_response.json()["dueAt"] is not None
+    assert extra_field_response.status_code == 422
+    assert lecture_due_response.status_code == 422
+    assert lecture_due_response.json()["detail"] == "SECTION_DUE_AT_LAB_ONLY"
+    assert persisted_lecture is not None
+    assert persisted_lecture.session_date == date(2026, 5, 25)
+    assert persisted_lecture.week_number == 3
+    assert persisted_lab is not None
+    assert persisted_lab.due_at == due_at
+
+
+@pytest.mark.anyio
+async def test_metadata_patch_authz_cross_module_and_type_boundaries(
+    auth_client: AsyncClient,
+    db_session: AsyncSession,
+    jwt_factory,
+    mock_jwks_client,
+) -> None:
+    lecturer = await _create_user(db_session, email="metadata-auth-lecturer@example.com", role="lecturer")
+    other_lecturer = await _create_user(
+        db_session,
+        email="metadata-auth-other@example.com",
+        role="lecturer",
+    )
+    student = await _create_user(db_session, email="metadata-auth-student@example.com")
+    module = await _create_module(
+        db_session,
+        owner_id=lecturer.id,
+        starts_on=date(2026, 5, 11),
+        week_start_day="monday",
+    )
+    other_module = await _create_module(
+        db_session,
+        owner_id=other_lecturer.id,
+        title="Other metadata module",
+        starts_on=date(2026, 5, 11),
+        week_start_day="monday",
+    )
+    await _create_membership(db_session, user_id=lecturer.id, module_id=module.id, role="lecturer")
+    await _create_membership(
+        db_session,
+        user_id=other_lecturer.id,
+        module_id=other_module.id,
+        role="lecturer",
+    )
+    section = await _create_section(
+        db_session,
+        module_id=module.id,
+        week_number=1,
+        session_date=date(2026, 5, 11),
+    )
+    other_section = await _create_section(
+        db_session,
+        module_id=other_module.id,
+        week_number=1,
+        session_date=date(2026, 5, 11),
+    )
+    assignment = await _create_section(
+        db_session,
+        module_id=module.id,
+        title="Assignment",
+        section_type="assignment",
+        order_index=1,
+    )
+
+    student_response = await auth_client.patch(
+        f"/modules/{module.id}/sections/{section.id}/metadata",
+        json={"weekNumber": 2},
+        headers=_headers(student, jwt_factory),
+    )
+    unassigned_response = await auth_client.patch(
+        f"/modules/{module.id}/sections/{section.id}/metadata",
+        json={"weekNumber": 2},
+        headers=_headers(other_lecturer, jwt_factory),
+    )
+    cross_module_response = await auth_client.patch(
+        f"/modules/{module.id}/sections/{other_section.id}/metadata",
+        json={"weekNumber": 2},
+        headers=_headers(lecturer, jwt_factory),
+    )
+    assignment_response = await auth_client.patch(
+        f"/modules/{module.id}/sections/{assignment.id}/metadata",
+        json={"weekNumber": 2},
+        headers=_headers(lecturer, jwt_factory),
+    )
+
+    assert student_response.status_code == 403
+    assert student_response.json()["detail"] == "CONTENT_FORBIDDEN"
+    assert unassigned_response.status_code == 404
+    assert unassigned_response.json()["detail"] == "SECTION_NOT_FOUND"
+    assert cross_module_response.status_code == 404
+    assert cross_module_response.json()["detail"] == "SECTION_NOT_FOUND"
+    assert assignment_response.status_code == 422
+    assert assignment_response.json()["detail"] == "SECTION_METADATA_TYPE_INVALID"
 
 
 @pytest.mark.anyio

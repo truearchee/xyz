@@ -11,6 +11,8 @@ from app.domains.content.schemas import (
     SectionAssetResponse,
     SectionDetail,
     SectionListItem,
+    SectionMetadataDetail,
+    SectionMetadataPatchRequest,
     StudentSectionDetail,
     UpdateSectionNotesRequest,
 )
@@ -23,6 +25,7 @@ from app.domains.content.service import (
     publish_section,
     replace_section_asset,
     unpublish_section,
+    update_section_metadata,
     update_section_notes,
     upload_section_asset,
 )
@@ -223,6 +226,26 @@ async def update_notes(
         module_id=module_id,
         section_id=section_id,
         lecturer_notes=payload.lecturer_notes,
+    )
+
+
+@router.patch(
+    "/modules/{module_id}/sections/{section_id}/metadata",
+    response_model=SectionMetadataDetail,
+)
+async def update_metadata(
+    module_id: UUID,
+    section_id: UUID,
+    payload: SectionMetadataPatchRequest,
+    db: DbSession,
+    current_user: CurrentUser,
+) -> SectionMetadataDetail:
+    return await update_section_metadata(
+        db,
+        current_user=current_user,
+        module_id=module_id,
+        section_id=section_id,
+        payload=payload,
     )
 
 

@@ -40,6 +40,8 @@ export type { SectionAssetListResponse } from './models/SectionAssetListResponse
 export type { SectionAssetResponse } from './models/SectionAssetResponse';
 export type { SectionDetail } from './models/SectionDetail';
 export type { SectionListItem } from './models/SectionListItem';
+export type { SectionMetadataDetail } from './models/SectionMetadataDetail';
+export type { SectionMetadataPatchRequest } from './models/SectionMetadataPatchRequest';
 export { SessionPatternEntry } from './models/SessionPatternEntry';
 export type { StatusResponse } from './models/StatusResponse';
 export type { StudentAssetMeta } from './models/StudentAssetMeta';
