@@ -33,7 +33,8 @@ class AIRequestLog(Base):
     __table_args__ = (
         CheckConstraint("attempt_number >= 1", name="ck_ai_request_logs_attempt_number"),
         CheckConstraint(
-            "feature IN ('summary_brief', 'summary_detailed')",
+            # Enumerated on purpose (extend deliberately per consuming feature; never "anything").
+            "feature IN ('summary_brief', 'summary_detailed', 'post_class_quiz')",
             name="ck_ai_request_logs_feature",
         ),
         CheckConstraint(
@@ -60,10 +61,12 @@ class AIRequestLog(Base):
         primary_key=True,
         default=uuid7,
     )
-    ingestion_job_id: Mapped[UUID] = mapped_column(
+    # Nullable (0020): not every AI gateway call is a transcript-ingestion job — quiz generation
+    # (Stage 5) and the assistant (Stage 8) have none. Summary features still require it at the
+    # APPLICATION layer (the gateway), not via this column constraint.
+    ingestion_job_id: Mapped[UUID | None] = mapped_column(
         PostgresUUID(as_uuid=True),
         ForeignKey("ingestion_jobs.id", ondelete="CASCADE"),
-        nullable=False,
     )
     attempt_number: Mapped[int] = mapped_column(
         Integer,

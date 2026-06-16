@@ -25,7 +25,7 @@ from app.domains.recovery.maintenance_run_log import (
 )
 from app.domains.recovery.rq_liveness import is_job_live_in_rq
 from app.platform.config import settings
-from app.platform.db.models import IngestionJob, Transcript
+from app.platform.db.models import AIRequestLog, IngestionJob, QuizAttempt, Transcript
 from app.platform.db.session import async_session, engine as default_engine
 from app.workers.queues import (
     enqueue_chunk_transcript,
@@ -107,6 +107,9 @@ async def _run_reaper(
         budget = await _reap_never_enqueued_parse(factory, now, report_only, counts, budget)
         budget = await _reap_stuck_queued(factory, now, report_only, rq_liveness, counts, budget)
         budget = await _reap_crashed_running(factory, now, report_only, rq_liveness, counts, budget)
+        budget = await _reap_lost_quiz_generation(
+            factory, report_only, rq_liveness, counts, budget
+        )
         await finalize_maintenance_run(factory, run_id, status="completed", summary=counts)
     except Exception as exc:  # pragma: no cover - defensive; never let recovery crash the caller
         logger.exception("stuck-row reaper failed")
@@ -230,6 +233,64 @@ async def _reap_crashed_running(factory, now, report_only, rq_liveness, counts, 
             counts["crashed"] += 1
             budget -= 1
     return budget
+
+
+async def _reap_lost_quiz_generation(factory, report_only, rq_liveness, counts, budget) -> int:
+    """QuizAttempt rows stuck in 'generating' whose RQ job is NOT live → mark failed + crashed (Stage
+    5b lock 4). LIVENESS, NOT AGE: a job still queued/running behind a backed-up AI queue (the
+    cohort-burst case Stage 5 deliberately absorbs) is ``live is True`` and must NOT be reaped; only a
+    LOST job (``live is False`` — absent from every RQ registry) is. ``None`` (Redis hiccup) is never
+    reaped — uncertainty principle. Marking crashed ALSO finalizes the linked AIRequestLog so the cost
+    dashboard (rule 6) does not leak a dangling 'running' row."""
+    if budget <= 0:
+        return budget
+    async with factory() as session:
+        generating = (
+            await session.execute(
+                select(QuizAttempt).where(QuizAttempt.status == "generating")
+            )
+        ).scalars().all()
+    for attempt in generating:
+        if budget <= 0:
+            break
+        if rq_liveness("quiz_generate", attempt.id) is not False:
+            continue  # live (True) or unknown (None) → do not reap (liveness, not age)
+        counts["scanned"] += 1
+        if report_only:
+            counts["crashed"] += 1
+            budget -= 1
+            continue
+        if await _mark_quiz_attempt_crashed_fenced(factory, attempt_id=attempt.id):
+            counts["crashed"] += 1
+            budget -= 1
+    return budget
+
+
+async def _mark_quiz_attempt_crashed_fenced(factory, *, attempt_id: UUID) -> bool:
+    """Re-read the attempt FOR UPDATE and re-verify it is still 'generating' before failing (never
+    races a job that just finished). Also finalizes the linked AIRequestLog (if the id was stamped)
+    to a terminal status so a lost job leaves no dangling 'running' cost row."""
+    async with factory() as session:
+        async with session.begin():
+            attempt = (
+                await session.execute(
+                    select(QuizAttempt).where(QuizAttempt.id == attempt_id).with_for_update()
+                )
+            ).scalar_one_or_none()
+            if attempt is None or attempt.status != "generating":
+                return False  # raced (completed / failed) — fenced
+            now = datetime.now(UTC)
+            attempt.status = "failed"
+            attempt.failure_category = "crashed"
+            attempt.failure_message_sanitized = "worker crashed (reaped by stuck-row recovery)"
+            attempt.generation_completed_at = now
+            attempt.updated_at = now
+            if attempt.ai_request_log_id is not None:
+                log = await session.get(AIRequestLog, attempt.ai_request_log_id)
+                if log is not None and log.status == "running":
+                    log.status = "failed"
+                    log.error_code = "abandoned_crashed"
+    return True
 
 
 async def _mark_crashed_fenced(factory, *, job_id: UUID, job_type: str, now: datetime) -> bool:

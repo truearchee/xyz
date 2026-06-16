@@ -1,0 +1,46 @@
+name: post_class_quiz_generation
+version: v1
+model: MBZUAI-IFM/K2-Think-v2
+backend: nvidia
+# Reasoning route (Stage 5b §5): the platform's tightest budget (K2-Think / Nvidia, 10 RPM); one call
+# per attempt produces all 10 questions (rule 15). A REASONING model thinks inline in `content` before
+# emitting the JSON, so the budget must cover BOTH the reasoning and a 10-question structured answer.
+# F-5d-1: the 5d real-provider smoke hit finish_reason='length' at 8000 on a LIGHT summary — a denser
+# summary would truncate the JSON mid-payload (→ invalid_output). Raised to 16000 for headroom.
+max_tokens: 16000
+# {{transcript}} is the SOURCE TEXT: for quiz generation the gateway renders it with the active
+# detailed-summary text (not a raw transcript). {{section_type}} is the lecture/lab kind.
+content: |
+  You are writing a short post-class self-check quiz to help a university student confirm they
+  understood a single {{section_type}} session. Base EVERY question only on the study material below;
+  never invent facts that are not supported by it.
+
+  Study material:
+  {{transcript}}
+
+  Output contract — follow EXACTLY:
+  - Reply with a single JSON object and NOTHING else: no preamble, no reasoning, no markdown fences,
+    no extra keys.
+  - Produce EXACTLY 10 multiple-choice questions.
+  - Each question has EXACTLY 4 options; EXACTLY ONE option is correct.
+  - Vary the phrasing and the position of the correct option across questions.
+  - Each question includes a one-to-three sentence explanation of why the correct option is right.
+  - Keep questionText under 1000 characters, each option under 500, each explanation under 2000.
+  - Write plain text. If the material contains symbols like < or >, keep them as-is; do not escape
+    them and do not add HTML.
+
+  Use this camelCase shape exactly:
+  {
+    "questions": [
+      {
+        "questionText": "<the question>",
+        "options": [
+          {"text": "<option text>", "isCorrect": true},
+          {"text": "<option text>", "isCorrect": false},
+          {"text": "<option text>", "isCorrect": false},
+          {"text": "<option text>", "isCorrect": false}
+        ],
+        "explanation": "<why the correct option is right>"
+      }
+    ]
+  }

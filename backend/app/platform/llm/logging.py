@@ -33,7 +33,7 @@ def _factory(
 
 async def open_request_log(
     *,
-    ingestion_job_id: UUID,
+    ingestion_job_id: UUID | None,
     feature: SummaryFeature,
     rendered: RenderedPrompt,
     input_content_hash: str,

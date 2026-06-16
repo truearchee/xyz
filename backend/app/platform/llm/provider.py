@@ -45,6 +45,39 @@ VALID_FAULTS = (
     "timeout",
 )
 
+# ── Per-request fault injection (Stage 5b / D-C) ─────────────────────────────────────────────────
+# A FIFO sequence the DeterministicTestProvider consults once per ``send()`` (before its constructor
+# ``fault``), so a single process can drive inject→clear→succeed — the sequence the global
+# ``LLM_FAULT_INJECTION`` flag cannot express, and which the stuck-`generating` recovery paths (S5/S6)
+# require to be testable. Safety is AT LEAST as strong as the global flag: it can ONLY affect the
+# DeterministicTestProvider (prod uses K2ThinkProvider, see ``get_provider``), AND the setter refuses
+# to arm outside non-prod. ``invalid_input`` is excluded — it is a pre-transport gateway fault, not a
+# provider-boundary outcome, so it cannot be expressed through ``send()``.
+_UNSET = object()
+_REQUEST_FAULTS: list[str | None] = []
+
+
+def set_request_faults(faults: list[str | None]) -> None:
+    """Arm a per-request fault sequence (non-prod only). Each entry is a VALID_FAULTS name or None
+    (None = this call succeeds normally). Raises outside non-prod — same gate as the global flag."""
+    if not settings.IS_NON_PROD:
+        raise RuntimeError("LLM fault injection is forbidden outside non-prod environments")
+    for fault in faults:
+        if fault is None:
+            continue
+        if fault not in VALID_FAULTS:
+            raise ValueError(f"unknown fault {fault!r}; expected one of {VALID_FAULTS} or None")
+        if fault == "invalid_input":
+            raise ValueError(
+                "invalid_input cannot be injected per-request (it is a pre-transport gateway fault)"
+            )
+    _REQUEST_FAULTS.clear()
+    _REQUEST_FAULTS.extend(faults)
+
+
+def clear_request_faults() -> None:
+    _REQUEST_FAULTS.clear()
+
 
 @dataclass(frozen=True)
 class RawCompletion:
@@ -274,9 +307,16 @@ class DeterministicTestProvider:
                 raise ValueError(f"unknown fault {fault!r}; expected one of {VALID_FAULTS}")
         self.fault = fault
 
+    def _resolve_active_fault(self) -> str | None:
+        # A per-request fault (non-prod only) takes precedence over the constructor fault, popped once.
+        if settings.IS_NON_PROD and _REQUEST_FAULTS:
+            return _REQUEST_FAULTS.pop(0)
+        return self.fault
+
     def send(self, *, rendered: RenderedPrompt, backend: Backend) -> RawCompletion:
-        self._maybe_raise_transport_fault()
-        text = self._render_output(rendered)
+        active_fault = self._resolve_active_fault()
+        self._maybe_raise_transport_fault(active_fault)
+        text = self._render_output(rendered, active_fault)
         completion_tokens = _estimate(text)
         prompt_tokens = _estimate(rendered.content)
         usage: Usage = {
@@ -292,26 +332,27 @@ class DeterministicTestProvider:
             reasoning_level=rendered.reasoning_level,
         )
 
-    def _maybe_raise_transport_fault(self) -> None:
+    def _maybe_raise_transport_fault(self, fault: object = _UNSET) -> None:
         # ``invalid_input`` is raised by the gateway (before transport); ``invalid_output`` is a
         # wrong-shaped success body. Everything else is a transport-boundary outcome (§8).
-        if self.fault == "provider_transient":
+        active = self.fault if fault is _UNSET else fault
+        if active == "provider_transient":
             raise ProviderTransient(
                 "deterministic provider forced a 5xx", error_code="forced_transient", status_code=503
             )
-        if self.fault == "timeout":
+        if active == "timeout":
             raise ProviderTransient(
                 "deterministic provider forced a timeout", error_code="forced_timeout", status_code=408
             )
-        if self.fault == "rate_limited":
+        if active == "rate_limited":
             raise RateLimited(
                 "deterministic provider forced a 429", error_code="forced_429", status_code=429
             )
-        if self.fault == "provider_config":
+        if active == "provider_config":
             raise ProviderConfigError(
                 "deterministic provider forced a 400", error_code="forced_400", status_code=400
             )
-        if self.fault == "provider_auth":
+        if active == "provider_auth":
             raise ProviderAuthError(
                 "deterministic provider forced a 403", error_code="forced_403", status_code=403
             )
@@ -319,9 +360,12 @@ class DeterministicTestProvider:
     def stream_raw(self, *, rendered: RenderedPrompt, backend: Backend) -> Iterator[str]:
         raise NotImplementedError("LLM streaming transport lands in Stage 8.3")
 
-    def _render_output(self, rendered: RenderedPrompt) -> str:
+    def _render_output(self, rendered: RenderedPrompt, fault: object = _UNSET) -> str:
         name = rendered.prompt_key.name
-        forced_invalid = self.fault == "invalid_output"
+        active = self.fault if fault is _UNSET else fault
+        forced_invalid = active == "invalid_output"
+        if name == "post_class_quiz_generation":
+            return self._quiz_fixture(forced_invalid)
         if name == "brief_summary":
             if forced_invalid:
                 return json.dumps({"wrong": "shape"})  # missing required `text`
@@ -350,6 +394,29 @@ class DeterministicTestProvider:
                 payload.pop("examples")  # drop a required section
             return json.dumps(payload)
         raise ValueError(f"deterministic provider has no canned output for prompt {name!r}")
+
+    @staticmethod
+    def _quiz_fixture(forced_invalid: bool) -> str:
+        """A schema-valid 10-question quiz with KNOWN correct options (option A correct in every
+        question), so a deterministic E2E can reach 100% (always pick the is_correct option, resolved
+        from the DB) and craft specific wrong answers. ``forced_invalid`` drops a question so the
+        validator's exactly-10 rule fires (validator/retry test)."""
+        questions = [
+            {
+                "questionText": f"Deterministic question {i + 1}: which option is correct?",
+                "options": [
+                    {"text": f"Q{i + 1} option A (correct)", "isCorrect": True},
+                    {"text": f"Q{i + 1} option B", "isCorrect": False},
+                    {"text": f"Q{i + 1} option C", "isCorrect": False},
+                    {"text": f"Q{i + 1} option D", "isCorrect": False},
+                ],
+                "explanation": f"Option A is the correct answer for question {i + 1}.",
+            }
+            for i in range(10)
+        ]
+        if forced_invalid:
+            questions.pop()  # 9 questions → fails the exactly-10 validator rule
+        return json.dumps({"questions": questions})
 
 
 def get_provider() -> LLMProvider:

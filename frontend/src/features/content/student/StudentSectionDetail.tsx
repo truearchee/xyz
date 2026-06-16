@@ -9,6 +9,7 @@ import {
   type StudentSummarySlot,
 } from "../../../lib/api";
 import { ForbiddenError, api } from "../../../lib/api/wrapper";
+import { PostClassQuizPanel } from "../../quiz/PostClassQuizPanel";
 import { SummaryMarkdown } from "./SummaryMarkdown";
 
 // Reuse the 4.5d backoff (no hard timeout), narrowed to the student summary sub-resource and bounded to
@@ -113,6 +114,8 @@ export function StudentSectionDetail({ moduleId, sectionId }: { moduleId: string
       </section>
 
       <SummariesPanel sectionId={sectionId} />
+
+      <PostClassQuizPanel sectionId={sectionId} />
     </section>
   );
 }
