@@ -454,7 +454,7 @@ async def test_third_upload_discards_prior_pending(
     db_session: AsyncSession,
     jwt_factory,
     mock_jwks_client,
-    fake_storage,
+    fake_storage,  # noqa: F811
 ) -> None:
     # Two replacements while one is still pending: the prior pending is discarded so the one-pending
     # invariant holds (ADR-46-A). Drives the API twice through the same section.

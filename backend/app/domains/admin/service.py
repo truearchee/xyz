@@ -118,7 +118,7 @@ async def create_user(db: AsyncSession, payload: CreateUserRequest) -> AppUser:
         if "uq_app_users_email" in str(exc):
             raise _http_error(status.HTTP_409_CONFLICT, "Email already exists") from exc
         raise _http_error(status.HTTP_400_BAD_REQUEST, "Could not create user") from exc
-    except Exception as exc:
+    except Exception:
         await db.rollback()
         await _delete_supabase_user(supabase_user_id)
         raise

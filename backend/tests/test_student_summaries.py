@@ -17,7 +17,6 @@ from httpx import AsyncClient
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.domains.student_summaries import precedence
 from app.domains.student_summaries.markdown import (
     brief_to_markdown,
     detailed_to_markdown,
@@ -44,7 +43,6 @@ from app.platform.db.models import (
     GeneratedLectureSummary,
     IngestionJob,
     ModuleSection,
-    SectionAsset,
     Transcript,
     TranscriptSegment,
 )
@@ -667,7 +665,7 @@ async def test_rows_DPI_byte_identical_404(db_session, auth_client, jwt_factory,
 
 async def test_rowR_non_student_forbidden_403(db_session, auth_client, jwt_factory, mock_jwks_client):
     lecturer = await _user(db_session, role="lecturer")
-    student = await _user(db_session, role="student")
+    await _user(db_session, role="student")
     module = await _module(db_session, owner_id=lecturer.id)
     await _membership(db_session, user_id=lecturer.id, module_id=module.id, role="lecturer")
     section, _ = await _summarized_section(db_session, module_id=module.id, uploader_id=lecturer.id)

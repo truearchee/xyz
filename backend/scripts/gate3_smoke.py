@@ -20,7 +20,6 @@ Usage (operator shell, with LLM_API_KEY exported):
 
 from __future__ import annotations
 
-import sys
 import time
 
 from app.platform.config import settings
@@ -71,7 +70,7 @@ def _run_route(provider: K2ThinkProvider, validator: OutputValidator, *, key, ba
     print(f"--- {key} (route {backend}) ---")
     print(f"  response model echo : {raw.model_id_echoed}  (expected {expected_model})  -> {'OK' if echo_ok else 'MISMATCH'}")
     print(f"  backend_used        : {backend}")
-    print(f"  backend_route_source: requested")
+    print("  backend_route_source: requested")
     print(f"  finish_reason       : {raw.finish_reason!r}  ('length' = truncated by max_tokens; 'stop' = complete)")
     print(f"  elapsed             : {elapsed_s:.1f}s  (timeout for this route = {provider._timeout_for(backend)}s)")
     print(f"  usage               : prompt={usage['prompt_tokens']} completion={usage['completion_tokens']} total={usage['total_tokens']}")

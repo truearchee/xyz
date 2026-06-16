@@ -25,10 +25,8 @@ from app.domains.transcripts.embedding_encoder import DeterministicEmbeddingEnco
 from app.domains.transcripts.fencing import can_commit_step
 from app.domains.transcripts.retry import resolve_retry_scope
 from app.platform.db.models import (
-    GeneratedLectureSummary,
     IngestionJob,
     Transcript,
-    TranscriptChunk,
 )
 from app.platform.query.transcript_status import get_transcript_processing_status_read
 from tests.test_transcript_lifecycle import _make_summarized
@@ -37,7 +35,6 @@ from tests.test_transcript_worker import (
     _create_chunked_transcript,
     _create_parsed_transcript,
     _create_worker_transcript,
-    _segments,
     _session_factory,
 )
 from tests.test_transcripts import (  # noqa: F401 — fake_storage re-exported as a fixture
