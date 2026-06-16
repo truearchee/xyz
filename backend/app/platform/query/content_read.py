@@ -24,6 +24,7 @@ class SectionAssetReadRow:
     mime_type: str
     file_size: int
     checksum_sha256: str
+    asset_kind: str
     processing_status: str
     uploaded_by_user_id: UUID
     created_at: datetime
@@ -59,6 +60,7 @@ class StudentAssetMetaReadRow:
     file_name: str
     mime_type: str
     file_size: int
+    asset_kind: str
 
 
 @dataclass(frozen=True)
@@ -79,6 +81,7 @@ class AssetDownloadRefRow:
     section_publish_status: str
     section_status: str
     asset_processing_status: str
+    asset_kind: str
     storage_key: str
     file_name: str
     mime_type: str
@@ -139,6 +142,7 @@ async def list_section_asset_rows(
             SectionAsset.mime_type,
             SectionAsset.file_size,
             SectionAsset.checksum_sha256,
+            SectionAsset.asset_kind,
             SectionAsset.processing_status,
             SectionAsset.uploaded_by_user_id,
             SectionAsset.created_at,
@@ -155,6 +159,7 @@ async def list_section_asset_rows(
             mime_type=row.mime_type,
             file_size=row.file_size,
             checksum_sha256=row.checksum_sha256,
+            asset_kind=row.asset_kind,
             processing_status=row.processing_status,
             uploaded_by_user_id=row.uploaded_by_user_id,
             created_at=row.created_at,
@@ -313,6 +318,7 @@ async def get_published_section_for_student(
             SectionAsset.file_name,
             SectionAsset.mime_type,
             SectionAsset.file_size,
+            SectionAsset.asset_kind,
         )
         .where(
             SectionAsset.module_section_id == section_id,
@@ -332,6 +338,7 @@ async def get_published_section_for_student(
                 file_name=row.file_name,
                 mime_type=row.mime_type,
                 file_size=row.file_size,
+                asset_kind=row.asset_kind,
             )
             for row in asset_result.all()
         ],
@@ -353,6 +360,7 @@ async def get_asset_download_ref(
             ModuleSection.publish_status.label("section_publish_status"),
             ModuleSection.status.label("section_status"),
             SectionAsset.processing_status.label("asset_processing_status"),
+            SectionAsset.asset_kind,
             SectionAsset.storage_key,
             SectionAsset.file_name,
             SectionAsset.mime_type,
@@ -374,6 +382,7 @@ async def get_asset_download_ref(
         section_publish_status=row.section_publish_status,
         section_status=row.section_status,
         asset_processing_status=row.asset_processing_status,
+        asset_kind=row.asset_kind,
         storage_key=row.storage_key,
         file_name=row.file_name,
         mime_type=row.mime_type,

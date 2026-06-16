@@ -62,7 +62,7 @@ DONE             — governance stages where no browser gate applies (Stage 0 on
 Stage 4.8   First hosted deploy (staging)              NOT STARTED  (new in v3)  ← next
 Stage 4.9   Frontend foundation + platform hygiene     NOT STARTED  (new in v3)
 ✅ Stage 5   Shared quiz engine + event spine           FULLY VERIFIED (branch spec-5; not yet merged) — 5a schema+event spine (migs 0014–0019), 5b generation+recovery (0020 AIRequestLog decouple), 5c HTTP surface, 5d UI+gates, 5e review fixes. Gate 1 (browser) GREEN (--workers=1, 1 passed); Gate 3 (real-provider smoke) GREEN (rule-11 echo). Backend 442 pytest; frontend tsc green; ADR-040..046; F-5d-1 resolved (max_tokens→16000). ⚠ MERGE: migration block 0014–0020 collides with sibling branches' 0014–0016 — renumber at merge (open-questions #5a)
-Stage 5.5   Module schedule & section metadata         IN PROGRESS — 5.5b BACKEND VERIFIED  (parallel-OK with 5; blocks 6)
+Stage 5.5   Module schedule & section metadata         IN PROGRESS — 5.5c BACKEND VERIFIED  (parallel-OK with 5; blocks 6)
 Stage 6     Complete quiz modes                        NOT STARTED
 Stage 7     Glossary                                   NOT STARTED
 Stage 8     Assistant                                  NOT STARTED
@@ -467,14 +467,20 @@ Student opens lecture/lab with completed summary → post-class quiz available
 
 ## Stage 5.5 — Module Schedule & Section Metadata — NEW in v3
 
-**Status:** IN PROGRESS. **5.5b (metadata edit + week resolver) BACKEND VERIFIED** (2026-06-16, branch
+**Status:** IN PROGRESS. **5.5c (lab attachments) BACKEND VERIFIED** (2026-06-16, branch
 `stage-55`): 5.5a fixed-template replacement is committed at `76f496f` (schedule required, 0020
 schedule provenance, 28-section oracle). 5.5b e2e suite rework is committed at `ab017db` (observed
 10-red run mapped, fixes applied, `playwright --list` clean, quarantine 0; runtime green still pending
 sole port ownership). 5.5b feature work adds the metadata-edit endpoint + D13 recompute guard and the
 `platform/query` stored-week resolver; backend verified with targeted tests **26 passed**, full backend
-**413 passed**, ruff clean. ADR-040, ADR-041. See [[steps/stage-05/5.5a-schedule-generation]] and
-[[steps/stage-05/5.5b-metadata-edit-and-week-resolver]].
+**413 passed**, ruff clean. 5.5c adds `section_assets.asset_kind` (migration `0021`, backfilled
+existing rows to `processable`), lab `.ipynb` attachments, backend streaming downloads with `nosniff`,
+upload-time lab `dueAt`, and a deterministic DB assertion that attachment uploads create no
+transcript/pipeline rows; backend verified with targeted tests **36 passed**, full backend
+**418 passed**, ruff clean, and frontend `tsc --noEmit` clean. ADR-040, ADR-041, ADR-042. See
+[[steps/stage-05/5.5a-schedule-generation]],
+[[steps/stage-05/5.5b-metadata-edit-and-week-resolver]], and
+[[steps/stage-05/5.5c-lab-attachments]].
 **May run in parallel with Stage 5** (admin domain, not quiz domain). **Hard prerequisite for Stage 6**;
 also feeds Stage 8.6 (time management) and Stage 11 (calendar seeding).
 

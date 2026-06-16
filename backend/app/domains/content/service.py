@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 import logging
 from uuid import UUID
@@ -12,10 +13,11 @@ from uuid6 import uuid7
 
 from app.domains.content.validators import (
     InvalidPdfError,
+    InvalidSectionAssetError,
     SectionNotesTooLongError,
     UploadTooLargeError,
     normalize_section_notes,
-    spool_and_validate_pdf,
+    spool_and_validate_section_asset,
 )
 from app.domains.admin.section_generation import DEFAULT_WEEK_START_DAY, week_number_for
 from app.domains.content.schemas import AssetDownloadUrl, SectionMetadataPatchRequest
@@ -23,6 +25,7 @@ from app.platform.auth.context import CurrentUserContext, ModuleAccessContext
 from app.platform.config import settings
 from app.platform.db.models import CourseMembership, CourseModule, ModuleSection, SectionAsset
 from app.platform.query.content_read import (
+    AssetDownloadRefRow,
     SectionAssetReadRow,
     SectionDetailReadRow,
     SectionListItemReadRow,
@@ -54,6 +57,13 @@ SECTION_NOTES_TOO_LONG = "SECTION_NOTES_TOO_LONG"
 SECTION_METADATA_TYPE_INVALID = "SECTION_METADATA_TYPE_INVALID"
 SECTION_DUE_AT_LAB_ONLY = "SECTION_DUE_AT_LAB_ONLY"
 MODULE_SCHEDULE_REQUIRED = "MODULE_SCHEDULE_REQUIRED"
+
+
+@dataclass(frozen=True)
+class AttachmentDownload:
+    content: bytes
+    file_name: str
+    mime_type: str
 
 
 def _http_error(status_code: int, detail: str) -> HTTPException:
@@ -257,6 +267,68 @@ async def create_asset_download_url(
     section_id: UUID,
     asset_id: UUID,
 ) -> AssetDownloadUrl:
+    download_ref = await _resolve_asset_download_ref(
+        db,
+        module_access=module_access,
+        section_id=section_id,
+        asset_id=asset_id,
+    )
+    if download_ref.asset_kind != "processable":
+        raise _coded_error(status.HTTP_404_NOT_FOUND, SECTION_NOT_FOUND)
+
+    ttl_seconds = settings.SIGNED_READ_URL_TTL_SECONDS
+    try:
+        url = await storage_provider.create_signed_read_url(
+            key=download_ref.storage_key,
+            expires_in_seconds=ttl_seconds,
+        )
+    except StorageProviderError as exc:
+        raise _storage_http_error(exc) from exc
+
+    return AssetDownloadUrl(
+        url=url,
+        expires_at=datetime.now(UTC) + timedelta(seconds=ttl_seconds),
+    )
+
+
+async def download_section_attachment(
+    db: AsyncSession,
+    *,
+    module_access: ModuleAccessContext,
+    storage_provider: StorageProvider,
+    section_id: UUID,
+    asset_id: UUID,
+) -> AttachmentDownload:
+    download_ref = await _resolve_asset_download_ref(
+        db,
+        module_access=module_access,
+        section_id=section_id,
+        asset_id=asset_id,
+    )
+    if download_ref.asset_kind != "attachment":
+        raise _coded_error(status.HTTP_404_NOT_FOUND, SECTION_NOT_FOUND)
+    if download_ref.asset_processing_status != "completed":
+        raise _coded_error(status.HTTP_404_NOT_FOUND, SECTION_NOT_FOUND)
+
+    try:
+        content = await storage_provider.get_object(key=download_ref.storage_key)
+    except StorageProviderError as exc:
+        raise _storage_http_error(exc) from exc
+
+    return AttachmentDownload(
+        content=content,
+        file_name=download_ref.file_name,
+        mime_type=download_ref.mime_type,
+    )
+
+
+async def _resolve_asset_download_ref(
+    db: AsyncSession,
+    *,
+    module_access: ModuleAccessContext,
+    section_id: UUID,
+    asset_id: UUID,
+) -> AssetDownloadRefRow:
     download_ref = await get_asset_download_ref(
         db,
         module_id=module_access.module_id,
@@ -281,19 +353,7 @@ async def create_asset_download_url(
     else:
         raise _coded_error(status.HTTP_403_FORBIDDEN, CONTENT_FORBIDDEN)
 
-    ttl_seconds = settings.SIGNED_READ_URL_TTL_SECONDS
-    try:
-        url = await storage_provider.create_signed_read_url(
-            key=download_ref.storage_key,
-            expires_in_seconds=ttl_seconds,
-        )
-    except StorageProviderError as exc:
-        raise _storage_http_error(exc) from exc
-
-    return AssetDownloadUrl(
-        url=url,
-        expires_at=datetime.now(UTC) + timedelta(seconds=ttl_seconds),
-    )
+    return download_ref
 
 
 def _storage_http_error(exc: StorageProviderError) -> HTTPException:
@@ -307,13 +367,15 @@ def _storage_http_error(exc: StorageProviderError) -> HTTPException:
 
 async def _validated_upload(upload: UploadFile):
     try:
-        return await spool_and_validate_pdf(
+        return await spool_and_validate_section_asset(
             upload,
             max_bytes=settings.MAX_SECTION_ASSET_UPLOAD_BYTES,
         )
     except UploadTooLargeError as exc:
         raise _http_error(413, str(exc)) from exc
     except InvalidPdfError as exc:
+        raise _http_error(422, str(exc)) from exc
+    except InvalidSectionAssetError as exc:
         raise _http_error(422, str(exc)) from exc
 
 
@@ -353,6 +415,8 @@ async def upload_section_asset(
     module_id: UUID,
     section_id: UUID,
     upload: UploadFile,
+    due_at: datetime | None = None,
+    due_at_provided: bool = False,
     authorize: bool = True,
 ) -> SectionAsset:
     if authorize:
@@ -363,11 +427,28 @@ async def upload_section_asset(
             section_id=section_id,
         )
     validated = await _validated_upload(upload)
+    try:
+        section = await _get_assigned_lecturer_section(
+            db,
+            current_user=current_user,
+            module_id=module_id,
+            section_id=section_id,
+            for_update=True,
+        )
+        if validated.asset_kind == "attachment" and section.type != "lab":
+            raise _coded_error(422, SECTION_DUE_AT_LAB_ONLY)
+        if due_at_provided and section.type != "lab":
+            raise _coded_error(422, SECTION_DUE_AT_LAB_ONLY)
+    except HTTPException:
+        validated.content.close()
+        raise
+
     asset_id = uuid7()
     storage_key = generate_section_asset_storage_key(
         module_id=module_id,
         section_id=section_id,
         asset_id=asset_id,
+        extension=validated.storage_extension,
     )
 
     try:
@@ -391,10 +472,14 @@ async def upload_section_asset(
         mime_type=validated.mime_type,
         file_size=validated.file_size,
         checksum_sha256=validated.checksum_sha256,
+        asset_kind=validated.asset_kind,
         processing_status="completed",
         uploaded_by_user_id=current_user.user_id,
     )
     db.add(asset)
+    if due_at_provided:
+        section.due_at = due_at
+        section.updated_at = datetime.now(UTC)
 
     try:
         await db.commit()
@@ -435,10 +520,25 @@ async def replace_section_asset(
             section_id=section_id,
         )
     validated = await _validated_upload(upload)
+    try:
+        section = await _get_assigned_lecturer_section(
+            db,
+            current_user=current_user,
+            module_id=module_id,
+            section_id=section_id,
+            for_update=True,
+        )
+        if validated.asset_kind == "attachment" and section.type != "lab":
+            raise _coded_error(422, SECTION_DUE_AT_LAB_ONLY)
+    except HTTPException:
+        validated.content.close()
+        raise
+
     new_storage_key = generate_section_asset_storage_key(
         module_id=module_id,
         section_id=section_id,
         asset_id=asset_id,
+        extension=validated.storage_extension,
     )
 
     try:
@@ -479,6 +579,7 @@ async def replace_section_asset(
         asset.mime_type = validated.mime_type
         asset.file_size = validated.file_size
         asset.checksum_sha256 = validated.checksum_sha256
+        asset.asset_kind = validated.asset_kind
         asset.processing_status = "completed"
         asset.uploaded_by_user_id = current_user.user_id
         asset.updated_at = datetime.now(UTC)

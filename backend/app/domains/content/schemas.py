@@ -22,6 +22,7 @@ class SectionAssetResponse(CamelModel):
     mime_type: str
     file_size: int
     checksum_sha256: str
+    asset_kind: str
     processing_status: str
     uploaded_by_user_id: UUID
     created_at: datetime
@@ -46,6 +47,7 @@ class StudentAssetMeta(CamelModel):
     file_name: str
     mime_type: str
     file_size: int
+    asset_kind: str
 
 
 class StudentSectionDetail(CamelModel):

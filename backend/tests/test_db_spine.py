@@ -48,6 +48,7 @@ EXPECTED_CHECKS = {
     "ck_module_sections_order_index",
     "ck_module_sections_week_number",
     "ck_section_assets_processing_status",
+    "ck_section_assets_asset_kind",
     "ck_section_assets_file_size",
     "ck_transcripts_lifecycle_state",
     "ck_transcripts_supersession_reason",
@@ -367,6 +368,108 @@ async def _insert_transcript_fixture(connection) -> dict[str, object]:
         "segment_id": segment_id,
         "transcript_id": transcript_id,
     }
+
+
+async def _insert_section_asset_before_asset_kind():
+    engine = create_async_engine(_test_database_url())
+    asset_id = uuid7()
+    app_user_id = uuid7()
+    module_id = uuid7()
+    section_id = uuid7()
+    try:
+        async with engine.begin() as connection:
+            await connection.execute(
+                text(
+                    """
+                    INSERT INTO app_users (
+                        id,
+                        auth_provider_id,
+                        email,
+                        full_name,
+                        role
+                    )
+                    VALUES (
+                        :app_user_id,
+                        :auth_provider_id,
+                        :email,
+                        'Asset Kind Backfill User',
+                        'lecturer'
+                    )
+                    """
+                ),
+                {
+                    "app_user_id": app_user_id,
+                    "auth_provider_id": f"asset-kind-auth-{app_user_id}",
+                    "email": f"asset-kind-{app_user_id}@example.com",
+                },
+            )
+            await connection.execute(
+                text(
+                    """
+                    INSERT INTO course_modules (id, title, owner_id)
+                    VALUES (:module_id, 'Asset Kind Backfill Module', :app_user_id)
+                    """
+                ),
+                {"module_id": module_id, "app_user_id": app_user_id},
+            )
+            await connection.execute(
+                text(
+                    """
+                    INSERT INTO module_sections (
+                        id,
+                        course_module_id,
+                        title,
+                        type,
+                        order_index
+                    )
+                    VALUES (
+                        :section_id,
+                        :module_id,
+                        'Asset Kind Backfill Section',
+                        'lecture',
+                        0
+                    )
+                    """
+                ),
+                {"section_id": section_id, "module_id": module_id},
+            )
+            await connection.execute(
+                text(
+                    """
+                    INSERT INTO section_assets (
+                        id,
+                        module_section_id,
+                        storage_key,
+                        file_name,
+                        mime_type,
+                        file_size,
+                        checksum_sha256,
+                        processing_status,
+                        uploaded_by_user_id
+                    )
+                    VALUES (
+                        :asset_id,
+                        :section_id,
+                        :storage_key,
+                        'legacy.pdf',
+                        'application/pdf',
+                        10,
+                        repeat('0', 64),
+                        'completed',
+                        :app_user_id
+                    )
+                    """
+                ),
+                {
+                    "asset_id": asset_id,
+                    "section_id": section_id,
+                    "storage_key": f"modules/schema/assets/{asset_id}.pdf",
+                    "app_user_id": app_user_id,
+                },
+            )
+    finally:
+        await engine.dispose()
+    return asset_id
 
 
 async def _assert_vector_round_trip_and_provenance_constraint() -> None:
@@ -697,6 +800,30 @@ def test_migration_round_trip() -> None:
     _assert_success(_run_alembic("upgrade", "head"))
 
 
+def test_section_asset_kind_migration_backfills_existing_rows() -> None:
+    try:
+        _assert_success(_run_alembic("downgrade", "base"))
+        _assert_success(_run_alembic("upgrade", "0020"))
+        asset_id = asyncio.run(_insert_section_asset_before_asset_kind())
+
+        _assert_success(_run_alembic("upgrade", "head"))
+
+        asset_kind = asyncio.run(
+            _fetch_one(
+                """
+                SELECT asset_kind
+                FROM section_assets
+                WHERE id = :asset_id
+                """,
+                {"asset_id": asset_id},
+            )
+        )
+        assert asset_kind.asset_kind == "processable"
+    finally:
+        _assert_success(_run_alembic("downgrade", "base"))
+        _assert_success(_run_alembic("upgrade", "head"))
+
+
 def test_expected_tables_exist_after_upgrade_head() -> None:
     _assert_success(_run_alembic("upgrade", "head"))
 
@@ -731,6 +858,8 @@ def test_expected_tables_exist_after_upgrade_head() -> None:
     id_defaults = asyncio.run(_fetch_id_defaults())
     chunk_columns = asyncio.run(_fetch_columns("transcript_chunks"))
     job_columns = asyncio.run(_fetch_columns("ingestion_jobs"))
+    asset_columns = asyncio.run(_fetch_columns("section_assets"))
+    asset_nullability = asyncio.run(_fetch_column_nullability("section_assets"))
 
     assert EXPECTED_TABLES <= tables
     assert EXPECTED_CHECKS <= checks
@@ -739,6 +868,8 @@ def test_expected_tables_exist_after_upgrade_head() -> None:
     assert chunk_columns["embedding"] == "vector"
     assert chunk_columns["updated_at"] == "timestamptz"
     assert job_columns["result_metadata"] == "jsonb"
+    assert asset_columns["asset_kind"] == "text"
+    assert asset_nullability["asset_kind"] == "NO"
     assert "ix_transcript_chunks_transcript_id" not in indexes
 
 

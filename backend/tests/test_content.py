@@ -9,9 +9,10 @@ from uuid import UUID, uuid4
 from fastapi import HTTPException, UploadFile
 from httpx import AsyncClient
 import pytest
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.datastructures import Headers
 
 from app.api.routers import content as content_router
 from app.domains.content import service as content_service
@@ -19,8 +20,13 @@ from app.platform.db.models import (
     AppUser,
     CourseMembership,
     CourseModule,
+    GeneratedLectureSummary,
+    IngestionJob,
     ModuleSection,
     SectionAsset,
+    Transcript,
+    TranscriptChunk,
+    TranscriptSegment,
 )
 from app.platform.storage import get_storage_provider
 from app.platform.storage.base import (
@@ -31,14 +37,21 @@ from app.platform.storage.base import (
 from app.platform.storage.keys import generate_section_asset_storage_key
 from app.domains.content.validators import (
     InvalidPdfError,
+    InvalidSectionAssetError,
+    NOTEBOOK_MIME_TYPE,
     UploadTooLargeError,
     sanitize_filename,
     spool_and_validate_pdf,
+    spool_and_validate_section_asset,
 )
 from app.main import app
 
 
 PDF_BYTES = b"%PDF-1.7\n1 0 obj\n<<>>\nendobj\n"
+NOTEBOOK_BYTES = (
+    b'{"cells":[],"metadata":{"language_info":{"name":"python"}},'
+    b'"nbformat":4,"nbformat_minor":5}\n'
+)
 
 
 class FakeStorageProvider:
@@ -216,14 +229,20 @@ async def _create_asset(
     uploaded_by_user_id: UUID,
     file_name: str = "slides.pdf",
     processing_status: str = "completed",
+    asset_kind: str = "processable",
+    mime_type: str = "application/pdf",
+    data: bytes = PDF_BYTES,
+    storage_key: str | None = None,
 ) -> SectionAsset:
     asset = SectionAsset(
         module_section_id=section_id,
-        storage_key=f"modules/test/{uuid4()}.pdf",
+        storage_key=storage_key
+        or f"modules/test/{uuid4()}{'.ipynb' if file_name.endswith('.ipynb') else '.pdf'}",
         file_name=file_name,
-        mime_type="application/pdf",
-        file_size=len(PDF_BYTES),
-        checksum_sha256=hashlib.sha256(PDF_BYTES).hexdigest(),
+        mime_type=mime_type,
+        file_size=len(data),
+        checksum_sha256=hashlib.sha256(data).hexdigest(),
+        asset_kind=asset_kind,
         processing_status=processing_status,
         uploaded_by_user_id=uploaded_by_user_id,
     )
@@ -239,6 +258,14 @@ def _headers(user: AppUser, jwt_factory) -> dict[str, str]:
 
 def _pdf_file(name: str = "slides.pdf", data: bytes = PDF_BYTES):
     return {"file": (name, data, "application/pdf")}
+
+
+def _ipynb_file(
+    name: str = "lab.ipynb",
+    data: bytes = NOTEBOOK_BYTES,
+    content_type: str = NOTEBOOK_MIME_TYPE,
+):
+    return {"file": (name, data, content_type)}
 
 
 @pytest.fixture
@@ -275,6 +302,53 @@ async def test_pdf_validator_rejects_non_pdf_and_oversize() -> None:
         await spool_and_validate_pdf(
             UploadFile(filename="large.pdf", file=BytesIO(PDF_BYTES)),
             max_bytes=4,
+        )
+
+
+@pytest.mark.anyio
+async def test_section_asset_validator_classifies_pdf_and_notebook() -> None:
+    pdf = await spool_and_validate_section_asset(
+        UploadFile(
+            filename="slides.pdf",
+            file=BytesIO(PDF_BYTES),
+            headers=Headers({"content-type": "application/pdf"}),
+        ),
+        max_bytes=1024,
+    )
+    notebook = await spool_and_validate_section_asset(
+        UploadFile(
+            filename="lab.ipynb",
+            file=BytesIO(NOTEBOOK_BYTES),
+            headers=Headers({"content-type": NOTEBOOK_MIME_TYPE}),
+        ),
+        max_bytes=1024,
+    )
+
+    assert pdf.asset_kind == "processable"
+    assert pdf.storage_extension == ".pdf"
+    assert notebook.asset_kind == "attachment"
+    assert notebook.storage_extension == ".ipynb"
+    assert notebook.mime_type == NOTEBOOK_MIME_TYPE
+    pdf.content.close()
+    notebook.content.close()
+
+    with pytest.raises(InvalidSectionAssetError):
+        await spool_and_validate_section_asset(
+            UploadFile(
+                filename="lab.ipynb",
+                file=BytesIO(NOTEBOOK_BYTES),
+                headers=Headers({"content-type": "text/plain"}),
+            ),
+            max_bytes=1024,
+        )
+    with pytest.raises(InvalidSectionAssetError):
+        await spool_and_validate_section_asset(
+            UploadFile(
+                filename="lab.ipynb",
+                file=BytesIO(b"not-json"),
+                headers=Headers({"content-type": NOTEBOOK_MIME_TYPE}),
+            ),
+            max_bytes=1024,
         )
 
 
@@ -332,6 +406,7 @@ async def test_list_upload_and_replace_asset_happy_path(
     assert empty_response.status_code == 200
     assert empty_response.json() == {"assets": []}
     assert upload_response.status_code == 201
+    assert upload_response.json()["assetKind"] == "processable"
     assert second_response.status_code == 201
     assert len(fake_storage.objects) == 2
     assert "storageKey" not in upload_response.json()
@@ -356,6 +431,154 @@ async def test_list_upload_and_replace_asset_happy_path(
         first_asset_id,
         second_response.json()["id"],
     ]
+
+
+@pytest.mark.anyio
+async def test_lab_notebook_attachment_upload_sets_due_at_and_creates_no_pipeline_rows(
+    auth_client: AsyncClient,
+    db_session: AsyncSession,
+    jwt_factory,
+    mock_jwks_client,
+    fake_storage: FakeStorageProvider,
+) -> None:
+    lecturer = await _create_user(
+        db_session,
+        email="lab-attachment-lecturer@example.com",
+        role="lecturer",
+    )
+    module = await _create_module(db_session, owner_id=lecturer.id)
+    await _create_membership(
+        db_session,
+        user_id=lecturer.id,
+        module_id=module.id,
+        role="lecturer",
+    )
+    lab = await _create_section(
+        db_session,
+        module_id=module.id,
+        title="Lab 1",
+        section_type="lab",
+    )
+    due_at = datetime(2026, 5, 21, 18, 30, tzinfo=UTC)
+
+    response = await auth_client.post(
+        f"/modules/{module.id}/sections/{lab.id}/assets",
+        data={"dueAt": due_at.isoformat().replace("+00:00", "Z")},
+        files=_ipynb_file("exercise.ipynb"),
+        headers=_headers(lecturer, jwt_factory),
+    )
+    await db_session.refresh(lab)
+    asset = (
+        await db_session.execute(
+            select(SectionAsset).where(SectionAsset.module_section_id == lab.id)
+        )
+    ).scalar_one()
+
+    transcript_count = await db_session.scalar(
+        select(func.count()).select_from(Transcript).where(Transcript.module_section_id == lab.id)
+    )
+    ingestion_job_count = await db_session.scalar(
+        select(func.count())
+        .select_from(IngestionJob)
+        .join(Transcript, IngestionJob.transcript_id == Transcript.id)
+        .where(Transcript.module_section_id == lab.id)
+    )
+    segment_count = await db_session.scalar(
+        select(func.count())
+        .select_from(TranscriptSegment)
+        .join(Transcript, TranscriptSegment.transcript_id == Transcript.id)
+        .where(Transcript.module_section_id == lab.id)
+    )
+    chunk_count = await db_session.scalar(
+        select(func.count())
+        .select_from(TranscriptChunk)
+        .join(Transcript, TranscriptChunk.transcript_id == Transcript.id)
+        .where(Transcript.module_section_id == lab.id)
+    )
+    summary_count = await db_session.scalar(
+        select(func.count())
+        .select_from(GeneratedLectureSummary)
+        .join(Transcript, GeneratedLectureSummary.transcript_id == Transcript.id)
+        .where(Transcript.module_section_id == lab.id)
+    )
+
+    assert response.status_code == 201
+    assert response.json()["assetKind"] == "attachment"
+    assert response.json()["processingStatus"] == "completed"
+    assert response.json()["mimeType"] == NOTEBOOK_MIME_TYPE
+    assert asset.asset_kind == "attachment"
+    assert asset.processing_status == "completed"
+    assert asset.storage_key.endswith(".ipynb")
+    assert lab.due_at == due_at
+    assert fake_storage.objects[asset.storage_key] == NOTEBOOK_BYTES
+    assert {
+        "transcripts": transcript_count,
+        "ingestion_jobs": ingestion_job_count,
+        "transcript_segments": segment_count,
+        "transcript_chunks": chunk_count,
+        "generated_lecture_summaries": summary_count,
+    } == {
+        "transcripts": 0,
+        "ingestion_jobs": 0,
+        "transcript_segments": 0,
+        "transcript_chunks": 0,
+        "generated_lecture_summaries": 0,
+    }
+
+
+@pytest.mark.anyio
+async def test_attachment_upload_is_lab_only_and_validated_by_extension_and_content_type(
+    auth_client: AsyncClient,
+    db_session: AsyncSession,
+    jwt_factory,
+    mock_jwks_client,
+    fake_storage: FakeStorageProvider,
+) -> None:
+    lecturer = await _create_user(
+        db_session,
+        email="attachment-validation-lecturer@example.com",
+        role="lecturer",
+    )
+    module = await _create_module(db_session, owner_id=lecturer.id)
+    await _create_membership(
+        db_session,
+        user_id=lecturer.id,
+        module_id=module.id,
+        role="lecturer",
+    )
+    lecture = await _create_section(db_session, module_id=module.id)
+    lab = await _create_section(
+        db_session,
+        module_id=module.id,
+        title="Lab",
+        section_type="lab",
+        order_index=1,
+    )
+    headers = _headers(lecturer, jwt_factory)
+
+    lecture_attachment_response = await auth_client.post(
+        f"/modules/{module.id}/sections/{lecture.id}/assets",
+        files=_ipynb_file("lecture.ipynb"),
+        headers=headers,
+    )
+    wrong_mime_response = await auth_client.post(
+        f"/modules/{module.id}/sections/{lab.id}/assets",
+        files=_ipynb_file("lab.ipynb", content_type="text/plain"),
+        headers=headers,
+    )
+    due_at_on_lecture_response = await auth_client.post(
+        f"/modules/{module.id}/sections/{lecture.id}/assets",
+        data={"dueAt": "2026-05-21T18:30:00Z"},
+        files=_pdf_file("lecture.pdf"),
+        headers=headers,
+    )
+
+    assert lecture_attachment_response.status_code == 422
+    assert lecture_attachment_response.json()["detail"] == "SECTION_DUE_AT_LAB_ONLY"
+    assert wrong_mime_response.status_code == 422
+    assert due_at_on_lecture_response.status_code == 422
+    assert due_at_on_lecture_response.json()["detail"] == "SECTION_DUE_AT_LAB_ONLY"
+    assert fake_storage.objects == {}
 
 
 @pytest.mark.anyio
@@ -444,7 +667,7 @@ async def test_unauthorized_upload_rejects_before_multipart_form_parse(
     async def fail_if_called(_request):
         raise AssertionError("multipart form was parsed before authorization")
 
-    monkeypatch.setattr(content_router, "_extract_multipart_file", fail_if_called)
+    monkeypatch.setattr(content_router, "_extract_multipart_asset_upload", fail_if_called)
 
     response = await auth_client.post(
         f"/modules/{module.id}/sections/{section.id}/assets",
@@ -1123,18 +1346,21 @@ async def test_student_reads_only_published_sections_and_completed_assets(
                 "fileName": "earlier.pdf",
                 "mimeType": "application/pdf",
                 "fileSize": len(PDF_BYTES),
+                "assetKind": "processable",
             },
             {
                 "id": str(completed_asset.id),
                 "fileName": "visible.pdf",
                 "mimeType": "application/pdf",
                 "fileSize": len(PDF_BYTES),
+                "assetKind": "processable",
             },
             {
                 "id": str(later_asset.id),
                 "fileName": "later.pdf",
                 "mimeType": "application/pdf",
                 "fileSize": len(PDF_BYTES),
+                "assetKind": "processable",
             }
         ],
     }
@@ -1370,6 +1596,77 @@ async def test_signed_download_url_is_role_aware_and_revalidated_live(
     assert unpublish_response.status_code == 200
     assert revalidated_response.status_code == 403
     assert revalidated_response.json()["detail"] == "CONTENT_FORBIDDEN"
+
+
+@pytest.mark.anyio
+async def test_attachment_download_streams_through_backend_with_download_headers(
+    auth_client: AsyncClient,
+    db_session: AsyncSession,
+    jwt_factory,
+    mock_jwks_client,
+    fake_storage: FakeStorageProvider,
+) -> None:
+    lecturer = await _create_user(
+        db_session,
+        email="attachment-download-lecturer@example.com",
+        role="lecturer",
+    )
+    student = await _create_user(db_session, email="attachment-download-student@example.com")
+    module = await _create_module(db_session, owner_id=lecturer.id)
+    await _create_membership(db_session, user_id=lecturer.id, module_id=module.id, role="lecturer")
+    await _create_membership(db_session, user_id=student.id, module_id=module.id, role="student")
+    lab = await _create_section(
+        db_session,
+        module_id=module.id,
+        title="Published lab",
+        section_type="lab",
+        publish_status="published",
+    )
+    attachment = await _create_asset(
+        db_session,
+        section_id=lab.id,
+        uploaded_by_user_id=lecturer.id,
+        file_name="week 1 lab.ipynb",
+        asset_kind="attachment",
+        mime_type=NOTEBOOK_MIME_TYPE,
+        data=NOTEBOOK_BYTES,
+    )
+    pdf = await _create_asset(
+        db_session,
+        section_id=lab.id,
+        uploaded_by_user_id=lecturer.id,
+        file_name="lab.pdf",
+    )
+    fake_storage.objects[attachment.storage_key] = NOTEBOOK_BYTES
+
+    student_headers = _headers(student, jwt_factory)
+    download_response = await auth_client.get(
+        f"/modules/{module.id}/sections/{lab.id}/assets/{attachment.id}/download",
+        headers=student_headers,
+    )
+    signed_url_response = await auth_client.get(
+        f"/modules/{module.id}/sections/{lab.id}/assets/{attachment.id}/download-url",
+        headers=student_headers,
+    )
+    pdf_stream_response = await auth_client.get(
+        f"/modules/{module.id}/sections/{lab.id}/assets/{pdf.id}/download",
+        headers=student_headers,
+    )
+
+    assert download_response.status_code == 200
+    assert download_response.content == NOTEBOOK_BYTES
+    assert download_response.headers["x-content-type-options"] == "nosniff"
+    assert download_response.headers["cache-control"] == "no-store"
+    assert download_response.headers["content-type"].startswith(NOTEBOOK_MIME_TYPE)
+    assert "attachment" in download_response.headers["content-disposition"]
+    assert "filename*=UTF-8''week%201%20lab.ipynb" in download_response.headers[
+        "content-disposition"
+    ]
+    assert signed_url_response.status_code == 404
+    assert signed_url_response.json()["detail"] == "SECTION_NOT_FOUND"
+    assert fake_storage.signed_url_calls == []
+    assert pdf_stream_response.status_code == 404
+    assert pdf_stream_response.json()["detail"] == "SECTION_NOT_FOUND"
 
 
 @pytest.mark.anyio

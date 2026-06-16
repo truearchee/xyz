@@ -110,6 +110,10 @@ export class ContentService {
         sectionId: string,
         formData: {
             file: Blob;
+            /**
+             * Optional lab deadline set at upload time.
+             */
+            dueAt?: string;
         },
         authorization?: (string | null),
     ): CancelablePromise<SectionAssetResponse> {
@@ -148,6 +152,37 @@ export class ContentService {
         return __request(OpenAPI, {
             method: 'GET',
             url: '/modules/{module_id}/sections/{section_id}/assets/{asset_id}/download-url',
+            path: {
+                'module_id': moduleId,
+                'section_id': sectionId,
+                'asset_id': assetId,
+            },
+            headers: {
+                'Authorization': authorization,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Download Asset
+     * @param moduleId
+     * @param sectionId
+     * @param assetId
+     * @param authorization
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public static downloadAssetModulesModuleIdSectionsSectionIdAssetsAssetIdDownloadGet(
+        moduleId: string,
+        sectionId: string,
+        assetId: string,
+        authorization?: (string | null),
+    ): CancelablePromise<any> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/modules/{module_id}/sections/{section_id}/assets/{asset_id}/download',
             path: {
                 'module_id': moduleId,
                 'section_id': sectionId,

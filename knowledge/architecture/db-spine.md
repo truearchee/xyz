@@ -22,8 +22,10 @@ related-session: knowledge/specs/stage-02/2.1-db-spine.md
 - Spec: [[specs/stage-05/5.5-module-schedule-section-metadata]]
 - Report: [[steps/stage-05/5.5a-schedule-generation]]
 - Report: [[steps/stage-05/5.5b-metadata-edit-and-week-resolver]]
+- Report: [[steps/stage-05/5.5c-lab-attachments]]
 - Decision: [[decisions/adr-040-schedule-driven-section-generation]]
 - Decision: [[decisions/adr-041-section-metadata-and-week-resolver]]
+- Decision: [[decisions/adr-042-lab-attachments]]
 - Spec: [[specs/stage-04/4.1-transcript-upload]]
 - Plan: [[plans/stage-04/4.1-transcript-upload]]
 - Report: [[steps/stage-04/4.1-transcript-upload]]
@@ -53,7 +55,11 @@ The backend now has a SQLAlchemy declarative model package under `backend/app/pl
   `week_start_day`, `session_pattern`, and `quiz_day`.
 - `course_memberships` connects users to modules and preserves archived enrollment history.
 - `module_sections` stores ordered module content instances and keeps scheduling fields separate.
-- `section_assets` stores private storage keys and file metadata for uploaded section PDFs. Session 3.1 migrated the Stage 2 placeholder from `file_url` to `storage_key`, added `checksum_sha256`, and records `uploaded_by_user_id` for the current stored object.
+- `section_assets` stores private storage keys and file metadata for uploaded section materials.
+  Session 3.1 migrated the Stage 2 placeholder from `file_url` to `storage_key`, added
+  `checksum_sha256`, and records `uploaded_by_user_id` for the current stored object. Stage 5.5c adds
+  `asset_kind` (`processable` or `attachment`) so PDFs stay processable-but-inert and lab attachments
+  are structurally excluded from transcript/AI processing.
 - `transcripts` stores raw transcript upload metadata for lecture/lab sections. Session 4.1 adds the table with full lifecycle status values but only writes `status='uploaded'` and `source_type='manual_upload'`.
 - `transcript_segments` stores immutable parsed VTT/TXT output for transcripts. VTT segments use integer millisecond timestamps; TXT fallback segments have null timestamps.
 - `transcript_chunks` stores normalized, ordered chunk text derived from immutable segments. Chunks carry segment ids, sequence bounds, millisecond time bounds or null TXT bounds, version strings, token counts, nullable `vector(384)` embedding placeholders, and `updated_at` for future embedding writes.
@@ -63,8 +69,10 @@ The backend now has a SQLAlchemy declarative model package under `backend/app/pl
 
 ## Section asset schema notes
 - `section_assets.storage_key` is a private object-storage path and is unique.
-- `section_assets.module_section_id` is indexed for section asset listing, but it is not unique; a section may have multiple PDF assets.
+- `section_assets.module_section_id` is indexed for section asset listing, but it is not unique; a section may have multiple material assets.
 - `section_assets.uploaded_by_user_id` points at `app_users(id)` and is updated on replace.
+- `section_assets.asset_kind` defaults to `processable`; migration `0021` backfills existing rows to
+  `processable` and constrains values to `processable | attachment`.
 - `section_assets.processing_status` is technical file state and remains separate from `module_sections.publish_status`, which controls student visibility in later Stage 3 work.
 - Section asset list responses are read through `platform/query/content_read.py` projection rows; write behavior remains in the content domain service.
 

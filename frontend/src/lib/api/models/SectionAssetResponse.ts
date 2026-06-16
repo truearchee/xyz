@@ -9,6 +9,7 @@ export type SectionAssetResponse = {
     mimeType: string;
     fileSize: number;
     checksumSha256: string;
+    assetKind: string;
     processingStatus: string;
     uploadedByUserId: string;
     createdAt: string;

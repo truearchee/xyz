@@ -27,6 +27,10 @@ class SectionAsset(Base):
             "processing_status IN ('uploaded', 'processing', 'completed', 'failed')",
             name="ck_section_assets_processing_status",
         ),
+        CheckConstraint(
+            "asset_kind IN ('processable', 'attachment')",
+            name="ck_section_assets_asset_kind",
+        ),
         CheckConstraint("file_size > 0", name="ck_section_assets_file_size"),
         UniqueConstraint("storage_key", name="uq_section_assets_storage_key"),
         Index("ix_section_assets_section", "module_section_id"),
@@ -48,6 +52,11 @@ class SectionAsset(Base):
     mime_type: Mapped[str] = mapped_column(Text, nullable=False)
     file_size: Mapped[int] = mapped_column(BigInteger, nullable=False)
     checksum_sha256: Mapped[str] = mapped_column(Text, nullable=False)
+    asset_kind: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        server_default=text("'processable'"),
+    )
     processing_status: Mapped[str] = mapped_column(
         Text,
         nullable=False,
