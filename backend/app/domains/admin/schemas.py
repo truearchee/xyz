@@ -28,19 +28,52 @@ class ResetPasswordRequest(CamelModel):
     new_password: str = Field(min_length=8, max_length=128)
 
 
+WeekdayName = Literal[
+    "monday",
+    "tuesday",
+    "wednesday",
+    "thursday",
+    "friday",
+    "saturday",
+    "sunday",
+]
+GeneratedSectionType = Literal["lecture", "lab"]
+
+
+class SessionPatternEntry(CamelModel):
+    weekday: WeekdayName
+    section_type: GeneratedSectionType
+
+
+class ModuleScheduleInput(CamelModel):
+    """Creation-time schedule (Stage 5.5, D1/D10). Course dates are calendar dates (YYYY-MM-DD),
+    never JS timestamps. weekStartDay defaults to Monday. sessionPattern drives generation; the quiz
+    day is recorded but generates no section here."""
+
+    course_start_date: date
+    course_end_date: date
+    week_start_day: WeekdayName = "monday"
+    session_pattern: list[SessionPatternEntry] = Field(min_length=1)
+    quiz_day: WeekdayName | None = None
+
+    @model_validator(mode="after")
+    def _validate(self) -> ModuleScheduleInput:
+        if self.course_start_date > self.course_end_date:
+            raise ValueError("courseStartDate must be on or before courseEndDate")
+        weekdays = [entry.weekday for entry in self.session_pattern]
+        if len(weekdays) != len(set(weekdays)):
+            raise ValueError("sessionPattern weekdays must be unique")
+        if self.quiz_day is not None and self.quiz_day in set(weekdays):
+            raise ValueError("quizDay must not overlap a sessionPattern weekday")
+        return self
+
+
 class CreateModuleRequest(CamelModel):
     title: str = Field(min_length=1, max_length=200)
     description: str | None = None
     owner_id: UUID
     timezone: str = "UTC"
-    starts_on: date | None = None
-    ends_on: date | None = None
-
-    @model_validator(mode="after")
-    def _dates_ordered(self) -> CreateModuleRequest:
-        if self.starts_on and self.ends_on and self.starts_on > self.ends_on:
-            raise ValueError("startsOn must be on or before endsOn")
-        return self
+    schedule: ModuleScheduleInput
 
 
 class AssignMemberRequest(CamelModel):
@@ -66,6 +99,9 @@ class ModuleResponse(CamelModel):
     timezone: str
     starts_on: date | None
     ends_on: date | None
+    week_start_day: WeekdayName | None
+    session_pattern: list[SessionPatternEntry] | None
+    quiz_day: WeekdayName | None
     is_active: bool
     created_at: datetime
 

@@ -129,8 +129,20 @@ async function createModule(runId: string, adminContext: APIRequestContext, titl
     description: `4.7 gate ${runId}`,
     ownerId: owner.id,
     timezone: 'UTC',
-    startsOn: '2026-01-12',
-    endsOn: '2026-05-01',
+    // Stage 5.5a: creation is schedule-driven (startsOn/endsOn replaced). Title-based section
+    // selection below is reworked in 5.5e (full-suite pass after the 5.5d reseed).
+    schedule: {
+      courseStartDate: '2026-01-12',
+      courseEndDate: '2026-05-01',
+      weekStartDay: 'monday',
+      sessionPattern: [
+        { weekday: 'monday', sectionType: 'lecture' },
+        { weekday: 'tuesday', sectionType: 'lecture' },
+        { weekday: 'wednesday', sectionType: 'lecture' },
+        { weekday: 'thursday', sectionType: 'lab' },
+      ],
+      quizDay: 'friday',
+    },
   });
   expect(create.status).toBe(201);
   const moduleId = create.body.id;

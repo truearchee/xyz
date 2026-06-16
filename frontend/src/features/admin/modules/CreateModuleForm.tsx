@@ -2,7 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 
-import type { UserResponse } from "../../../lib/api";
+import { ModuleScheduleInput, SessionPatternEntry, type UserResponse } from "../../../lib/api";
 import { api } from "../../../lib/api/wrapper";
 import { errorMessage, panelStyles } from "../shared";
 
@@ -11,13 +11,23 @@ type CreateModuleFormProps = {
   onCreated: (moduleId: string) => Promise<void>;
 };
 
+// Stage 5.5a: module creation is schedule-driven. This form sends a fixed default weekly pattern
+// (Mon/Tue/Wed lectures, Thu lab, Fri quiz day). The interactive weekly-pattern picker + creation
+// preview is the Stage 5.5e thin-UI deliverable; this keeps creation working against the new contract.
+const DEFAULT_SESSION_PATTERN: SessionPatternEntry[] = [
+  { weekday: SessionPatternEntry.weekday.MONDAY, sectionType: SessionPatternEntry.sectionType.LECTURE },
+  { weekday: SessionPatternEntry.weekday.TUESDAY, sectionType: SessionPatternEntry.sectionType.LECTURE },
+  { weekday: SessionPatternEntry.weekday.WEDNESDAY, sectionType: SessionPatternEntry.sectionType.LECTURE },
+  { weekday: SessionPatternEntry.weekday.THURSDAY, sectionType: SessionPatternEntry.sectionType.LAB },
+];
+
 export function CreateModuleForm({ lecturers, onCreated }: CreateModuleFormProps) {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [ownerId, setOwnerId] = useState("");
   const [timezone, setTimezone] = useState("UTC");
-  const [startsOn, setStartsOn] = useState("");
-  const [endsOn, setEndsOn] = useState("");
+  const [courseStartDate, setCourseStartDate] = useState("");
+  const [courseEndDate, setCourseEndDate] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -31,15 +41,20 @@ export function CreateModuleForm({ lecturers, onCreated }: CreateModuleFormProps
         description: description || null,
         ownerId,
         timezone,
-        startsOn: startsOn || null,
-        endsOn: endsOn || null,
+        schedule: {
+          courseStartDate,
+          courseEndDate,
+          weekStartDay: ModuleScheduleInput.weekStartDay.MONDAY,
+          sessionPattern: DEFAULT_SESSION_PATTERN,
+          quizDay: "friday",
+        },
       });
       setTitle("");
       setDescription("");
       setOwnerId("");
       setTimezone("UTC");
-      setStartsOn("");
-      setEndsOn("");
+      setCourseStartDate("");
+      setCourseEndDate("");
       await onCreated(module.id);
     } catch (caught) {
       setError(errorMessage(caught));
@@ -75,14 +90,18 @@ export function CreateModuleForm({ lecturers, onCreated }: CreateModuleFormProps
       </label>
       <div style={panelStyles.grid}>
         <label style={panelStyles.label}>
-          Starts on
-          <input aria-label="Module starts on" onChange={(event) => setStartsOn(event.target.value)} style={panelStyles.input} type="date" value={startsOn} />
+          Course starts on
+          <input aria-label="Course starts on" onChange={(event) => setCourseStartDate(event.target.value)} required style={panelStyles.input} type="date" value={courseStartDate} />
         </label>
         <label style={panelStyles.label}>
-          Ends on
-          <input aria-label="Module ends on" onChange={(event) => setEndsOn(event.target.value)} style={panelStyles.input} type="date" value={endsOn} />
+          Course ends on
+          <input aria-label="Course ends on" onChange={(event) => setCourseEndDate(event.target.value)} required style={panelStyles.input} type="date" value={courseEndDate} />
         </label>
       </div>
+      <p style={panelStyles.hint}>
+        Sections are generated from a fixed weekly pattern (Mon–Wed lectures, Thu lab, Fri quiz day). A
+        configurable weekly-pattern picker and preview arrive in Stage 5.5e.
+      </p>
       <button disabled={isSubmitting || lecturers.length === 0} type="submit">
         {isSubmitting ? "Creating..." : "Create module"}
       </button>

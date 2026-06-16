@@ -2,11 +2,11 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { ModuleScheduleInput } from './ModuleScheduleInput';
 export type CreateModuleRequest = {
     title: string;
     description?: (string | null);
     ownerId: string;
     timezone?: string;
-    startsOn?: (string | null);
-    endsOn?: (string | null);
+    schedule: ModuleScheduleInput;
 };

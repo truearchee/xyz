@@ -986,7 +986,22 @@ async def test_generated_sections_use_existing_visibility_rules(
     create_response = await auth_client.post(
         "/admin/modules",
         headers=_headers(admin, jwt_factory),
-        json={"title": "Generated Visibility", "ownerId": str(lecturer.id)},
+        json={
+            "title": "Generated Visibility",
+            "ownerId": str(lecturer.id),
+            "schedule": {
+                "courseStartDate": "2026-05-11",
+                "courseEndDate": "2026-06-26",
+                "weekStartDay": "monday",
+                "sessionPattern": [
+                    {"weekday": "monday", "sectionType": "lecture"},
+                    {"weekday": "tuesday", "sectionType": "lecture"},
+                    {"weekday": "wednesday", "sectionType": "lecture"},
+                    {"weekday": "thursday", "sectionType": "lab"},
+                ],
+                "quizDay": "friday",
+            },
+        },
     )
     assert create_response.status_code == 201
     module_id = UUID(create_response.json()["id"])
@@ -1008,12 +1023,11 @@ async def test_generated_sections_use_existing_visibility_rules(
         .order_by(ModuleSection.order_index.asc())
     )
     sections = section_result.all()
-    assert [(section.title, section.type, section.publish_status) for section in sections] == [
-        ("Lecture 1", "lecture", "draft"),
-        ("Lecture 2", "lecture", "draft"),
-        ("Lab 1", "lab", "draft"),
-        ("Assignment 1", "assignment", "draft"),
-    ]
+    # Schedule-driven generation (Stage 5.5a): the reference schedule yields 28 draft lecture/lab
+    # sections; visibility rules below operate on whatever was generated, not a fixed template.
+    assert len(sections) == 28
+    assert all(section.type in ("lecture", "lab") for section in sections)
+    assert all(section.publish_status == "draft" for section in sections)
 
     lecturer_headers = _headers(lecturer, jwt_factory)
     student_headers = _headers(student, jwt_factory)
@@ -1043,11 +1057,13 @@ async def test_generated_sections_use_existing_visibility_rules(
     assert publish_response.status_code == 200
     assert publish_response.json()["publishStatus"] == "published"
     assert published_student_response.status_code == 200
+    # sections[0] is the order_index=1 row (earliest session); the student sees exactly it once
+    # published, with its generated title/type — drafts stay hidden.
     assert published_student_response.json() == [
         {
             "id": str(sections[0].id),
-            "title": "Lecture 1",
-            "type": "lecture",
+            "title": sections[0].title,
+            "type": sections[0].type,
             "orderIndex": 1,
             "hasAssets": False,
             "hasNotes": False,

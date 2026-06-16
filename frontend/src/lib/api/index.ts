@@ -25,6 +25,7 @@ export type { MembershipResponse } from './models/MembershipResponse';
 export type { ModuleDetail } from './models/ModuleDetail';
 export { ModuleMemberResponse } from './models/ModuleMemberResponse';
 export type { ModuleResponse } from './models/ModuleResponse';
+export { ModuleScheduleInput } from './models/ModuleScheduleInput';
 export type { ModuleSummary } from './models/ModuleSummary';
 export type { QuizAttemptForStudent } from './models/QuizAttemptForStudent';
 export type { QuizAttemptResult } from './models/QuizAttemptResult';
@@ -39,6 +40,7 @@ export type { SectionAssetListResponse } from './models/SectionAssetListResponse
 export type { SectionAssetResponse } from './models/SectionAssetResponse';
 export type { SectionDetail } from './models/SectionDetail';
 export type { SectionListItem } from './models/SectionListItem';
+export { SessionPatternEntry } from './models/SessionPatternEntry';
 export type { StatusResponse } from './models/StatusResponse';
 export type { StudentAssetMeta } from './models/StudentAssetMeta';
 export type { StudentMaterialMeta } from './models/StudentMaterialMeta';

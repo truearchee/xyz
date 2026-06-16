@@ -163,8 +163,20 @@ async function createRunModule(runId: string, label: string, adminContext: APIRe
     description: `4.6d ${label} ${runId}`,
     ownerId: owner.id,
     timezone: 'UTC',
-    startsOn: '2026-01-12',
-    endsOn: '2026-05-01',
+    // Stage 5.5a: creation is schedule-driven (startsOn/endsOn replaced). Title-based section
+    // selection below is reworked in 5.5e (full-suite pass after the 5.5d reseed).
+    schedule: {
+      courseStartDate: '2026-01-12',
+      courseEndDate: '2026-05-01',
+      weekStartDay: 'monday',
+      sessionPattern: [
+        { weekday: 'monday', sectionType: 'lecture' },
+        { weekday: 'tuesday', sectionType: 'lecture' },
+        { weekday: 'wednesday', sectionType: 'lecture' },
+        { weekday: 'thursday', sectionType: 'lab' },
+      ],
+      quizDay: 'friday',
+    },
   });
   expect(created.status).toBe(201);
   const moduleId = created.body.id;

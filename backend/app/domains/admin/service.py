@@ -181,13 +181,20 @@ async def create_module(
             "Module owner must be a lecturer",
         )
 
+    schedule = payload.schedule
     module = CourseModule(
         title=payload.title,
         description=payload.description,
         owner_id=payload.owner_id,
         timezone=payload.timezone,
-        starts_on=payload.starts_on,
-        ends_on=payload.ends_on,
+        starts_on=schedule.course_start_date,
+        ends_on=schedule.course_end_date,
+        week_start_day=schedule.week_start_day,
+        session_pattern=[
+            {"weekday": entry.weekday, "sectionType": entry.section_type}
+            for entry in schedule.session_pattern
+        ],
+        quiz_day=schedule.quiz_day,
         is_active=True,
     )
     db.add(module)

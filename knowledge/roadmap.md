@@ -62,7 +62,7 @@ DONE             — governance stages where no browser gate applies (Stage 0 on
 Stage 4.8   First hosted deploy (staging)              NOT STARTED  (new in v3)  ← next
 Stage 4.9   Frontend foundation + platform hygiene     NOT STARTED  (new in v3)
 ✅ Stage 5   Shared quiz engine + event spine           FULLY VERIFIED (branch spec-5; not yet merged) — 5a schema+event spine (migs 0014–0019), 5b generation+recovery (0020 AIRequestLog decouple), 5c HTTP surface, 5d UI+gates, 5e review fixes. Gate 1 (browser) GREEN (--workers=1, 1 passed); Gate 3 (real-provider smoke) GREEN (rule-11 echo). Backend 442 pytest; frontend tsc green; ADR-040..046; F-5d-1 resolved (max_tokens→16000). ⚠ MERGE: migration block 0014–0020 collides with sibling branches' 0014–0016 — renumber at merge (open-questions #5a)
-Stage 5.5   Module schedule & section metadata         NOT STARTED  (new in v3; parallel-OK with 5; blocks 6)
+Stage 5.5   Module schedule & section metadata         IN PROGRESS — 5.5a BACKEND VERIFIED  (parallel-OK with 5; blocks 6)
 Stage 6     Complete quiz modes                        NOT STARTED
 Stage 7     Glossary                                   NOT STARTED
 Stage 8     Assistant                                  NOT STARTED
@@ -467,7 +467,16 @@ Student opens lecture/lab with completed summary → post-class quiz available
 
 ## Stage 5.5 — Module Schedule & Section Metadata — NEW in v3
 
-**Status:** NOT STARTED. **May run in parallel with Stage 5** (admin domain, not quiz domain). **Hard prerequisite for Stage 6**; also feeds Stage 8.6 (time management) and Stage 11 (calendar seeding).
+**Status:** IN PROGRESS. **5.5a (schedule-driven generation) BACKEND VERIFIED** (2026-06-16, branch
+`stage-55`): fixed 4-section template replaced by a pure weekday×date-range generator run synchronously
+in the creation transaction (D14); `CreateModuleRequest` requires a `schedule`, missing → 422; migration
+0020 adds nullable schedule provenance to `course_modules` (reuses `starts_on`/`ends_on`); 28-section
+reference oracle + atomicity + validation tests green (pytest 408), tsc green, client regen. ADR-040.
+Active Playwright suite is RED 5.5a→5.5b (specs select sections by old fixed titles) — directive: 5.5b
+opens by running the suite for an OBSERVED failure list, fix-now via deterministic titles + direct
+seeding, quarantine only genuinely resolver-dependent specs. See [[steps/stage-05/5.5a-schedule-generation]].
+**May run in parallel with Stage 5** (admin domain, not quiz domain). **Hard prerequisite for Stage 6**;
+also feeds Stage 8.6 (time management) and Stage 11 (calendar seeding).
 
 **Why:** `week_number`, `session_date`, `due_at` exist in the schema but are never populated — module creation emits a fixed 4-section template, not the schedule-driven structure Slice 1 specifies. Recap quizzes (date range), exam-prep quizzes (covered weeks), assistant time-management, and the agent's calendar all resolve scope through exactly these fields. Without this session, Stage 6 stops at a findings note in its first week.
 
