@@ -114,9 +114,12 @@ function recordMany(runId: string, field: string, values: string[]) {
   for (const value of values) recordManifestValue(runId, field, value);
 }
 
-function sectionByTitle(sections: SectionRow[], title: string): SectionRow {
-  const s = sections.find((c) => c.title === title);
-  if (!s) throw new Error(`Missing generated section ${title}`);
+// Stage 5.5: generated titles are now "Lecture — Week N (...)" / "Lab — Week N (...)". Select by
+// type + ordinal; getSectionsForModule returns rows ordered by order_index, so index 0 = first.
+function nthSectionOfType(sections: SectionRow[], type: 'lecture' | 'lab', index = 0): SectionRow {
+  const matches = sections.filter((c) => c.type === type);
+  const s = matches[index];
+  if (!s) throw new Error(`Missing generated ${type} section #${index} (have ${matches.length})`);
   return s;
 }
 
@@ -184,10 +187,10 @@ test('4.7 student summaries browser gate', async ({ browser }) => {
     const a = await createModule(runId, apiAdmin, `Stage 4.7 Module A ${runId}`, true);
     const b = await createModule(runId, apiAdmin, `Stage 4.7 Module B ${runId}`, false);
 
-    const a1 = sectionByTitle(a.sections, 'Lecture 1'); // summarized → G1/G2/G3
-    const a3 = sectionByTitle(a.sections, 'Lecture 2'); // published, no transcript → G7 (row 5)
-    const a4 = sectionByTitle(a.sections, 'Lab 1'); // draft → G4
-    const b1 = sectionByTitle(b.sections, 'Lecture 1'); // module B published → G5
+    const a1 = nthSectionOfType(a.sections, 'lecture', 0); // summarized → G1/G2/G3
+    const a3 = nthSectionOfType(a.sections, 'lecture', 1); // published, no transcript → G7 (row 5)
+    const a4 = nthSectionOfType(a.sections, 'lab', 0); // draft → G4
+    const b1 = nthSectionOfType(b.sections, 'lecture', 0); // module B published → G5
 
     const lecturerPage = await lecturerContext.newPage();
     await signIn(lecturerPage, LECTURER_EMAIL, '/lecturer');

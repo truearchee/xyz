@@ -163,10 +163,13 @@ function recordMany(runId: string, field: string, values: string[]) {
   }
 }
 
-function sectionByTitle(sections: SectionRow[], title: string): SectionRow {
-  const section = sections.find((candidate) => candidate.title === title);
+// Stage 5.5: generated titles are now "Lecture — Week N (...)" / "Lab — Week N (...)". Select by
+// type + ordinal; getSectionsForModule returns rows ordered by order_index, so index 0 = first.
+function nthSectionOfType(sections: SectionRow[], type: 'lecture' | 'lab', index = 0): SectionRow {
+  const matches = sections.filter((candidate) => candidate.type === type);
+  const section = matches[index];
   if (!section) {
-    throw new Error(`Missing generated section ${title}`);
+    throw new Error(`Missing generated ${type} section #${index} (have ${matches.length})`);
   }
   return section;
 }
@@ -236,7 +239,7 @@ async function createRunModule(
   recordMany(runId, 'sectionIds', sections.map((section) => section.id));
 
   return {
-    lab: sectionByTitle(sections, 'Lab 1'),
+    lab: nthSectionOfType(sections, 'lab', 0),
     moduleId,
     moduleTitle,
     sections,

@@ -36,6 +36,18 @@ const TRANSCRIPT_DIR = resolve('tests/e2e/fixtures/files/transcripts');
 type ApiResponse<T = unknown> = { body: T; status: number };
 type SectionRow = { id: string; title: string; type: string };
 
+// Stage 5.5: generated titles are now "Lecture — Week N (...)" / "Lab — Week N (...)". Select by
+// type + ordinal; getSectionsForModule returns rows ordered by order_index, so index 0 = first.
+// (Replaces the old `find(title==='Lab 1')!` which silently produced undefined → TypeError on miss.)
+function nthSectionOfType(sections: SectionRow[], type: 'lecture' | 'lab', index = 0): SectionRow {
+  const matches = sections.filter((candidate) => candidate.type === type);
+  const section = matches[index];
+  if (!section) {
+    throw new Error(`Missing generated ${type} section #${index} (have ${matches.length})`);
+  }
+  return section;
+}
+
 test.setTimeout(180_000);
 
 function requireRunId(): string {
@@ -122,7 +134,7 @@ async function setupModuleAndUpload(page: Page, adminCtx: APIRequestContext, run
   for (const m of getMembershipsForModule(moduleId)) record(runId, 'membershipIds', m.id);
   const sections = getSectionsForModule(moduleId) as SectionRow[];
   for (const s of sections) record(runId, 'sectionIds', s.id);
-  const lab = sections.find((s) => s.title === 'Lab 1')!;
+  const lab = nthSectionOfType(sections, 'lab', 0);
 
   await page.goto(`/lecturer/modules/${moduleId}`);
   const row = rowForSection(page, lab);

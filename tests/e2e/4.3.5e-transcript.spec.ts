@@ -11,6 +11,7 @@ import {
   getMembershipsForModule,
   getSectionsForModule,
   getTranscriptById,
+  insertSection,
   waitForTranscriptCompleted,
 } from './fixtures/db.mjs';
 
@@ -219,10 +220,13 @@ async function recordTranscriptArtifacts(
   recordMany(runId, 'transcriptChunkIds', artifacts.counts.chunkIds);
 }
 
-function sectionByTitle(sections: SectionRow[], title: string): SectionRow {
-  const section = sections.find((candidate) => candidate.title === title);
+// Stage 5.5: generated titles are now "Lecture — Week N (...)" / "Lab — Week N (...)". Select by
+// type + ordinal; getSectionsForModule returns rows ordered by order_index, so index 0 = first.
+function nthSectionOfType(sections: SectionRow[], type: 'lecture' | 'lab', index = 0): SectionRow {
+  const matches = sections.filter((candidate) => candidate.type === type);
+  const section = matches[index];
   if (!section) {
-    throw new Error(`Missing generated section ${title}`);
+    throw new Error(`Missing generated ${type} section #${index} (have ${matches.length})`);
   }
   return section;
 }
@@ -256,17 +260,15 @@ async function createRunModule(
     description: `4.3.5e transcript browser gate ${runId}`,
     ownerId: owner.id,
     timezone: 'UTC',
-    // Stage 5.5a: creation is schedule-driven (startsOn/endsOn replaced). Title-based section
-    // selection below (incl. the now-ungenerated "Assignment 1") is reworked in 5.5e
-    // (full-suite pass after the 5.5d reseed).
+    // Stage 5.5: creation is schedule-driven. Pin a MINIMAL one-week schedule (Mon lecture, Thu lab)
+    // so the generated set is deterministic — exactly 1 lecture + 1 lab — rather than inheriting a
+    // wide default range. The assignment section is seeded directly below (D12: not generated).
     schedule: {
-      courseStartDate: '2026-01-12',
-      courseEndDate: '2026-05-01',
+      courseStartDate: '2026-01-12', // Monday
+      courseEndDate: '2026-01-15', // Thursday (same week)
       weekStartDay: 'monday',
       sessionPattern: [
         { weekday: 'monday', sectionType: 'lecture' },
-        { weekday: 'tuesday', sectionType: 'lecture' },
-        { weekday: 'wednesday', sectionType: 'lecture' },
         { weekday: 'thursday', sectionType: 'lab' },
       ],
       quizDay: 'friday',
@@ -291,19 +293,30 @@ async function createRunModule(
   const memberships = getMembershipsForModule(moduleId);
   recordMany(runId, 'membershipIds', memberships.map((membership: { id: string }) => membership.id));
 
+  // Schedule-driven generation yields lecture+lab only (no assignment — D12). The pinned one-week
+  // schedule makes this deterministic; generation SHAPE is owned by 5.5a's backend oracle, so this
+  // gate only checks it has the lecture + lab it uploads to (not the old fixed 4-template).
+  const generated = getSectionsForModule(moduleId) as SectionRow[];
+  expect(generated.filter((section) => section.type === 'lecture')).toHaveLength(1);
+  expect(generated.filter((section) => section.type === 'lab')).toHaveLength(1);
+  expect(generated.some((section) => section.type === 'assignment')).toBe(false);
+
+  // Direct-seed the LOAD-BEARING assignment section: the unsupported-type guard (UI offers no
+  // transcript control; API POST transcript → 422 SECTION_TYPE_UNSUPPORTED) needs a non-generated
+  // section type to exist. insertSection assigns a non-colliding order_index.
+  insertSection(moduleId, { type: 'assignment', title: 'Assignment 1', publishStatus: 'draft' });
+
   const sections = getSectionsForModule(moduleId) as SectionRow[];
-  expect(sections.map((section) => section.title)).toEqual([
-    'Lecture 1',
-    'Lecture 2',
-    'Lab 1',
-    'Assignment 1',
-  ]);
+  const assignment = sections.find((section) => section.type === 'assignment');
+  if (!assignment) {
+    throw new Error('Seeded assignment section not found');
+  }
   recordMany(runId, 'sectionIds', sections.map((section) => section.id));
 
   return {
-    assignment: sectionByTitle(sections, 'Assignment 1'),
-    lab: sectionByTitle(sections, 'Lab 1'),
-    lecture: sectionByTitle(sections, 'Lecture 1'),
+    assignment,
+    lab: nthSectionOfType(sections, 'lab', 0),
+    lecture: nthSectionOfType(sections, 'lecture', 0),
     moduleId,
     moduleTitle,
     sections,

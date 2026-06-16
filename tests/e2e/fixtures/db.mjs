@@ -54,6 +54,28 @@ LIMIT 1;
 `);
 }
 
+// Stage 5.5: assignment/supplementary sections are no longer generated (D12), but the enum still
+// exists. Tests that need a non-generated section type (e.g. the transcript unsupported-type guard)
+// seed one directly. order_index = max(order_index)+1 for the module so it never collides with the
+// uq_module_sections_module_order unique constraint. Returns the new section in SectionRow shape.
+export function insertSection(moduleId, { type, title, publishStatus = 'draft' }) {
+  assertUuid(moduleId, 'moduleId');
+  return runPsqlJson(`
+WITH next_index AS (
+  SELECT coalesce(max(order_index), 0) + 1 AS oi
+  FROM module_sections
+  WHERE course_module_id = ${sqlLiteral(moduleId)}::uuid
+)
+INSERT INTO module_sections (id, course_module_id, title, type, order_index, publish_status, status)
+SELECT gen_random_uuid(), ${sqlLiteral(moduleId)}::uuid, ${sqlLiteral(title)}, ${sqlLiteral(type)},
+       next_index.oi, ${sqlLiteral(publishStatus)}, 'active'
+FROM next_index
+RETURNING json_build_object(
+  'id', id, 'title', title, 'type', type, 'orderIndex', order_index, 'publishStatus', publish_status
+)::text;
+`);
+}
+
 export function getSectionsForModule(moduleId) {
   assertUuid(moduleId, 'moduleId');
   return runPsqlJson(`

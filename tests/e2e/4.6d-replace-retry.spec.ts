@@ -139,10 +139,13 @@ function recordTranscript(runId: string, transcriptId: string) {
   }
 }
 
-function sectionByTitle(sections: SectionRow[], title: string): SectionRow {
-  const section = sections.find((candidate) => candidate.title === title);
+// Stage 5.5: generated titles are now "Lecture — Week N (...)" / "Lab — Week N (...)". Select by
+// type + ordinal; getSectionsForModule returns rows ordered by order_index, so index 0 = first.
+function nthSectionOfType(sections: SectionRow[], type: 'lecture' | 'lab', index = 0): SectionRow {
+  const matches = sections.filter((candidate) => candidate.type === type);
+  const section = matches[index];
   if (!section) {
-    throw new Error(`Missing generated section ${title}`);
+    throw new Error(`Missing generated ${type} section #${index} (have ${matches.length})`);
   }
   return section;
 }
@@ -184,7 +187,7 @@ async function createRunModule(runId: string, label: string, adminContext: APIRe
   recordMany(runId, 'membershipIds', getMembershipsForModule(moduleId).map((m: { id: string }) => m.id));
   const sections = getSectionsForModule(moduleId) as SectionRow[];
   recordMany(runId, 'sectionIds', sections.map((section) => section.id));
-  return { lab: sectionByTitle(sections, 'Lab 1'), moduleId, moduleTitle, sections };
+  return { lab: nthSectionOfType(sections, 'lab', 0), moduleId, moduleTitle, sections };
 }
 
 async function uploadTranscriptThroughUi(page: Page, section: SectionRow, fileName: string): Promise<string> {

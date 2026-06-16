@@ -139,10 +139,13 @@ function recordMany(runId: string, field: string, values: string[]) {
   }
 }
 
-function sectionByTitle(sections: SectionRow[], title: string): SectionRow {
-  const section = sections.find((candidate) => candidate.title === title);
+// Stage 5.5: generated titles are now "Lecture — Week N (...)" / "Lab — Week N (...)". Select by
+// type + ordinal; getSectionsForModule returns rows ordered by order_index, so index 0 = first.
+function nthSectionOfType(sections: SectionRow[], type: 'lecture' | 'lab', index = 0): SectionRow {
+  const matches = sections.filter((candidate) => candidate.type === type);
+  const section = matches[index];
   if (!section) {
-    throw new Error(`Missing generated section ${title}`);
+    throw new Error(`Missing generated ${type} section #${index} (have ${matches.length})`);
   }
   return section;
 }
@@ -207,8 +210,9 @@ test('4.7 P1 — Stage 3 content-visibility (restored)', async ({ browser }) => 
     apiAdmin = await createApiContext(await getAccessToken(adminPage));
     const setup = await createRunModule(runId, apiAdmin);
 
-    const lecture1 = sectionByTitle(setup.sections, 'Lecture 1');
-    const lecture2 = sectionByTitle(setup.sections, 'Lecture 2');
+    const lecture1 = nthSectionOfType(setup.sections, 'lecture', 0);
+    const lecture2 = nthSectionOfType(setup.sections, 'lecture', 1);
+    const lab1 = nthSectionOfType(setup.sections, 'lab', 0);
 
     // --- Lecturer setup through the real backend (product path) ---
     const lecturerPage = await lecturerContext.newPage();
@@ -282,7 +286,7 @@ test('4.7 P1 — Stage 3 content-visibility (restored)', async ({ browser }) => 
       `/modules/${setup.moduleId}/sections`,
     );
     expect(studentSections.status).toBe(200);
-    expect(studentSections.body.map((s) => s.title)).toEqual(['Lecture 1']); // EXACT — not "includes"
+    expect(studentSections.body.map((s) => s.title)).toEqual([lecture1.title]); // EXACT — not "includes"
     expect(studentSections.body.map((s) => s.id)).toEqual([lecture1.id]);
 
     const studentDetail = await apiJson<{ lecturerNotes: string; assets: Array<{ fileName: string }> }>(
@@ -330,8 +334,10 @@ test('4.7 P1 — Stage 3 content-visibility (restored)', async ({ browser }) => 
     // --- Student UI shows ONLY the published section ---
     await studentPage.goto(`/student/modules/${setup.moduleId}`);
     await expect(studentPage.locator('[data-testid="student-section-list"]')).toBeVisible();
-    await expect(studentPage.getByRole('heading', { name: 'Lecture 1', exact: true })).toBeVisible();
-    for (const hidden of ['Lecture 2', 'Lab 1', 'Assignment 1']) {
+    await expect(studentPage.getByRole('heading', { name: lecture1.title, exact: true })).toBeVisible();
+    // Unpublished sections stay hidden. Assignments are no longer generated (Stage 5.5, D12), so the
+    // hidden set is the representative draft lecture + draft lab rather than the old fixed titles.
+    for (const hidden of [lecture2.title, lab1.title]) {
       await expect(studentPage.getByRole('heading', { name: hidden, exact: true })).toHaveCount(0);
     }
     await expect(studentPage.getByText(NOTES)).toBeVisible();
@@ -371,7 +377,7 @@ test('4.7 P1 — Stage 3 content-visibility (restored)', async ({ browser }) => 
 
     // Student UI reload → the section is gone.
     await studentPage.reload();
-    await expect(studentPage.getByRole('heading', { name: 'Lecture 1', exact: true })).toHaveCount(0);
+    await expect(studentPage.getByRole('heading', { name: lecture1.title, exact: true })).toHaveCount(0);
   } finally {
     await apiAdmin?.dispose();
     await apiLecturer?.dispose();
