@@ -1,7 +1,7 @@
 """Add section asset kind for lab attachments.
 
-Revision ID: 0021
-Revises: 0020
+Revision ID: 0022
+Revises: 0021
 Create Date: 2026-06-16
 
 Stage 5.5c distinguishes processable PDF assets from download-only lab attachments. Existing
@@ -12,8 +12,8 @@ from alembic import op
 import sqlalchemy as sa
 
 
-revision = "0021"
-down_revision = "0020"
+revision = "0022"
+down_revision = "0021"
 branch_labels = None
 depends_on = None
 

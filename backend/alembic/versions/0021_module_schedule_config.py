@@ -1,7 +1,7 @@
 """Module schedule config (Stage 5.5a) on course_modules.
 
-Revision ID: 0020
-Revises: 0013
+Revision ID: 0021
+Revises: 0020
 Create Date: 2026-06-16
 
 Stage 5.5 — Module Schedule & Section Metadata. Schedule-driven section generation needs the
@@ -11,9 +11,7 @@ start on, the weekday→sectionType pattern, and the (non-generating) quiz weekd
 NULL means "no schedule configured" (legacy / ORM-direct rows), and the 422 / validation lives in the
 service layer, not the DB — so test helpers that build CourseModule directly keep working.
 
-down_revision is pinned to 0013 (this branch's head) during development. At merge, rebase ONLY this
-revision's down_revision to the then-current head so ``alembic heads`` stays singular. Existence-checked
-→ re-runnable.
+This revision now follows Stage 5's merged ``0020`` head. Existence-checked → re-runnable.
 """
 
 from alembic import op
@@ -21,8 +19,8 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 
-revision = "0020"
-down_revision = "0013"
+revision = "0021"
+down_revision = "0020"
 branch_labels = None
 depends_on = None
 

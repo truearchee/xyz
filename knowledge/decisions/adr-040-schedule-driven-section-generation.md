@@ -35,8 +35,8 @@ weekday-pattern/quiz-day config.
 - Stage 6 `coveredWeeks` scope resolution is unblocked (`week_number` now populated).
 - Every API-path module-creation call site must supply a schedule (suite-breaking) — handled in 5.5a
   for backend tests + E2E payloads; E2E section-selection rework + reseed are 5.5d/5.5e.
-- Migration 0020 (`down_revision='0013'`) adds the three columns idempotently; the seam is rebased to
-  the real head at merge so `alembic heads` stays singular.
+- Migration 0021 (`down_revision='0020'`) adds the three columns idempotently after the Stage 5 main
+  chain. Session 5.5g rebased the original development seam so `alembic heads` stays singular.
 
 ## Alternatives rejected
 - **NOT NULL schedule columns** — would force every ORM-direct fixture/factory to supply a schedule, a

@@ -35,7 +35,7 @@ from app.platform.storage.base import StorageProvider
 from app.platform.storage.keys import generate_section_asset_storage_key
 
 
-EXPECTED_ALEMBIC_VERSION = "0021"
+EXPECTED_ALEMBIC_VERSION = "0022"
 REFERENCE_COURSE_START_DATE = date(2026, 5, 11)
 REFERENCE_COURSE_END_DATE = date(2026, 6, 26)
 REFERENCE_WEEK_START_DAY = "monday"
