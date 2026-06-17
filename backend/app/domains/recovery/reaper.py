@@ -15,7 +15,7 @@ import logging
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from app.domains.recovery.locks import maintenance_advisory_lock
@@ -25,7 +25,14 @@ from app.domains.recovery.maintenance_run_log import (
 )
 from app.domains.recovery.rq_liveness import is_job_live_in_rq
 from app.platform.config import settings
-from app.platform.db.models import AIRequestLog, IngestionJob, QuizAttempt, Transcript
+from app.platform.db.models import (
+    AIRequestLog,
+    IngestionJob,
+    QuizAttempt,
+    QuizDefinition,
+    SectionQuestionPool,
+    Transcript,
+)
 from app.platform.db.session import async_session, engine as default_engine
 from app.workers.queues import (
     enqueue_chunk_transcript,
@@ -108,6 +115,9 @@ async def _run_reaper(
         budget = await _reap_stuck_queued(factory, now, report_only, rq_liveness, counts, budget)
         budget = await _reap_crashed_running(factory, now, report_only, rq_liveness, counts, budget)
         budget = await _reap_lost_quiz_generation(
+            factory, report_only, rq_liveness, counts, budget
+        )
+        budget = await _reap_lost_pool_generation(
             factory, report_only, rq_liveness, counts, budget
         )
         await finalize_maintenance_run(factory, run_id, status="completed", summary=counts)
@@ -255,6 +265,12 @@ async def _reap_lost_quiz_generation(factory, report_only, rq_liveness, counts, 
             break
         if rq_liveness("quiz_generate", attempt.id) is not False:
             continue  # live (True) or unknown (None) → do not reap (liveness, not age)
+        # Stage 6a: a POOLED attempt legitimately sits in 'generating' with NO live quiz_generate job
+        # BETWEEN fan-in triggers, while its section pools generate. Skip it iff an in-scope pool is still
+        # generating — it is waiting, not lost. Only when every in-scope pool is terminal yet the attempt
+        # never assembled (the rare fan-in miss) is it truly stuck → reap → clean Start Over.
+        if await _pooled_attempt_awaiting_pool(factory, attempt):
+            continue
         counts["scanned"] += 1
         if report_only:
             counts["crashed"] += 1
@@ -264,6 +280,93 @@ async def _reap_lost_quiz_generation(factory, report_only, rq_liveness, counts, 
             counts["crashed"] += 1
             budget -= 1
     return budget
+
+
+async def _pooled_attempt_awaiting_pool(factory, attempt) -> bool:
+    """True iff ``attempt`` is a POOLED (non-post_class) attempt with at least one in-scope section pool
+    still ``generating`` — i.e. legitimately waiting on the scheduler-free two-level pool/assembly flow,
+    not a lost generation. post_class (Stage 5, not pooled) always returns False so its liveness reaping is
+    unchanged."""
+    async with factory() as session:
+        definition = await session.get(QuizDefinition, attempt.quiz_definition_id)
+        if definition is None or definition.quiz_mode == "post_class":
+            return False
+        scope = definition.source_scope or {}
+        raw_ids = scope.get("sectionIds")
+        if not raw_ids and definition.module_section_id is not None:
+            raw_ids = [str(definition.module_section_id)]
+        if not raw_ids:
+            return False
+        try:
+            section_ids = [UUID(str(s)) for s in raw_ids]
+        except (ValueError, AttributeError, TypeError):  # pragma: no cover - defensive
+            return False
+        generating = await session.scalar(
+            select(func.count())
+            .select_from(SectionQuestionPool)
+            .where(
+                SectionQuestionPool.module_section_id.in_(section_ids),
+                SectionQuestionPool.status == "generating",
+            )
+        )
+        return bool(generating)
+
+
+async def _reap_lost_pool_generation(factory, report_only, rq_liveness, counts, budget) -> int:
+    """SectionQuestionPool rows stuck 'generating' whose RQ job is NOT live → mark failed + crashed, so the
+    one-active-generating herd lock self-heals (a crashed pool generation would otherwise block the section
+    forever). LIVENESS, NOT AGE — mirrors the quiz-attempt reaping; ``None`` (Redis hiccup) is never
+    reaped."""
+    if budget <= 0:
+        return budget
+    async with factory() as session:
+        pools = (
+            await session.execute(
+                select(SectionQuestionPool).where(SectionQuestionPool.status == "generating")
+            )
+        ).scalars().all()
+    for pool in pools:
+        if budget <= 0:
+            break
+        if rq_liveness("section_pool", pool.id) is not False:
+            continue  # live (True) or unknown (None) → do not reap
+        counts["scanned"] += 1
+        if report_only:
+            counts["crashed"] += 1
+            budget -= 1
+            continue
+        if await _mark_pool_crashed_fenced(factory, pool_id=pool.id):
+            counts["crashed"] += 1
+            budget -= 1
+    return budget
+
+
+async def _mark_pool_crashed_fenced(factory, *, pool_id: UUID) -> bool:
+    """Re-read the pool FOR UPDATE and re-verify it is still 'generating' before failing (never races a
+    generation that just finished). Finalizes the linked AIRequestLog so a lost job leaves no dangling
+    'running' cost row."""
+    async with factory() as session:
+        async with session.begin():
+            pool = (
+                await session.execute(
+                    select(SectionQuestionPool)
+                    .where(SectionQuestionPool.id == pool_id)
+                    .with_for_update()
+                )
+            ).scalar_one_or_none()
+            if pool is None or pool.status != "generating":
+                return False  # raced (ready / failed) — fenced
+            now = datetime.now(UTC)
+            pool.status = "failed"
+            pool.failure_category = "crashed"
+            pool.failure_message_sanitized = "worker crashed (reaped by stuck-row recovery)"
+            pool.updated_at = now
+            if pool.ai_request_log_id is not None:
+                log = await session.get(AIRequestLog, pool.ai_request_log_id)
+                if log is not None and log.status == "running":
+                    log.status = "failed"
+                    log.error_code = "abandoned_crashed"
+    return True
 
 
 async def _mark_quiz_attempt_crashed_fenced(factory, *, attempt_id: UUID) -> bool:

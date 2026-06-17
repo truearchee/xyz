@@ -74,6 +74,10 @@ class QuizQuestion(Base):
     )
     # FK to mistake_records added in 0019 (table created after this one); bare UUID here.
     source_mistake_record_id: Mapped[UUID | None] = mapped_column(PostgresUUID(as_uuid=True))
+    # Stage 6a: the durable PoolQuestion this attempt-question was sampled+snapshotted from. Set when
+    # source_type='new_generated' under the pooled model; NULL for mistake_review and pre-retrofit
+    # post-class rows (treated as "unseen" by exposure). FK to pool_questions added in 0023; bare UUID here.
+    source_pool_question_id: Mapped[UUID | None] = mapped_column(PostgresUUID(as_uuid=True))
     source_module_id: Mapped[UUID | None] = mapped_column(PostgresUUID(as_uuid=True))
     source_section_id: Mapped[UUID | None] = mapped_column(PostgresUUID(as_uuid=True))
     source_summary_id: Mapped[UUID | None] = mapped_column(PostgresUUID(as_uuid=True))

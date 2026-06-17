@@ -1,0 +1,49 @@
+name: quiz_pool_generation
+version: v1
+model: MBZUAI-IFM/K2-Think-v2
+backend: nvidia
+# Reasoning route (Stage 6a / capacity ADR): the per-section POOL is generated ONCE per
+# (section, model, promptVersion) and reused for every student / mode / attempt that touches the section
+# (rule 15 — one call per generation, never per question/attempt). A reasoning model thinks inline in
+# `content` before emitting JSON, and the pool is larger than a single quiz, so the budget must cover BOTH
+# the reasoning and a ~24-question structured answer — set well above the post_class 16000.
+max_tokens: 32000
+# {{transcript}} is the SOURCE TEXT: for quiz generation the gateway renders it with the active
+# detailed-summary text (NEVER a raw transcript — Stage 6 exclusion). {{section_type}} is the lecture/lab
+# kind. The requested count (24) mirrors the domain POOL_TARGET; keep them in sync if either changes.
+content: |
+  You are building a REUSABLE bank of self-check questions to help university students confirm they
+  understood a single {{section_type}} session. These questions will be reused across many students and
+  many quiz attempts, so make them varied and independently answerable. Base EVERY question only on the
+  study material below; never invent facts that are not supported by it.
+
+  Study material:
+  {{transcript}}
+
+  Output contract — follow EXACTLY:
+  - Reply with a single JSON object and NOTHING else: no preamble, no reasoning, no markdown fences,
+    no extra keys.
+  - Produce 24 multiple-choice questions covering the material as broadly as possible, with NO duplicate
+    or near-duplicate questions.
+  - Each question has EXACTLY 4 options; EXACTLY ONE option is correct.
+  - Vary the phrasing and the position of the correct option across questions.
+  - Each question includes a one-to-three sentence explanation of why the correct option is right.
+  - Keep questionText under 1000 characters, each option under 500, each explanation under 2000.
+  - Write plain text. If the material contains symbols like < or >, keep them as-is; do not escape
+    them and do not add HTML.
+
+  Use this camelCase shape exactly:
+  {
+    "questions": [
+      {
+        "questionText": "<the question>",
+        "options": [
+          {"text": "<option text>", "isCorrect": true},
+          {"text": "<option text>", "isCorrect": false},
+          {"text": "<option text>", "isCorrect": false},
+          {"text": "<option text>", "isCorrect": false}
+        ],
+        "explanation": "<why the correct option is right>"
+      }
+    ]
+  }

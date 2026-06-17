@@ -14,7 +14,7 @@ import json
 from pydantic import ValidationError
 
 from app.platform.llm.errors import InvalidOutput
-from app.platform.llm.models.quiz import PostClassQuiz
+from app.platform.llm.models.quiz import GeneratedQuizPool, PostClassQuiz
 from app.platform.llm.models.summary import BriefSummary, DetailedSummary
 
 BRIEF_MIN_CHARS = 20
@@ -30,6 +30,14 @@ QUIZ_MAX_PAYLOAD_BYTES = 65536
 QUIZ_MAX_QUESTION_CHARS = 1000
 QUIZ_MAX_OPTION_CHARS = 500
 QUIZ_MAX_EXPLANATION_CHARS = 2000
+
+# Stage 6a — section POOL bounds (the validator is the authority regardless of mechanism). A pool holds
+# MORE than one quiz needs; the count is a RANGE, not exactly-N, so a reasoning model over/undershooting
+# the requested target does not fail the whole generation. The per-question rules (4 options, one correct,
+# length/dup caps) are identical to post_class. Larger payload cap because there are more questions.
+QUIZ_POOL_MIN_COUNT = 16
+QUIZ_POOL_MAX_COUNT = 40
+QUIZ_POOL_MAX_PAYLOAD_BYTES = 262144
 _REFUSAL_MARKERS = (
     "i cannot",
     "i can't",
@@ -138,15 +146,20 @@ class OutputValidator:
         self,
         *,
         raw_text: str,
-        output_schema: type[BriefSummary] | type[DetailedSummary] | type[PostClassQuiz],
+        output_schema: type[BriefSummary]
+        | type[DetailedSummary]
+        | type[PostClassQuiz]
+        | type[GeneratedQuizPool],
         section_type: str,
-    ) -> BriefSummary | DetailedSummary | PostClassQuiz:
+    ) -> BriefSummary | DetailedSummary | PostClassQuiz | GeneratedQuizPool:
         if output_schema is BriefSummary:
             return self._validate_brief(raw_text)
         if output_schema is DetailedSummary:
             return self._validate_detailed(raw_text, section_type=section_type)
         if output_schema is PostClassQuiz:
             return self._validate_quiz(raw_text)
+        if output_schema is GeneratedQuizPool:
+            return self._validate_quiz_pool(raw_text)
         raise InvalidOutput(
             f"unsupported output schema: {getattr(output_schema, '__name__', output_schema)!r}",
             error_code="unsupported_schema",
@@ -304,3 +317,96 @@ class OutputValidator:
                 error_code="payload_too_large",
             )
         return quiz
+
+    # ── pool generation (Stage 6a) ───────────────────────────────────────────────────────────────
+    # Deliberately a SEPARATE validator from _validate_quiz / _validate_quiz_object: the shipped
+    # post_class path (exactly-10) is left byte-for-byte untouched. The per-question rules below mirror
+    # _validate_quiz_object; only the COUNT is a range (a pool holds more than one quiz) and the payload
+    # cap is larger. Reuses the same tolerant-extract + last-valid machinery.
+    def _validate_quiz_pool(self, raw_text: str) -> GeneratedQuizPool:
+        return _select_last_valid(_candidate_objects(raw_text), self._validate_quiz_pool_object)
+
+    def _validate_quiz_pool_object(self, data: dict) -> GeneratedQuizPool:
+        try:
+            pool = GeneratedQuizPool.model_validate(data)
+        except ValidationError as exc:
+            raise InvalidOutput(
+                f"quiz pool failed schema validation: {exc.error_count()} error(s)",
+                error_code="schema",
+            ) from exc
+
+        if not (QUIZ_POOL_MIN_COUNT <= len(pool.questions) <= QUIZ_POOL_MAX_COUNT):
+            raise InvalidOutput(
+                f"quiz pool must have between {QUIZ_POOL_MIN_COUNT} and {QUIZ_POOL_MAX_COUNT} "
+                f"questions, got {len(pool.questions)}",
+                error_code="wrong_question_count",
+            )
+        seen_questions: set[str] = set()
+        for index, question in enumerate(pool.questions):
+            q_text = question.question_text.strip()
+            if not q_text:
+                raise InvalidOutput(
+                    f"question {index} has empty questionText", error_code="empty_question_text"
+                )
+            if len(q_text) > QUIZ_MAX_QUESTION_CHARS:
+                raise InvalidOutput(
+                    f"question {index} questionText exceeds {QUIZ_MAX_QUESTION_CHARS} chars",
+                    error_code="question_too_long",
+                )
+            key = q_text.lower()
+            if key in seen_questions:
+                raise InvalidOutput(
+                    f"duplicate questionText at question {index}", error_code="duplicate_question"
+                )
+            seen_questions.add(key)
+
+            if len(question.options) != QUIZ_OPTIONS_PER_QUESTION:
+                raise InvalidOutput(
+                    f"question {index} must have exactly {QUIZ_OPTIONS_PER_QUESTION} options, "
+                    f"got {len(question.options)}",
+                    error_code="wrong_option_count",
+                )
+            correct = [opt for opt in question.options if opt.is_correct]
+            if len(correct) != 1:
+                raise InvalidOutput(
+                    f"question {index} must have exactly one correct option, got {len(correct)}",
+                    error_code="wrong_correct_count",
+                )
+            seen_options: set[str] = set()
+            for opt in question.options:
+                o_text = opt.text.strip()
+                if not o_text:
+                    raise InvalidOutput(
+                        f"question {index} has an empty option", error_code="empty_option_text"
+                    )
+                if len(o_text) > QUIZ_MAX_OPTION_CHARS:
+                    raise InvalidOutput(
+                        f"question {index} option exceeds {QUIZ_MAX_OPTION_CHARS} chars",
+                        error_code="option_too_long",
+                    )
+                o_key = o_text.lower()
+                if o_key in seen_options:
+                    raise InvalidOutput(
+                        f"question {index} has duplicate option text",
+                        error_code="duplicate_option",
+                    )
+                seen_options.add(o_key)
+
+            explanation = question.explanation.strip()
+            if not explanation:
+                raise InvalidOutput(
+                    f"question {index} is missing an explanation", error_code="missing_explanation"
+                )
+            if len(explanation) > QUIZ_MAX_EXPLANATION_CHARS:
+                raise InvalidOutput(
+                    f"question {index} explanation exceeds {QUIZ_MAX_EXPLANATION_CHARS} chars",
+                    error_code="explanation_too_long",
+                )
+
+        payload_bytes = len(json.dumps(pool.model_dump(by_alias=True)).encode("utf-8"))
+        if payload_bytes > QUIZ_POOL_MAX_PAYLOAD_BYTES:
+            raise InvalidOutput(
+                f"quiz pool payload {payload_bytes} bytes exceeds {QUIZ_POOL_MAX_PAYLOAD_BYTES}",
+                error_code="payload_too_large",
+            )
+        return pool

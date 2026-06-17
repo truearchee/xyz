@@ -37,7 +37,7 @@ from app.platform.llm.models.prompt import (
     PromptKey,
     Usage,
 )
-from app.platform.llm.models.quiz import PostClassQuiz
+from app.platform.llm.models.quiz import GeneratedQuizPool, PostClassQuiz
 from app.platform.llm.models.summary import BriefSummary, DetailedSummary
 from app.platform.llm.provider import LLMProvider, get_provider
 from app.platform.llm.registry import PromptRegistry, get_prompt_registry
@@ -59,7 +59,7 @@ class ContextRefs:
 
 
 class CompletionResult(TypedDict):
-    parsed: BriefSummary | DetailedSummary | PostClassQuiz
+    parsed: BriefSummary | DetailedSummary | PostClassQuiz | GeneratedQuizPool
     model_id_echoed: str
     usage: Usage
     backend_used: Backend
@@ -119,7 +119,10 @@ class LLMGateway:
         self,
         *,
         prompt_key: PromptKey,
-        output_schema: type[BriefSummary] | type[DetailedSummary] | type[PostClassQuiz],
+        output_schema: type[BriefSummary]
+        | type[DetailedSummary]
+        | type[PostClassQuiz]
+        | type[GeneratedQuizPool],
         context_refs: ContextRefs,
         priority: Priority,
         feature: GatewayFeature,

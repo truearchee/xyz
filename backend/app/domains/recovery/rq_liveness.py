@@ -14,7 +14,11 @@ from uuid import UUID
 from rq.exceptions import NoSuchJobError
 from rq.job import Job
 
-from app.workers.queues import get_redis_connection, quiz_generation_job_id
+from app.workers.queues import (
+    get_redis_connection,
+    quiz_generation_job_id,
+    section_pool_job_id,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -24,6 +28,8 @@ _STABLE_JOB_ID = {
     "generate_brief_summary": lambda i: f"summary-brief-{i}",
     "generate_detailed_summary": lambda i: f"summary-detailed-{i}",
     "quiz_generate": quiz_generation_job_id,
+    # Stage 6a: pooled-attempt assembly reuses the quiz_generate id; section-pool generation has its own.
+    "section_pool": section_pool_job_id,
 }
 _LIVE_STATUSES = {"queued", "started", "deferred", "scheduled"}
 

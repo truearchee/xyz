@@ -43,6 +43,19 @@ class MistakeRecord(Base):
             "student_id",
             "module_id",
         ),
+        # Stage 6a — the pooled-model upsert identity. Under reuse, re-missing the SAME pool question in
+        # the SAME QuizDefinition (across different attempts → different source_question_id) must update
+        # ONE record, not duplicate it (so "stays in the bank / flips at 2" stays coherent). The
+        # ON-CONFLICT upsert keys on this partial-unique; pre-retrofit / mistake_review rows have a NULL
+        # source_pool_question_id and fall back to uq_mistake_records_attempt_question above.
+        Index(
+            "uq_mistake_records_pool_identity",
+            "student_id",
+            "source_quiz_definition_id",
+            "source_pool_question_id",
+            unique=True,
+            postgresql_where=text("source_pool_question_id IS NOT NULL"),
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(
@@ -80,6 +93,9 @@ class MistakeRecord(Base):
         ForeignKey("quiz_questions.id", ondelete="CASCADE"),
         nullable=False,
     )
+    # Stage 6a: the durable PoolQuestion the missed question was sampled from (the upsert identity, above).
+    # NULL for pre-retrofit post-class / mistake_review misses. FK to pool_questions added in 0024; bare here.
+    source_pool_question_id: Mapped[UUID | None] = mapped_column(PostgresUUID(as_uuid=True))
     question_snapshot: Mapped[dict] = mapped_column(JSONB, nullable=False)
     answer_options_snapshot: Mapped[dict] = mapped_column(JSONB, nullable=False)
     selected_wrong_answer: Mapped[str] = mapped_column(Text, nullable=False)
