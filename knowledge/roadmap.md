@@ -467,7 +467,7 @@ Student opens lecture/lab with completed summary → post-class quiz available
 
 ## Stage 5.5 — Module Schedule & Section Metadata — NEW in v3
 
-**Status:** IN PROGRESS. **5.5c (lab attachments) BACKEND VERIFIED** (2026-06-16, branch
+**Status:** IN PROGRESS. **5.5d (dev reseed) VERIFIED** (2026-06-17, branch
 `stage-55`): 5.5a fixed-template replacement is committed at `76f496f` (schedule required, 0020
 schedule provenance, 28-section oracle). 5.5b e2e suite rework is committed at `ab017db` (observed
 10-red run mapped, fixes applied, `playwright --list` clean, quarantine 0; runtime green still pending
@@ -477,16 +477,22 @@ sole port ownership). 5.5b feature work adds the metadata-edit endpoint + D13 re
 existing rows to `processable`), lab `.ipynb` attachments, backend streaming downloads with `nosniff`,
 upload-time lab `dueAt`, and a deterministic DB assertion that attachment uploads create no
 transcript/pipeline rows; backend verified with targeted tests **36 passed**, full backend
-**418 passed**, ruff clean, and frontend `tsc --noEmit` clean. ADR-040, ADR-041, ADR-042. See
+**418 passed**, ruff clean, and frontend `tsc --noEmit` clean. 5.5d records that no per-module dev
+schedule map exists, so all recreated dev modules use the reference schedule; actual dev run migrated
+`stage-55` DB to `0021`, replaced 16 modules, generated 448 stamped sections, removed all legacy
+template titles, and seeded one published lab with processable PDF + attachment notebook assets.
+Backend verified with targeted reseed tests **3 passed**, full backend **421 passed**, and ruff clean.
+ADR-040, ADR-041, ADR-042, ADR-043. See
 [[steps/stage-05/5.5a-schedule-generation]],
-[[steps/stage-05/5.5b-metadata-edit-and-week-resolver]], and
-[[steps/stage-05/5.5c-lab-attachments]].
+[[steps/stage-05/5.5b-metadata-edit-and-week-resolver]],
+[[steps/stage-05/5.5c-lab-attachments]], and
+[[steps/stage-05/5.5d-dev-reseed]].
 **May run in parallel with Stage 5** (admin domain, not quiz domain). **Hard prerequisite for Stage 6**;
 also feeds Stage 8.6 (time management) and Stage 11 (calendar seeding).
 
 **Why:** `week_number`, `session_date`, `due_at` exist in the schema but are never populated — module creation emits a fixed 4-section template, not the schedule-driven structure Slice 1 specifies. Recap quizzes (date range), exam-prep quizzes (covered weeks), assistant time-management, and the agent's calendar all resolve scope through exactly these fields. Without this session, Stage 6 stops at a findings note in its first week.
 
-**Backend scope:** module creation accepts schedule parameters (course dates, lecture days, lab days) driving section generation; admin can set/edit `week_number` / `session_date` / `due_at` per section; **backfill path for existing modules** (29 in dev); week→sections resolution query in `platform/query`.
+**Backend scope:** module creation accepts schedule parameters (course dates, lecture days, lab days) driving section generation; admin can set/edit `week_number` / `session_date` / `due_at` per section; **dev reseed replaces existing modules with reference-schedule modules**; week→sections resolution query in `platform/query`.
 
 **Thin UI scope:** admin schedule fields on module creation; per-section metadata editing in the admin UI.
 

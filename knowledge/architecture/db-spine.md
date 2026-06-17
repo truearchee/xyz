@@ -2,7 +2,7 @@
 type: architecture
 stage: 02
 created: 2026-05-29
-updated: 2026-06-16
+updated: 2026-06-17
 related-session: knowledge/specs/stage-02/2.1-db-spine.md
 ---
 
@@ -23,9 +23,11 @@ related-session: knowledge/specs/stage-02/2.1-db-spine.md
 - Report: [[steps/stage-05/5.5a-schedule-generation]]
 - Report: [[steps/stage-05/5.5b-metadata-edit-and-week-resolver]]
 - Report: [[steps/stage-05/5.5c-lab-attachments]]
+- Report: [[steps/stage-05/5.5d-dev-reseed]]
 - Decision: [[decisions/adr-040-schedule-driven-section-generation]]
 - Decision: [[decisions/adr-041-section-metadata-and-week-resolver]]
 - Decision: [[decisions/adr-042-lab-attachments]]
+- Decision: [[decisions/adr-043-dev-reseed]]
 - Spec: [[specs/stage-04/4.1-transcript-upload]]
 - Plan: [[plans/stage-04/4.1-transcript-upload]]
 - Report: [[steps/stage-04/4.1-transcript-upload]]
@@ -93,6 +95,9 @@ The backend now has a SQLAlchemy declarative model package under `backend/app/pl
   the content boundary and adds `platform/query/section_week_resolver.py`, a read-only stored-week
   resolver for Stage 6 scope lookup. The resolver returns lecture/lab section metadata only and does
   not apply student-facing publish/summary filters.
+- Stage 5.5d adds dev-only reseed tooling. It snapshots existing dev modules, deletes dependent rows,
+  recreates modules with the Stage 5.5 reference schedule, and seeds one published lab fixture. This is
+  replacement of throwaway dev data, not an in-place schema migration or production data path.
 
 ## Transcript schema notes
 - `transcripts.module_section_id` points at `module_sections(id)` and has a partial unique index, `uq_active_transcript_per_section`, for `is_active = true`.

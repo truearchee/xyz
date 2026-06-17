@@ -2,7 +2,7 @@
 type: architecture
 stage: 03
 created: 2026-05-30
-updated: 2026-06-16
+updated: 2026-06-17
 related-session: knowledge/specs/stage-03/3.1-file-upload.md
 ---
 
@@ -30,6 +30,7 @@ related-session: knowledge/specs/stage-03/3.1-file-upload.md
 - Decision: [[decisions/adr-008-private-section-asset-bucket]]
 - Decision: [[decisions/adr-013-signed-read-url-download-authz]]
 - Decision: [[decisions/adr-042-lab-attachments]]
+- Decision: [[decisions/adr-043-dev-reseed]]
 - Decision: [[decisions/adr-015-transcript-upload-boundary-active-invariant]]
 - Decision: [[decisions/adr-016-transcript-file-validation-storage-metadata]]
 - Decision: [[decisions/adr-019-transcript-parse-strategy]]
@@ -82,6 +83,10 @@ Stage 5.5c adds `GET /modules/{moduleId}/sections/{sectionId}/assets/{assetId}/d
 through `StorageProvider.get_object`, and returns `Content-Disposition: attachment`,
 `X-Content-Type-Options: nosniff`, and `Cache-Control: no-store`. Attachments are rejected on the
 signed-URL endpoint because Supabase signed URLs cannot attach the `nosniff` header.
+
+Stage 5.5d's dev reseed creates one published lab fixture with both paths represented: a processable
+PDF for signed URL reads and an attachment `.ipynb` for backend streaming. The fixture is dev data only
+and exists to make the 5.5e browser gate deterministic.
 
 ## Upload compensation
 Upload endpoints authorize the current user and section access before parsing multipart form data. After authorization, upload writes to storage first with `overwrite=False`, then inserts the DB row. If DB persistence fails after storage succeeds, the backend attempts an idempotent `delete_object(storage_key)` cleanup and returns a server error.
