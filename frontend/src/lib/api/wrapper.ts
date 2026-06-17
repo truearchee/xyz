@@ -3,6 +3,8 @@
 import {
   type ActiveSummaryPreviewRead,
   AdminService,
+  type AnswerFeedback,
+  type AnswerSubmission,
   ApiError,
   type AssignMemberRequest,
   ContentService,
@@ -11,6 +13,11 @@ import {
   MeService,
   ModulesService,
   OpenAPI,
+  type QuizAttemptForStudent,
+  type QuizAttemptResult,
+  type QuizAttemptsSummary,
+  type QuizAvailabilityResponse,
+  QuizService,
   type ResetPasswordRequest,
   type SectionAssetListResponse,
   type StudentSectionListItem,
@@ -208,6 +215,25 @@ export const api = {
     get: (moduleId: string) =>
       withAuthRecovery(() => ModulesService.getModuleModulesModuleIdGet(moduleId)),
     list: () => withAuthRecovery(() => ModulesService.listModulesModulesGet()),
+  },
+  quiz: {
+    getAvailability: (sectionId: string): Promise<QuizAvailabilityResponse> =>
+      withAuthRecovery(() => QuizService.getStudentQuizAvailability(sectionId)),
+    start: (sectionId: string): Promise<QuizAttemptForStudent> =>
+      withAuthRecovery(() => QuizService.startStudentQuiz(sectionId)),
+    getAttempt: (attemptId: string): Promise<QuizAttemptForStudent> =>
+      withAuthRecovery(() => QuizService.getStudentQuizAttempt(attemptId)),
+    answer: (
+      attemptId: string,
+      requestBody: AnswerSubmission,
+    ): Promise<AnswerFeedback> =>
+      withAuthRecovery(() =>
+        QuizService.answerStudentQuizQuestion(attemptId, requestBody),
+      ),
+    complete: (attemptId: string): Promise<QuizAttemptResult> =>
+      withAuthRecovery(() => QuizService.completeStudentQuiz(attemptId)),
+    getAttemptsSummary: (sectionId: string): Promise<QuizAttemptsSummary> =>
+      withAuthRecovery(() => QuizService.getStudentQuizAttemptsSummary(sectionId)),
   },
   studentSummaries: {
     listSections: (moduleId: string): Promise<Array<StudentSectionListItem>> =>

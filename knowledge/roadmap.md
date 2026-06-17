@@ -61,7 +61,7 @@ DONE             — governance stages where no browser gate applies (Stage 0 on
 ✅ Stage 4.7   Student-facing summaries                   FULLY VERIFIED — gate G1–G9 GREEN; full active suite 11/11 ON MAIN (backend 389); restored Stage 3 visibility E2E; review R1–R3 resolved
 Stage 4.8   First hosted deploy (staging)              NOT STARTED  (new in v3)  ← next
 Stage 4.9   Frontend foundation + platform hygiene     NOT STARTED  (new in v3)
-Stage 5     Shared quiz engine + event spine           NOT STARTED
+✅ Stage 5   Shared quiz engine + event spine           FULLY VERIFIED (branch spec-5; not yet merged) — 5a schema+event spine (migs 0014–0019), 5b generation+recovery (0020 AIRequestLog decouple), 5c HTTP surface, 5d UI+gates, 5e review fixes. Gate 1 (browser) GREEN (--workers=1, 1 passed); Gate 3 (real-provider smoke) GREEN (rule-11 echo). Backend 442 pytest; frontend tsc green; ADR-040..046; F-5d-1 resolved (max_tokens→16000). ⚠ MERGE: migration block 0014–0020 collides with sibling branches' 0014–0016 — renumber at merge (open-questions #5a)
 Stage 5.5   Module schedule & section metadata         NOT STARTED  (new in v3; parallel-OK with 5; blocks 6)
 Stage 6     Complete quiz modes                        NOT STARTED
 Stage 7     Glossary                                   NOT STARTED
@@ -423,7 +423,12 @@ Hygiene batch (one tidy-up commit):
 
 ## Stage 5 — Shared Quiz Engine + Event Spine
 
-**Status:** NOT STARTED.
+**Status:** ✅ **FULLY VERIFIED** on branch `spec-5` (not yet merged). 5a schema/event spine, 5b
+generation/recovery, 5c HTTP surface, 5d student UI + browser and real-provider gates, and 5e review
+fixes are complete. Latest verification recorded in [[steps/stage-05/5e-review-finding-fixes]]:
+backend `442 passed`; frontend `tsc --noEmit` exit 0; Gate 1 browser and Gate 3 real-provider smoke both
+green. Merge-time caveat: migration block 0014-0020 collides with sibling 0014-0016 work and must be
+renumbered/rebased before landing on `main`.
 
 **Goal:** shared MCQ engine + the platform activity event spine.
 

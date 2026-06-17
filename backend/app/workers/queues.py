@@ -33,6 +33,10 @@ def get_ai_queue() -> Queue:
     return Queue(AI_QUEUE_NAME, connection=get_redis_connection())
 
 
+def quiz_generation_job_id(attempt_id: UUID) -> str:
+    return f"quiz-generate:{attempt_id}"
+
+
 def enqueue_parse_transcript(transcript_id: UUID) -> None:
     from app.domains.transcripts.jobs import parse_transcript
 
@@ -77,6 +81,19 @@ def enqueue_generate_detailed_summary(ingestion_job_id: UUID) -> None:
         job_id=f"summary-detailed-{ingestion_job_id}",
         retry=Retry(max=AI_RQ_RETRY_MAX, interval=AI_RQ_RETRY_INTERVALS),
     )
+
+
+def enqueue_generate_post_class_quiz(attempt_id: UUID) -> str:
+    from app.domains.quiz.jobs import generate_post_class_quiz
+
+    job_id = quiz_generation_job_id(attempt_id)
+    get_ai_queue().enqueue(
+        generate_post_class_quiz,
+        str(attempt_id),
+        job_id=job_id,
+        retry=Retry(max=AI_RQ_RETRY_MAX, interval=AI_RQ_RETRY_INTERVALS),
+    )
+    return job_id
 
 
 def enqueue_summary_job(job_type: str, ingestion_job_id: UUID) -> None:

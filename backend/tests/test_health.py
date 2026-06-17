@@ -2,6 +2,11 @@ from httpx import AsyncClient
 import pytest
 
 from app.main import app
+from app.platform.config import settings
+
+
+def _configured_allowed_origin() -> str:
+    return settings.CORS_ORIGINS[0]
 
 
 @pytest.mark.anyio
@@ -16,27 +21,29 @@ async def test_health_returns_ok():
 
 @pytest.mark.anyio
 async def test_health_cors_allowed_origin():
+    origin = _configured_allowed_origin()
     async with AsyncClient(app=app, base_url="http://test") as client:
         response = await client.get(
             "/health",
-            headers={"Origin": "http://localhost:3000"},
+            headers={"Origin": origin},
         )
     assert response.status_code == 200
-    assert response.headers.get("access-control-allow-origin") == "http://localhost:3000"
+    assert response.headers.get("access-control-allow-origin") == origin
 
 
 @pytest.mark.anyio
 async def test_health_cors_preflight():
+    origin = _configured_allowed_origin()
     async with AsyncClient(app=app, base_url="http://test") as client:
         response = await client.options(
             "/health",
             headers={
-                "Origin": "http://localhost:3000",
+                "Origin": origin,
                 "Access-Control-Request-Method": "GET",
             },
         )
     assert response.status_code in (200, 204)
-    assert response.headers.get("access-control-allow-origin") == "http://localhost:3000"
+    assert response.headers.get("access-control-allow-origin") == origin
     assert "GET" in response.headers.get("access-control-allow-methods", "")
 
 

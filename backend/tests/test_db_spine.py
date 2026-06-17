@@ -29,6 +29,13 @@ EXPECTED_TABLES = {
     "transcript_chunks",
     "ingestion_jobs",
     "maintenance_runs",
+    "student_activity_events",
+    "quiz_definitions",
+    "quiz_attempts",
+    "quiz_questions",
+    "answer_options",
+    "student_answers",
+    "mistake_records",
 }
 EXPECTED_ID_DEFAULTS = {table: None for table in EXPECTED_TABLES}
 EXPECTED_CHECKS = {
@@ -64,6 +71,12 @@ EXPECTED_CHECKS = {
     "ck_transcript_chunks_chunk_index",
     "ck_transcript_chunks_sequence_range",
     "ck_transcript_chunks_embedding_provenance",
+    "ck_student_activity_events_event_type",
+    "ck_quiz_definitions_quiz_mode",
+    "ck_quiz_attempts_status",
+    "ck_quiz_attempts_failure_category",
+    "ck_quiz_questions_question_type",
+    "ck_quiz_questions_source_type",
 }
 EXPECTED_INDEXES = {
     "ix_course_memberships_active_user_module",
@@ -83,6 +96,17 @@ EXPECTED_INDEXES = {
     "uq_transcript_chunks_transcript_chunk_index",
     "uq_transcripts_storage_key",
     "ingestion_jobs_one_active_embed_per_transcript",
+    "uq_student_activity_events_type_source",
+    "ix_student_activity_events_student_type",
+    "uq_quiz_definitions_post_class_section",
+    "uq_quiz_attempts_one_active",
+    "uq_quiz_attempts_student_def_number",
+    "ix_quiz_attempts_student_definition",
+    "ix_quiz_questions_attempt_order",
+    "ix_answer_options_question_order",
+    "uq_student_answers_attempt_question",
+    "uq_mistake_records_attempt_question",
+    "ix_mistake_records_student_module",
 }
 
 

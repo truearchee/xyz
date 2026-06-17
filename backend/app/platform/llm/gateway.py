@@ -31,11 +31,13 @@ from app.platform.llm.limiter import BackoffPolicy, RedisRateLimiter, get_rate_l
 from app.platform.llm.logging import close_request_log, open_request_log
 from app.platform.llm.models.prompt import (
     Backend,
+    FEATURES_REQUIRING_INGESTION_JOB,
+    GatewayFeature,
     Priority,
     PromptKey,
-    SummaryFeature,
     Usage,
 )
+from app.platform.llm.models.quiz import PostClassQuiz
 from app.platform.llm.models.summary import BriefSummary, DetailedSummary
 from app.platform.llm.provider import LLMProvider, get_provider
 from app.platform.llm.registry import PromptRegistry, get_prompt_registry
@@ -46,14 +48,18 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class ContextRefs:
-    ingestion_job_id: UUID
+    # Optional (0020): quiz/assistant calls have no IngestionJob. Summary features still require it,
+    # enforced at the application layer in ``complete()`` (not by this type). ``transcript_text`` is
+    # the source text rendered into the prompt's ``{{transcript}}`` placeholder — for quiz generation
+    # that is the detailed-summary text, not a transcript.
+    ingestion_job_id: UUID | None
     transcript_text: str
     input_content_hash: str
     section_type: str
 
 
 class CompletionResult(TypedDict):
-    parsed: BriefSummary | DetailedSummary
+    parsed: BriefSummary | DetailedSummary | PostClassQuiz
     model_id_echoed: str
     usage: Usage
     backend_used: Backend
@@ -113,12 +119,19 @@ class LLMGateway:
         self,
         *,
         prompt_key: PromptKey,
-        output_schema: type[BriefSummary] | type[DetailedSummary],
+        output_schema: type[BriefSummary] | type[DetailedSummary] | type[PostClassQuiz],
         context_refs: ContextRefs,
         priority: Priority,
-        feature: SummaryFeature,
+        feature: GatewayFeature,
         attempt_number: int = 1,
     ) -> CompletionResult:
+        # Application-layer contract (0020 / D-B): the ingestion_job_id column is nullable platform-wide,
+        # but the summary features MUST still carry one. The optionality is a property of the new
+        # (quiz/assistant) features, NOT a hole punched in the summary contract — enforced here, before
+        # any log row is opened, so a summary caller passing None fails loud rather than logging a NULL.
+        if feature in FEATURES_REQUIRING_INGESTION_JOB and context_refs.ingestion_job_id is None:
+            raise ValueError(f"feature {feature!r} requires context_refs.ingestion_job_id")
+
         rendered = self._registry.render(
             prompt_key,
             transcript=context_refs.transcript_text,

@@ -5,7 +5,16 @@ from typing import Literal, TypedDict
 
 Backend = Literal["cerebras", "nvidia"]
 Priority = Literal["interactive", "background"]
-SummaryFeature = Literal["summary_brief", "summary_detailed"]
+# Widened by addition (Stage 5b): the gateway serves more than summaries now. The summary members are
+# unchanged; ``post_class_quiz`` is added. ``GatewayFeature`` is the canonical name for new code;
+# ``SummaryFeature`` stays as a back-compatible alias so existing summary call sites are untouched.
+GatewayFeature = Literal["summary_brief", "summary_detailed", "post_class_quiz"]
+SummaryFeature = GatewayFeature
+# Features that MUST carry an ingestion_job_id (transcript-ingestion-bound calls). Enforced at the
+# application layer by the gateway — the DB column is nullable (0020) but the summary contract is not.
+FEATURES_REQUIRING_INGESTION_JOB: frozenset[str] = frozenset(
+    {"summary_brief", "summary_detailed"}
+)
 
 
 class Usage(TypedDict):

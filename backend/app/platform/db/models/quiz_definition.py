@@ -1,0 +1,77 @@
+from __future__ import annotations
+
+from datetime import datetime
+from uuid import UUID
+
+from sqlalchemy import (
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    Text,
+    text,
+)
+from sqlalchemy.dialects.postgresql import JSONB, UUID as PostgresUUID
+from sqlalchemy.orm import Mapped, mapped_column
+from uuid6 import uuid7
+
+from app.platform.db.models.base import Base
+
+
+class QuizDefinition(Base):
+    """A thin anchor row for one quiz of a module section (Stage 5 lock 2).
+
+    Materialized get-or-create on ``POST start`` only — never on a read. There is NO persisted readiness
+    ``status`` (a stored-but-untrusted status is a drift magnet; readiness is computed every time) and NO
+    summary pointer (the active summary is resolved live at Start and snapshotted onto the attempt, which
+    is supersession-safe). ``quiz_mode`` carries the full reserved vocabulary; Stage 5 uses ``post_class``
+    only, enforced one-per-section by the partial-unique index. ``module_id`` is derived from the section's
+    ``course_module_id`` by the writer (needed for event emit).
+    """
+
+    __tablename__ = "quiz_definitions"
+    __table_args__ = (
+        CheckConstraint(
+            "quiz_mode IN ('post_class', 'recap', 'exam_prep', 'mistakes_bank')",
+            name="ck_quiz_definitions_quiz_mode",
+        ),
+        Index(
+            "uq_quiz_definitions_post_class_section",
+            "module_section_id",
+            unique=True,
+            postgresql_where=text("quiz_mode = 'post_class'"),
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PostgresUUID(as_uuid=True),
+        primary_key=True,
+        default=uuid7,
+    )
+    module_section_id: Mapped[UUID] = mapped_column(
+        PostgresUUID(as_uuid=True),
+        ForeignKey("module_sections.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    module_id: Mapped[UUID] = mapped_column(
+        PostgresUUID(as_uuid=True),
+        ForeignKey("course_modules.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    quiz_mode: Mapped[str] = mapped_column(Text, nullable=False)
+    question_policy: Mapped[dict] = mapped_column(
+        JSONB,
+        nullable=False,
+        server_default=text("""'{"count": 10, "optionsPerQuestion": 4}'::jsonb"""),
+    )
+    source_scope: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("now()"),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("now()"),
+    )
