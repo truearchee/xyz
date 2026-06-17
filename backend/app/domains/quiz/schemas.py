@@ -145,3 +145,20 @@ class ExamPrepScopeSummary(CamelModel):
     covered_weeks: list[int]
     available: bool
     reason_code: str | None = None
+
+
+class MistakeBankItem(CamelModel):
+    """One current-student mistake as shown in the module mistakes-bank."""
+
+    id: UUID
+    module_id: UUID
+    module_section_id: UUID
+    source_quiz_definition_id: UUID
+    question_snapshot: dict
+    answer_options_snapshot: dict
+    selected_wrong_answer: str
+    correct_answer: str
+    explanation: str | None = None
+    retake_correct_count: int
+    show_in_retake_prefix: bool
+    updated_at: datetime

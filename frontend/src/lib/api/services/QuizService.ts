@@ -5,6 +5,7 @@
 import type { AnswerFeedback } from '../models/AnswerFeedback';
 import type { AnswerSubmission } from '../models/AnswerSubmission';
 import type { ExamPrepScopeSummary } from '../models/ExamPrepScopeSummary';
+import type { PaginatedResponse_MistakeBankItem_ } from '../models/PaginatedResponse_MistakeBankItem_';
 import type { QuizAttemptForStudent } from '../models/QuizAttemptForStudent';
 import type { QuizAttemptResult } from '../models/QuizAttemptResult';
 import type { QuizAttemptsSummary } from '../models/QuizAttemptsSummary';
@@ -268,6 +269,64 @@ export class QuizService {
             url: '/student/assessment-scopes/{scope_id}/exam-prep-quiz/start',
             path: {
                 'scope_id': scopeId,
+            },
+            headers: {
+                'Authorization': authorization,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * List Mistakes Bank
+     * @param moduleId
+     * @param limit
+     * @param offset
+     * @param authorization
+     * @returns PaginatedResponse_MistakeBankItem_ Successful Response
+     * @throws ApiError
+     */
+    public static listStudentMistakesBank(
+        moduleId: string,
+        limit: number = 50,
+        offset?: number,
+        authorization?: (string | null),
+    ): CancelablePromise<PaginatedResponse_MistakeBankItem_> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/student/modules/{module_id}/mistakes-bank',
+            path: {
+                'module_id': moduleId,
+            },
+            headers: {
+                'Authorization': authorization,
+            },
+            query: {
+                'limit': limit,
+                'offset': offset,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Start Mistakes Bank
+     * @param moduleId
+     * @param authorization
+     * @returns QuizAttemptForStudent Successful Response
+     * @throws ApiError
+     */
+    public static startStudentMistakesBank(
+        moduleId: string,
+        authorization?: (string | null),
+    ): CancelablePromise<QuizAttemptForStudent> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/student/modules/{module_id}/mistakes-bank/start',
+            path: {
+                'module_id': moduleId,
             },
             headers: {
                 'Authorization': authorization,

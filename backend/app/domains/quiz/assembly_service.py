@@ -43,6 +43,7 @@ from app.domains.quiz.sampling import (
 )
 from app.platform.db.models import (
     AnswerOption,
+    MistakeRecord,
     PoolQuestion,
     QuizAttempt,
     QuizDefinition,
@@ -259,6 +260,11 @@ async def _assemble(
     seed_override: int | None,
 ) -> None:
     per_section = _per_section_count(definition)
+    prefix_mistakes = await _load_retake_prefix_mistakes(
+        session,
+        student_id=attempt.student_id,
+        definition=definition,
+    )
     plans: list[SectionSamplePlan] = []
     for pool in ready_pools:
         refs = await _load_pool_refs(
@@ -269,13 +275,26 @@ async def _assemble(
         )
 
     seed = seed_for_attempt(attempt.id, override=seed_override)
-    chosen = sample_across_sections(plans, seed=seed)
+    prefix_pool_ids = frozenset(
+        m.source_pool_question_id for m in prefix_mistakes if m.source_pool_question_id is not None
+    )
+    chosen = sample_across_sections(plans, seed=seed, exclude=prefix_pool_ids)
     pool_by_section = {p.module_section_id: p for p in ready_pools}
     section_by_pool_question = await _section_for_pool_questions(
         session, [c.id for c in chosen]
     )
 
     display_order = 0
+    for mistake in prefix_mistakes:
+        await _snapshot_mistake_question(
+            session,
+            attempt_id=attempt.id,
+            definition=definition,
+            mistake=mistake,
+            display_order=display_order,
+        )
+        display_order += 1
+
     for ref in chosen:
         section_id = section_by_pool_question.get(ref.id)
         pool = pool_by_section.get(section_id) if section_id is not None else None
@@ -314,13 +333,139 @@ async def _assemble(
     first_pool = ready_pools[0]
     attempt.status = "in_progress"
     attempt.total_questions = display_order
-    attempt.new_question_count = display_order
-    attempt.mistake_review_question_count = 0
+    attempt.new_question_count = len(chosen)
+    attempt.mistake_review_question_count = len(prefix_mistakes)
     attempt.model_name = first_pool.model
     attempt.prompt_version = first_pool.prompt_version
     attempt.backend_used = "nvidia"
     attempt.generation_completed_at = now
     attempt.updated_at = now
+
+
+async def start_mistakes_bank_attempt(
+    factory: async_sessionmaker[AsyncSession] | None,
+    *,
+    student_id: UUID,
+    module_id: UUID,
+    quiz_definition_id: UUID,
+) -> PooledStartResult:
+    """Create an in-progress mistakes-bank attempt from the student's module mistake snapshots.
+
+    No pool, no AI, no worker job: the bank practices existing mistakes only. The shared definition is per
+    module, while the attempt contents are strictly filtered by ``student_id``.
+    """
+    f = factory or async_session
+    if f is None:
+        raise RuntimeError("DATABASE_URL environment variable is required")
+    async with f() as session:
+        async with session.begin():
+            definition = await session.get(QuizDefinition, quiz_definition_id)
+            if definition is None or definition.quiz_mode != "mistakes_bank":
+                raise PooledQuizUnavailableError(str(quiz_definition_id))
+            existing = await _non_terminal_attempt(
+                session, student_id=student_id, definition_id=quiz_definition_id
+            )
+            if existing is not None:
+                return PooledStartResult(existing.id, existing.status, created=False)
+            mistakes = await _load_bank_mistakes(session, student_id=student_id, module_id=module_id)
+            if not mistakes:
+                raise PooledQuizUnavailableError(str(module_id))
+
+            next_number = await _next_attempt_number(
+                session, student_id=student_id, definition_id=quiz_definition_id
+            )
+            now = _now()
+            attempt = QuizAttempt(
+                quiz_definition_id=quiz_definition_id,
+                student_id=student_id,
+                attempt_number=next_number,
+                status="in_progress",
+                started_at=now,
+                generation_started_at=now,
+                generation_completed_at=now,
+                total_questions=len(mistakes),
+                new_question_count=0,
+                mistake_review_question_count=len(mistakes),
+            )
+            session.add(attempt)
+            await session.flush()
+            for display_order, mistake in enumerate(mistakes):
+                await _snapshot_mistake_question(
+                    session,
+                    attempt_id=attempt.id,
+                    definition=definition,
+                    mistake=mistake,
+                    display_order=display_order,
+                )
+            return PooledStartResult(attempt.id, attempt.status, created=True)
+
+
+async def _load_retake_prefix_mistakes(
+    session: AsyncSession,
+    *,
+    student_id: UUID,
+    definition: QuizDefinition,
+) -> list[MistakeRecord]:
+    if definition.quiz_mode == "mistakes_bank":
+        return []
+    return (
+        await session.execute(
+            select(MistakeRecord)
+            .where(
+                MistakeRecord.student_id == student_id,
+                MistakeRecord.source_quiz_definition_id == definition.id,
+                MistakeRecord.show_in_retake_prefix.is_(True),
+            )
+            .order_by(MistakeRecord.updated_at.asc(), MistakeRecord.id.asc())
+        )
+    ).scalars().all()
+
+
+async def _load_bank_mistakes(
+    session: AsyncSession, *, student_id: UUID, module_id: UUID
+) -> list[MistakeRecord]:
+    return (
+        await session.execute(
+            select(MistakeRecord)
+            .where(MistakeRecord.student_id == student_id, MistakeRecord.module_id == module_id)
+            .order_by(MistakeRecord.updated_at.desc(), MistakeRecord.id.desc())
+        )
+    ).scalars().all()
+
+
+async def _snapshot_mistake_question(
+    session: AsyncSession,
+    *,
+    attempt_id: UUID,
+    definition: QuizDefinition,
+    mistake: MistakeRecord,
+    display_order: int,
+) -> None:
+    snapshot = mistake.question_snapshot or {}
+    question = QuizQuestion(
+        quiz_attempt_id=attempt_id,
+        question_text=str(snapshot.get("questionText") or ""),
+        display_order=display_order,
+        question_type="multiple_choice",
+        explanation=mistake.explanation or snapshot.get("explanation"),
+        source_type="mistake_review",
+        source_mistake_record_id=mistake.id,
+        source_pool_question_id=mistake.source_pool_question_id,
+        source_module_id=definition.module_id,
+        source_section_id=mistake.module_section_id,
+    )
+    session.add(question)
+    await session.flush()
+    options = (mistake.answer_options_snapshot or {}).get("options") or []
+    for index, option in enumerate(options):
+        session.add(
+            AnswerOption(
+                quiz_question_id=question.id,
+                text=str(option.get("text", "")),
+                display_order=int(option.get("displayOrder", index)),
+                is_correct=bool(option.get("isCorrect", False)),
+            )
+        )
 
 
 # ── reads ─────────────────────────────────────────────────────────────────────────────────────────

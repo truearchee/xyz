@@ -145,3 +145,6 @@ ADR-047 — Per-section question pool: the Stage 6 capacity decision.
   checkpoint `19af1d3` on `stage-6`. Strengthened the gate write-up to name the REUSE proof explicitly
   (distinct from the herd lock) and flagged the 6c multi-section event-scope carry-forward. Stage remains
   OPEN (browser gate at 6d).
+- 2026-06-17 — [Session 6c] extended `domains/quiz/assembly_service.py` with retake-prefix snapshot
+  assembly and synchronous no-AI mistakes-bank assembly; 6a pool generation/reuse behavior remains covered
+  by `tests/test_quiz_pool.py` in the 6c focused gate.

@@ -1,12 +1,19 @@
 # Status
 
-_Last updated: 2026-06-17 — **Stage 6 IN PROGRESS — 6b recap + exam-prep + authorization BACKEND VERIFIED**
-(on branch `stage-6`; 6a committed at `19af1d3`). 6b adds the two multi-section modes on the 6a engine —
-migration 0025, AssessmentScope lecturer CRUD, recap/exam-prep scope resolution + canonical-key SHARED
-definitions, the binding authorization (404-not-403, lecturer-on-module, published-only sampling), unified
-multi-section visibility, D1 pre-warm + D3 all-or-wait; OpenAPI client regenerated, tsc green; full backend
-**497 passed**, single head **0025**. Detail: [[steps/stage-06/6b-recap-examprep-authorization]]. Below is
-the prior 6a foundation summary._
+_Last updated: 2026-06-17 — **Stage 6 IN PROGRESS — 6c retake + mistakes-bank BACKEND VERIFIED**
+(on branch `stage-6`; 6a committed at `19af1d3`, 6b committed at `024ae91`). 6c adds the backend retake
+mistake-review prefix, cumulative source-quiz flip-at-2, and per-module own-student-only mistakes-bank
+list/start from snapshots (no AI/pool generation). OpenAPI client regenerated, tsc green; full backend
+**501 passed**, single head **0025** (no 6c migration). Detail:
+[[steps/stage-06/6c-retake-mistakes-bank]]. Below are prior Stage 6 summaries._
+
+_Prior (6b): **Stage 6b recap + exam-prep + authorization BACKEND VERIFIED + COMMITTED** (`024ae91`).
+Migration **0025** adds `assessment_scopes` and multi-section `quiz_definitions` (`module_section_id`
+nullable + `scope_key` + `assessment_scope_id` + dedup index). Recap/exam-prep resolve eligible scopes to
+SHARED definitions on the 6a engine; authorization pins 404-not-403, lecturer-on-module, published-only
+student sampling, unified multi-section visibility, D1 pre-warm, and D3 all-or-wait. 6b also pulled forward
+scope-aware event metadata and section/pool-aware mistake creation. Verified: 6b suite 7 passed; full
+backend 497 passed; ruff clean; tsc exit 0. See [[steps/stage-06/6b-recap-examprep-authorization]]._
 
 _Prior (6a): **Stage 6a per-section pool foundation BACKEND VERIFIED + COMMITTED** (`19af1d3`). 6a builds
 the Stage 6 question ENGINE — no
@@ -49,7 +56,7 @@ feature is a tracked reconcile-at-integration item (not a 6a reopen). See [[step
 
 - **6a — pool foundation — BACKEND VERIFIED + COMMITTED** (`19af1d3`). The engine + sampling/assembly/
   mistake-identity primitives, gate-proven.
-- **6b — recap + exam_prep + authorization — BACKEND VERIFIED** (this session). Migration 0025
+- **6b — recap + exam_prep + authorization — BACKEND VERIFIED + COMMITTED** (`024ae91`). Migration 0025
   (`assessment_scopes` + multi-section `quiz_definitions`: nullable section + `scope_key` +
   `assessment_scope_id` + dedup index). AssessmentScope lecturer CRUD (lecturer-on-module 403);
   recap/exam-prep scope resolution → canonical-key SHARED definition → 6a `start_pooled_attempt`;
@@ -59,14 +66,34 @@ feature is a tracked reconcile-at-integration item (not a 6a reopen). See [[step
   scope-aware event metadata + section/pool-aware `answer()` mistake creation. OpenAPI client regenerated;
   `tsc` green. **Verified:** single head **0025**; 6b suite **7 passed**; full backend **497 passed**; ruff
   clean; tsc exit 0. See [[steps/stage-06/6b-recap-examprep-authorization]].
-- **6c — NOT STARTED.** Retake reinforcement (wire `upsert_pool_mistake` + the atomic flip-at-2 into
-  `service.answer`) + mistakes-bank (per module, from snapshots, paginated) + event metadata (mode +
-  multi-section scope) for all modes.
+- **6c — retake reinforcement + mistakes-bank — BACKEND VERIFIED** (this session). Retake prefix snapshots
+  active current-student mistakes first, then draws a fresh pool sample excluding prefixed pool questions.
+  Correct source-quiz prefix answers advance `retake_correct_count` and clear `show_in_retake_prefix` at 2;
+  duplicate answers do not count; mistakes-bank practice does not advance the source-quiz counter. The
+  bank is per module (`course_modules`), paginated, own-student-only, and assembled synchronously from
+  snapshots with no AI/pool generation. **Verified:** 6c+6b+6a focused gate **19 passed**; full backend
+  **501 passed**; changed-file ruff clean; single head **0025**; client regenerated; tsc exit 0. See
+  [[steps/stage-06/6c-retake-mistakes-bank]].
 - **6d — NOT STARTED.** UI (compose 4.9 primitives, reuse `mcq.tsx` verbatim) + browser gate +
   real-provider smoke on the quiz-pool path + the post-class retrofit (D4, last, revertible) + full active
   E2E suite (rule 14). Stage 6 closes here; the roadmap status table flips then.
 
-## Verification (6a)
+## Verification (6c)
+
+```bash
+docker compose run --rm --no-deps backend pytest -q tests/test_quiz_mistakes_bank.py tests/test_quiz_recap_examprep.py tests/test_quiz_pool.py
+# 19 passed
+docker compose run --rm --no-deps backend pytest -q
+# 501 passed, 137 warnings in 71.88s
+ruff check <changed backend files>
+# All checks passed!
+docker compose run --rm --no-deps backend alembic heads
+# 0025 (head)
+cd frontend && npx tsc --noEmit
+# exit 0
+```
+
+## Prior verification (6a)
 
 ```bash
 # rebuilt kyiv-backend image; db service up (backend host :8000 held by a sibling stack → ran via `run`)
@@ -87,6 +114,12 @@ ruff check <changed files>
 - 6a spec: [[specs/stage-06/6a-pool-foundation]]
 - 6a plan: [[plans/stage-06/6a-pool-foundation]]
 - 6a report: [[steps/stage-06/6a-pool-foundation]]
+- 6b spec: [[specs/stage-06/6b-recap-examprep-authorization]]
+- 6b plan: [[plans/stage-06/6b-recap-examprep-authorization]]
+- 6b report: [[steps/stage-06/6b-recap-examprep-authorization]]
+- 6c spec: [[specs/stage-06/6c-retake-mistakes-bank]]
+- 6c plan: [[plans/stage-06/6c-retake-mistakes-bank]]
+- 6c report: [[steps/stage-06/6c-retake-mistakes-bank]]
 - ADR: [[decisions/adr-047-section-question-pool-capacity]]
 - Shared-infra coordination (Stage 7): [[steps/findings-6-shared-infra]]
 

@@ -25,6 +25,7 @@ export type { ExamPrepScopeSummary } from './models/ExamPrepScopeSummary';
 export type { HTTPValidationError } from './models/HTTPValidationError';
 export type { MaintenanceRunRead } from './models/MaintenanceRunRead';
 export type { MembershipResponse } from './models/MembershipResponse';
+export type { MistakeBankItem } from './models/MistakeBankItem';
 export type { ModuleDetail } from './models/ModuleDetail';
 export { ModuleMemberResponse } from './models/ModuleMemberResponse';
 export type { ModuleResponse } from './models/ModuleResponse';
@@ -33,6 +34,7 @@ export type { ModuleSchedulePreviewResponse } from './models/ModuleSchedulePrevi
 export { ModuleSectionPreview } from './models/ModuleSectionPreview';
 export type { ModuleSummary } from './models/ModuleSummary';
 export type { PaginatedResponse_AssessmentScopeResponse_ } from './models/PaginatedResponse_AssessmentScopeResponse_';
+export type { PaginatedResponse_MistakeBankItem_ } from './models/PaginatedResponse_MistakeBankItem_';
 export type { PaginationMeta } from './models/PaginationMeta';
 export type { QuizAttemptForStudent } from './models/QuizAttemptForStudent';
 export type { QuizAttemptResult } from './models/QuizAttemptResult';

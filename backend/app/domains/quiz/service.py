@@ -18,7 +18,11 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.domains.quiz.assembly_service import start_pooled_attempt
+from app.domains.quiz.assembly_service import (
+    PooledQuizUnavailableError,
+    start_mistakes_bank_attempt,
+    start_pooled_attempt,
+)
 from app.domains.quiz.generation_service import (
     QuizUnavailableError,
     SectionNotFoundError,
@@ -30,6 +34,7 @@ from app.domains.quiz.schemas import (
     AnswerForStudent,
     AnswerSubmission,
     ExamPrepScopeSummary,
+    MistakeBankItem,
     QuizAttemptForStudent,
     QuizAttemptResult,
     QuizAttemptsSummary,
@@ -41,7 +46,9 @@ from app.domains.quiz.schemas import (
 )
 from app.domains.quiz.scope_service import (
     EXAM_PREP_MODE,
+    MISTAKES_BANK_MODE,
     RECAP_MODE,
+    get_or_create_mistakes_bank_definition,
     get_or_create_pooled_definition,
     resolve_exam_prep_scope,
     resolve_recap_scope,
@@ -62,6 +69,7 @@ from app.platform.query.quiz_read import (
     VisibleAttempt,
     get_attempt_questions_for_student,
     get_attempts_aggregate,
+    get_mistake_bank_page,
     get_visible_attempt,
 )
 from app.platform.query.student_summary_read import get_visible_student_section
@@ -269,9 +277,19 @@ async def answer(
             mistake_saved=bool(mistake_exists),
         )
 
-    # 5/6. on incorrect → MistakeRecord (idempotent snapshot of DISPLAY-TIME state).
+    await _apply_retake_prefix_progress(
+        db,
+        current_user=current_user,
+        visible=visible,
+        question=question,
+        is_correct=is_correct,
+    )
+
+    # 5/6. on incorrect NEW questions → MistakeRecord (idempotent snapshot of DISPLAY-TIME state). A
+    # mistake_review question already IS a bank/prefix mistake, so a wrong practice answer must not create a
+    # duplicate MistakeRecord.
     mistake_saved = False
-    if not is_correct:
+    if not is_correct and question.source_type != "mistake_review":
         mistake_saved = True
         snapshot_options = [
             {
@@ -344,6 +362,44 @@ async def answer(
         already_answered=False,
         mistake_saved=mistake_saved,
     )
+
+
+async def _apply_retake_prefix_progress(
+    db: AsyncSession,
+    *,
+    current_user: CurrentUserContext,
+    visible: VisibleAttempt,
+    question: QuizQuestion,
+    is_correct: bool,
+) -> None:
+    """D2 default: only correct answers to source-quiz retake prefix questions advance the counter.
+
+    Bank practice is pure practice (no progress), and this is called only after the first successful answer
+    insert, so duplicate submits cannot double-count.
+    """
+    if (
+        not is_correct
+        or visible.quiz_mode == MISTAKES_BANK_MODE
+        or question.source_type != "mistake_review"
+        or question.source_mistake_record_id is None
+    ):
+        return
+    mistake = (
+        await db.execute(
+            select(MistakeRecord)
+            .where(
+                MistakeRecord.id == question.source_mistake_record_id,
+                MistakeRecord.student_id == current_user.user_id,
+                MistakeRecord.source_quiz_definition_id == visible.quiz_definition_id,
+            )
+            .with_for_update()
+        )
+    ).scalar_one_or_none()
+    if mistake is None:
+        return
+    mistake.retake_correct_count += 1
+    mistake.show_in_retake_prefix = mistake.retake_correct_count < 2
+    mistake.updated_at = _now()
 
 
 # ── complete (the atomic unit) ───────────────────────────────────────────────────────────────────
@@ -601,4 +657,51 @@ async def start_exam_prep(
     start = await start_pooled_attempt(
         factory, student_id=current_user.user_id, quiz_definition_id=definition_id
     )
+    return await get_attempt(db, current_user=current_user, attempt_id=start.attempt_id)
+
+
+# ── mistakes-bank (Stage 6c) ─────────────────────────────────────────────────────────────────────
+async def list_mistakes_bank(
+    db: AsyncSession,
+    *,
+    current_user: CurrentUserContext,
+    module_id: UUID,
+    limit: int,
+    offset: int,
+) -> tuple[list[MistakeBankItem], int]:
+    _require_student(current_user.role)
+    items, total = await get_mistake_bank_page(
+        db,
+        student_id=current_user.user_id,
+        module_id=module_id,
+        limit=limit,
+        offset=offset,
+    )
+    if total < 0:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=MODULE_NOT_FOUND)
+    return ([MistakeBankItem.model_validate(item) for item in items], total)
+
+
+async def start_mistakes_bank(
+    db: AsyncSession,
+    *,
+    current_user: CurrentUserContext,
+    module_id: UUID,
+) -> QuizAttemptForStudent:
+    _require_student(current_user.role)
+    if not await student_is_active_member(
+        db, student_id=current_user.user_id, module_id=module_id
+    ):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=MODULE_NOT_FOUND)
+    factory = _scope_factory(db)
+    definition_id = await get_or_create_mistakes_bank_definition(factory, module_id=module_id)
+    try:
+        start = await start_mistakes_bank_attempt(
+            factory,
+            student_id=current_user.user_id,
+            module_id=module_id,
+            quiz_definition_id=definition_id,
+        )
+    except PooledQuizUnavailableError:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail={"code": "no_mistakes"}) from None
     return await get_attempt(db, current_user=current_user, attempt_id=start.attempt_id)

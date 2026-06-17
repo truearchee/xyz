@@ -8,7 +8,7 @@ created: 2026-06-17
 updated: 2026-06-17
 spec: knowledge/specs/stage-06/6b-recap-examprep-authorization.md
 plan: knowledge/plans/stage-06/6b-recap-examprep-authorization.md
-commit: ""           # filled after the 6b checkpoint commit
+commit: "024ae91"    # Stage 6b backend-verified checkpoint on branch stage-6
 ---
 
 # Session 6b — Report — Recap + exam-prep modes + authorization
@@ -109,5 +109,8 @@ OR-predicate are documented in the plan + this report; promote to an ADR only if
 - [ ] architecture/ — n/a · [ ] ADR — none warranted · [ ] open-questions.md — edit-after-attempts noted in plan
 
 ## Change history
-- 2026-06-17 — initial completion (backend-verified; client regenerated; tsc green). Commit filled at the
-  6b checkpoint.
+- 2026-06-17 — initial completion (backend-verified; client regenerated; tsc green); landed as backend-
+  verified checkpoint `024ae91` on `stage-6`. Stage remains OPEN (browser gate at 6d).
+- 2026-06-17 — [Session 6c] extended the 6b multi-section quiz surface with `mistakes_bank` definition
+  creation, student bank list/start endpoints, and retake-prefix progress; 6b recap/exam-prep behavior
+  remains covered by `tests/test_quiz_recap_examprep.py` in the 6c focused gate.

@@ -18,6 +18,7 @@ from app.platform.db.models import (
     AnswerOption,
     CourseMembership,
     CourseModule,
+    MistakeRecord,
     ModuleSection,
     QuizAttempt,
     QuizDefinition,
@@ -196,3 +197,45 @@ async def get_attempts_aggregate(
         )
     ).one()
     return AttemptsAggregate(attempt_count=int(row[0] or 0), best_score_percentage=row[1])
+
+
+async def get_mistake_bank_page(
+    db: AsyncSession,
+    *,
+    student_id: UUID,
+    module_id: UUID,
+    limit: int,
+    offset: int,
+) -> tuple[list[MistakeRecord], int]:
+    """Current-student-only mistakes for one module. This is the bank's authorization core: callers never
+    supply mistake ids, and no row outside ``student_id`` can enter the response or assembled attempt."""
+    membership = await db.scalar(
+        select(func.count())
+        .select_from(CourseMembership)
+        .join(CourseModule, CourseMembership.module_id == CourseModule.id)
+        .where(
+            CourseMembership.user_id == student_id,
+            CourseMembership.module_id == module_id,
+            CourseMembership.role == "student",
+            CourseMembership.status == "active",
+            CourseModule.is_active.is_(True),
+        )
+    )
+    if not membership:
+        return [], -1
+    base = (
+        select(MistakeRecord)
+        .where(MistakeRecord.student_id == student_id, MistakeRecord.module_id == module_id)
+        .order_by(MistakeRecord.updated_at.desc(), MistakeRecord.id.desc())
+    )
+    total = int(
+        await db.scalar(
+            select(func.count()).select_from(MistakeRecord).where(
+                MistakeRecord.student_id == student_id,
+                MistakeRecord.module_id == module_id,
+            )
+        )
+        or 0
+    )
+    items = (await db.scalars(base.limit(limit).offset(offset))).all()
+    return items, total

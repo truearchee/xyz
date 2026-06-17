@@ -35,6 +35,7 @@ from app.platform.query.section_week_resolver import (
 
 RECAP_MODE = "recap"
 EXAM_PREP_MODE = "exam_prep"
+MISTAKES_BANK_MODE = "mistakes_bank"
 
 # Availability reason codes (only meaningful when not available).
 REASON_PROCESSING = "processing"          # eligible lecture/lab summaries still generating (D3 wait)
@@ -144,6 +145,44 @@ async def get_or_create_pooled_definition(
             except IntegrityError:
                 existing = await _existing_scoped_definition(
                     session, module_id=module_id, quiz_mode=quiz_mode, scope_key=scope_key
+                )
+                if existing is not None:
+                    return existing.id
+                raise  # pragma: no cover - the unique violation implies a winner exists
+            return definition.id
+
+
+async def get_or_create_mistakes_bank_definition(
+    factory: async_sessionmaker[AsyncSession] | None,
+    *,
+    module_id: UUID,
+) -> UUID:
+    """One shared mistakes-bank QuizDefinition per module (the bank contents stay per-student at
+    assembly/read time; the definition is only the retake-able unit anchor)."""
+    f = factory or async_session
+    scope_key = str(module_id)
+    async with f() as session:
+        async with session.begin():
+            existing = await _existing_scoped_definition(
+                session, module_id=module_id, quiz_mode=MISTAKES_BANK_MODE, scope_key=scope_key
+            )
+            if existing is not None:
+                return existing.id
+            definition = QuizDefinition(
+                module_section_id=None,
+                module_id=module_id,
+                quiz_mode=MISTAKES_BANK_MODE,
+                scope_key=scope_key,
+                assessment_scope_id=None,
+                source_scope={"quizMode": MISTAKES_BANK_MODE, "moduleId": str(module_id)},
+            )
+            session.add(definition)
+            try:
+                async with session.begin_nested():
+                    await session.flush()
+            except IntegrityError:
+                existing = await _existing_scoped_definition(
+                    session, module_id=module_id, quiz_mode=MISTAKES_BANK_MODE, scope_key=scope_key
                 )
                 if existing is not None:
                     return existing.id

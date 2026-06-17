@@ -9,7 +9,7 @@ the service before any resource work; non-student → 403 uniformly; hidden/not-
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Response
+from fastapi import APIRouter, Depends, Query, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domains.quiz import service
@@ -17,6 +17,7 @@ from app.domains.quiz.schemas import (
     AnswerFeedback,
     AnswerSubmission,
     ExamPrepScopeSummary,
+    MistakeBankItem,
     QuizAttemptForStudent,
     QuizAttemptResult,
     QuizAttemptsSummary,
@@ -27,11 +28,14 @@ from app.domains.quiz.schemas import (
 from app.platform.auth.context import CurrentUserContext
 from app.platform.auth.dependencies import get_current_user
 from app.platform.db.session import get_db_session
+from app.platform.query.pagination import PaginatedResponse, PaginationMeta
 
 router = APIRouter(tags=["quiz"])
 
 DbSession = Annotated[AsyncSession, Depends(get_db_session)]
 CurrentUser = Annotated[CurrentUserContext, Depends(get_current_user)]
+Limit = Annotated[int, Query(ge=1, le=100)]
+Offset = Annotated[int, Query(ge=0)]
 
 _NO_STORE = "private, no-store"
 
@@ -175,3 +179,39 @@ async def start_exam_prep_quiz(
 ) -> QuizAttemptForStudent:
     response.headers["Cache-Control"] = _NO_STORE
     return await service.start_exam_prep(db, current_user=current_user, scope_id=scope_id)
+
+
+# ── Stage 6c: mistakes-bank ──────────────────────────────────────────────────────────────────────
+@router.get(
+    "/student/modules/{module_id}/mistakes-bank",
+    response_model=PaginatedResponse[MistakeBankItem],
+    operation_id="listStudentMistakesBank",
+)
+async def list_mistakes_bank(
+    module_id: UUID,
+    response: Response,
+    db: DbSession,
+    current_user: CurrentUser,
+    limit: Limit = 50,
+    offset: Offset = 0,
+) -> PaginatedResponse[MistakeBankItem]:
+    response.headers["Cache-Control"] = _NO_STORE
+    items, total = await service.list_mistakes_bank(
+        db, current_user=current_user, module_id=module_id, limit=limit, offset=offset
+    )
+    return PaginatedResponse(
+        items=items,
+        pagination=PaginationMeta(limit=limit, offset=offset, total=total),
+    )
+
+
+@router.post(
+    "/student/modules/{module_id}/mistakes-bank/start",
+    response_model=QuizAttemptForStudent,
+    operation_id="startStudentMistakesBank",
+)
+async def start_mistakes_bank(
+    module_id: UUID, response: Response, db: DbSession, current_user: CurrentUser
+) -> QuizAttemptForStudent:
+    response.headers["Cache-Control"] = _NO_STORE
+    return await service.start_mistakes_bank(db, current_user=current_user, module_id=module_id)
