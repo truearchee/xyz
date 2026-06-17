@@ -42,6 +42,24 @@ import {
   type TranscriptProcessingStatus,
   type TranscriptSummariesRead,
   type UpdateSectionNotesRequest,
+  GlossaryService,
+  type FolderCreateRequest,
+  type FolderUpdateRequest,
+  type GlossaryEntryDetail,
+  type GlossaryEntryRead,
+  type GlossaryFolderRead,
+  type ManualEntryRequest,
+  type PaginatedResponse_GlossaryEntryRead_,
+  type PracticeAnswerFeedback,
+  type PracticeAnswerRequest,
+  type PracticeAvailability,
+  type PracticeResult,
+  type PracticeSessionState,
+  type SaveHighlightRequest,
+  type SaveResponse,
+  type StartPracticeRequest,
+  type UpdateEntryRequest,
+  type UpdatePreferencesRequest,
 } from './index';
 import { consumeForcedBearerToken } from '../e2e/e2eAuthOverride';
 import { getSupabaseBrowserClient } from '../supabase/client';
@@ -344,6 +362,73 @@ export const api = {
   },
   me: {
     get: () => withAuthRecovery(() => MeService.getMeMeGet()),
+    updatePreferences: (requestBody: UpdatePreferencesRequest) =>
+      withAuthRecovery(() =>
+        MeService.updateMePreferencesMePreferencesPatch(requestBody),
+      ),
+  },
+  glossary: {
+    saveHighlight: (requestBody: SaveHighlightRequest): Promise<SaveResponse> =>
+      withAuthRecovery(() => GlossaryService.saveGlossaryHighlight(requestBody)),
+    createEntry: (requestBody: ManualEntryRequest): Promise<SaveResponse> =>
+      withAuthRecovery(() => GlossaryService.createGlossaryEntry(requestBody)),
+    listEntries: (params?: {
+      subjectId?: string | null;
+      folderId?: string | null;
+      status?: string;
+      limit?: number;
+      offset?: number;
+    }): Promise<PaginatedResponse_GlossaryEntryRead_> =>
+      withAuthRecovery(() =>
+        GlossaryService.listGlossaryEntries(
+          params?.subjectId ?? undefined,
+          params?.folderId ?? undefined,
+          params?.status ?? 'active',
+          params?.limit ?? 50,
+          params?.offset ?? 0,
+        ),
+      ),
+    getEntry: (entryId: string): Promise<GlossaryEntryDetail> =>
+      withAuthRecovery(() => GlossaryService.getGlossaryEntry(entryId)),
+    updateEntry: (
+      entryId: string,
+      requestBody: UpdateEntryRequest,
+    ): Promise<GlossaryEntryRead> =>
+      withAuthRecovery(() => GlossaryService.updateGlossaryEntry(entryId, requestBody)),
+    deleteEntry: (entryId: string): Promise<void> =>
+      withAuthRecovery(() => GlossaryService.deleteGlossaryEntry(entryId)),
+    listFolders: (): Promise<Array<GlossaryFolderRead>> =>
+      withAuthRecovery(() => GlossaryService.listGlossaryFolders()),
+    createFolder: (requestBody: FolderCreateRequest): Promise<GlossaryFolderRead> =>
+      withAuthRecovery(() => GlossaryService.createGlossaryFolder(requestBody)),
+    updateFolder: (
+      folderId: string,
+      requestBody: FolderUpdateRequest,
+    ): Promise<GlossaryFolderRead> =>
+      withAuthRecovery(() => GlossaryService.updateGlossaryFolder(folderId, requestBody)),
+    deleteFolder: (folderId: string): Promise<void> =>
+      withAuthRecovery(() => GlossaryService.deleteGlossaryFolder(folderId)),
+    practice: {
+      availability: (
+        mode: string,
+        scope: string,
+        subjectId?: string | null,
+      ): Promise<PracticeAvailability> =>
+        withAuthRecovery(() =>
+          GlossaryService.getGlossaryPracticeAvailability(mode, scope, subjectId ?? undefined),
+        ),
+      start: (requestBody: StartPracticeRequest): Promise<PracticeSessionState> =>
+        withAuthRecovery(() => GlossaryService.startGlossaryPractice(requestBody)),
+      getSession: (sessionId: string): Promise<PracticeSessionState> =>
+        withAuthRecovery(() => GlossaryService.getGlossaryPracticeSession(sessionId)),
+      answer: (
+        sessionId: string,
+        requestBody: PracticeAnswerRequest,
+      ): Promise<PracticeAnswerFeedback> =>
+        withAuthRecovery(() => GlossaryService.answerGlossaryPractice(sessionId, requestBody)),
+      complete: (sessionId: string): Promise<PracticeResult> =>
+        withAuthRecovery(() => GlossaryService.completeGlossaryPractice(sessionId)),
+    },
   },
   modules: {
     get: (moduleId: string) =>

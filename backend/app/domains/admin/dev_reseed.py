@@ -35,7 +35,7 @@ from app.platform.storage.base import StorageProvider
 from app.platform.storage.keys import generate_section_asset_storage_key
 
 
-EXPECTED_ALEMBIC_VERSION = "0025"  # Stage 6a→6b advanced the head (0022 → 0023/0024 pools → 0025 scopes)
+EXPECTED_ALEMBIC_VERSION = "0031"  # Stage 7 (0030/0031) rebased onto Stage 6 head 0025 → linear head 0031
 REFERENCE_COURSE_START_DATE = date(2026, 5, 11)
 REFERENCE_COURSE_END_DATE = date(2026, 6, 26)
 REFERENCE_WEEK_START_DAY = "monday"

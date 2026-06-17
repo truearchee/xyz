@@ -49,4 +49,5 @@ async def get_current_user(
         role=user.role,
         is_active=user.is_active,
         timezone=user.timezone,
+        preferred_language=user.preferred_language,
     )

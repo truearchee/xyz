@@ -18,6 +18,21 @@ from uuid6 import uuid7
 
 from app.platform.db.models.base import Base
 
+# Source of truth for ck_ai_request_logs_feature. Extended per consuming feature (Stage 5b added
+# post_class_quiz; Stage 6a added quiz_pool; Stage 7 adds glossary_definition). The 0030 migration
+# hard-codes the matching string; a CI test asserts the live DB CHECK allowed-set == this tuple.
+# Because a CHECK is rewritten wholesale, parallel stages that also extend this constraint must union
+# all stages' values when they merge — the CI test is the guard (knowledge/steps/findings-stage-07.md).
+# This tuple is the merged union of Stage 6 (quiz_pool) and Stage 7 (glossary_definition).
+AI_REQUEST_LOG_FEATURES: tuple[str, ...] = (
+    "summary_brief",
+    "summary_detailed",
+    "post_class_quiz",
+    "quiz_pool",
+    "glossary_definition",
+)
+_FEATURE_IN = ", ".join(f"'{feature}'" for feature in AI_REQUEST_LOG_FEATURES)
+
 
 class AIRequestLog(Base):
     """One row per ``LLMGateway.complete()`` attempt (gateway-attempt log, Patch A).
@@ -34,7 +49,8 @@ class AIRequestLog(Base):
         CheckConstraint("attempt_number >= 1", name="ck_ai_request_logs_attempt_number"),
         CheckConstraint(
             # Enumerated on purpose (extend deliberately per consuming feature; never "anything").
-            "feature IN ('summary_brief', 'summary_detailed', 'post_class_quiz', 'quiz_pool')",
+            # Built from AI_REQUEST_LOG_FEATURES (the source of truth) above.
+            f"feature IN ({_FEATURE_IN})",
             name="ck_ai_request_logs_feature",
         ),
         CheckConstraint(

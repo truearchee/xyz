@@ -110,6 +110,7 @@ async def test_me_returns_admin_without_module_memberships(
         "fullName": "Admin User",
         "role": "admin",
         "timezone": "Asia/Dubai",
+        "preferredLanguage": "en",
         "activeModuleMemberships": [],
     }
 
@@ -144,6 +145,7 @@ async def test_me_returns_lecturer_active_membership(
         "fullName": "Lecturer User",
         "role": "lecturer",
         "timezone": "UTC",
+        "preferredLanguage": "en",
         "activeModuleMemberships": [
             {"moduleId": str(module.id), "role": "lecturer"},
         ],
@@ -181,10 +183,36 @@ async def test_me_returns_student_active_membership(
         "fullName": "Student User",
         "role": "student",
         "timezone": "UTC",
+        "preferredLanguage": "en",
         "activeModuleMemberships": [
             {"moduleId": str(module.id), "role": "student"},
         ],
     }
+
+
+@pytest.mark.anyio
+async def test_patch_me_preferences_updates_language(
+    auth_client: AsyncClient,
+    db_session: AsyncSession,
+    jwt_factory,
+    mock_jwks_client,
+) -> None:
+    student = await _create_user(
+        db_session, email="pref-student@example.com", role="student", full_name="Pref User"
+    )
+    headers = _headers(student, jwt_factory)
+
+    before = await auth_client.get("/me", headers=headers)
+    assert before.json()["preferredLanguage"] == "en"
+
+    patched = await auth_client.patch(
+        "/me/preferences", headers=headers, json={"preferredLanguage": "ar"}
+    )
+    assert patched.status_code == 200
+    assert patched.json()["preferredLanguage"] == "ar"
+
+    after = await auth_client.get("/me", headers=headers)
+    assert after.json()["preferredLanguage"] == "ar"
 
 
 @pytest.mark.anyio

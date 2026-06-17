@@ -20,3 +20,6 @@ class CurrentUserContext:
     role: str
     is_active: bool
     timezone: str
+    # Defaulted: the auth dependency always resolves it from the user row; synthetic contexts
+    # (e.g. the dev-reseed admin) and tests that don't exercise the glossary fall back to English.
+    preferred_language: str = "en"

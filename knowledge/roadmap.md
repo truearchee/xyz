@@ -64,7 +64,7 @@ Stage 4.9   Frontend foundation + platform hygiene     NOT STARTED  (new in v3)
 ✅ Stage 5   Shared quiz engine + event spine           FULLY VERIFIED — merged to main; migrations 0014–0020; gate 1 browser GREEN; gate 3 real-provider smoke GREEN; backend 442 pytest; frontend tsc green; ADR-040..046; F-5d-1 resolved
 ✅ Stage 5.5   Module schedule & section metadata       FULLY VERIFIED — gate 5.5e GREEN; reference schedule 28 sections; full active suite 12/12 after reseed; migration chain rebased after Stage 5 main (`0020 -> 0021 -> 0022`)
 ✅ Stage 6   Complete quiz modes                        FULLY VERIFIED — full active Playwright 14/14 + 5d/6d gates + backend 502 + rule-11 real-provider smoke PASS (264.5s, 16Q, model echo OK). 6e corrective gate proofs + F-6e smoke fix (pool trimmed max_tokens 32000→20000 / count 24→16, reasoning timeout 240→330; root cause = ramble-to-cap ≈ max_tokens/73, not the route). See [[steps/stage-06/6d-real-provider-smoke]] (2026-06-18) + ADR-047 F-6e amendment
-Stage 7     Glossary                                   NOT STARTED
+✅ Stage 7 core  Glossary 7a–7c                       FULLY VERIFIED — real-provider smoke GREEN (Cerebras/K2-Think-v2 model echo matched; `finish_reason='length'` follow-up logged); Stage 7 browser gate GREEN; full active suite 14/14; 7d quiz-highlight remains unblocked
 Stage 8     Assistant                                  NOT STARTED
 Stage 9     My Progress                                NOT STARTED
 Stage 10    Gamification                               NOT STARTED
@@ -580,11 +580,14 @@ Lecturer defines covered weeks → exam-prep quiz draws from scoped summaries
 
 ## Stage 7 — Interactive Glossary & Practice
 
-**Status:** NOT STARTED.
+**Status:** 7a (foundation) + 7b (flashcards) + 7c (multiple-choice) **FULLY VERIFIED** on branch `stage-7` (migrations `0030`+`0031`). Backend **498 passed**; migration round-trip green; frontend `tsc` exit 0; real-provider smoke GREEN against `https://api.k2think.ai/v1/chat/completions` with Cerebras route and response model echo `MBZUAI-IFM/K2-Think-v2` matching the configured prompt model; Stage 7 browser gate GREEN (`1 passed`); full active E2E suite GREEN (`14 passed`). Smoke note: `finish_reason='length'`, so a low-priority follow-up is open to raise glossary definition `max_tokens`. 7d (quiz-highlight) is the remaining sub-stage and is now unblocked because Stage 6 is closed. See [[steps/stage-07/7a-glossary-foundation]], [[steps/stage-07/7bc-glossary-practice]], [[steps/findings-stage-07]], [[decisions/adr-047-glossary-subject-folder-separation]], [[decisions/adr-048-glossary-definition-cache-collapse]].
 
 **Scope as v2 / Slice 6:** folders, entries, source references, definition cache (key: normalizedTerm + subjectId + entryType, invalidated on promptVersion change — which aligns exactly with the flat-file PromptRegistry), review state, flashcards with hardcoded intervals, Learn/Test MCQ reusing Stage 5 mechanics, server-side duplicate detection, `TranslationService` abstraction + K2Think adapter, glossary activity events, `<SaveToGlossary>` shared component, KaTeX integrated early.
 
-**v3 notes:** definition generation uses **K2-V2-Instruct via Cerebras** (per slice) through the shared limiter and `ai` queue — no new infrastructure; cache-hit = no model call is the primary cost control; 500-char context cap enforced server-side; entry lists use the Stage 5 pagination envelope.
+**v3 notes:** definition generation uses the configured glossary prompt model (`MBZUAI-IFM/K2-Think-v2`
+in the Stage 7 core smoke) via the Cerebras route through the shared limiter and `ai` queue — no new
+infrastructure; cache-hit = no model call is the primary cost control; 500-char context cap enforced
+server-side; entry lists use the Stage 5 pagination envelope.
 
 **UI proof obligation:** a student highlights text in a real summary, saves it, watches the AI definition fill in asynchronously, then practises that term — all in the browser.
 

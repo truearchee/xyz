@@ -16,6 +16,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.platform.db.models import AppUser, CourseModule, StudentActivityEvent
+from app.platform.db.models.student_activity_event import STUDENT_ACTIVITY_EVENT_TYPES
 from app.platform.events import (
     COMPLETED_QUIZ,
     PERFECT_QUIZ_SCORE,
@@ -129,7 +130,10 @@ async def test_record_rejects_unknown_event_type(db_session: AsyncSession) -> No
         )
 
 
-async def test_quiz_event_types_match_check_constraint(db_session: AsyncSession) -> None:
+async def test_event_types_match_check_constraint(db_session: AsyncSession) -> None:
+    # The DB CHECK is the union of all consuming slices' event types (Stage 5 quiz + Stage 7 glossary).
+    # It is built from STUDENT_ACTIVITY_EVENT_TYPES (the model source of truth); QUIZ_EVENT_TYPES is a
+    # subset. A parallel-stage migration that drops a stage's values trips this (the union guard).
     constraint_def = await db_session.scalar(
         text(
             "SELECT pg_get_constraintdef(oid) FROM pg_constraint "
@@ -138,4 +142,5 @@ async def test_quiz_event_types_match_check_constraint(db_session: AsyncSession)
     )
     assert constraint_def is not None
     literals = set(re.findall(r"'([a-z_]+)'", constraint_def))
-    assert literals == set(QUIZ_EVENT_TYPES)
+    assert literals == set(STUDENT_ACTIVITY_EVENT_TYPES)
+    assert set(QUIZ_EVENT_TYPES) <= literals

@@ -15,12 +15,17 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.platform.db.models import StudentActivityEvent
+from app.platform.db.models.student_activity_event import STUDENT_ACTIVITY_EVENT_TYPES
 
-# Stage 5 emits exactly these. The DB CHECK (ck_student_activity_events_event_type) is the real guard;
-# this tuple is the single source of truth the recorder validates against and a test pins it to the CHECK.
+# The DB CHECK (ck_student_activity_events_event_type) is the real guard; STUDENT_ACTIVITY_EVENT_TYPES
+# (defined on the model) is the single source of truth the recorder validates against, and a test pins
+# it to the live CHECK. The per-feature constants below are the names callers import.
 COMPLETED_QUIZ = "completed_quiz"
 PERFECT_QUIZ_SCORE = "perfect_quiz_score"
 QUIZ_EVENT_TYPES: tuple[str, ...] = (COMPLETED_QUIZ, PERFECT_QUIZ_SCORE)
+# Stage 7 glossary events (rule 7: the glossary EMITS these through the spine, it never owns it).
+GLOSSARY_TERM_SAVED = "glossary_term_saved"
+GLOSSARY_PRACTICE_COMPLETED = "glossary_practice_completed"
 
 
 class EventRecorder:
@@ -37,7 +42,7 @@ class EventRecorder:
         metadata: dict | None = None,
         occurred_at: datetime | None = None,
     ) -> StudentActivityEvent:
-        if event_type not in QUIZ_EVENT_TYPES:
+        if event_type not in STUDENT_ACTIVITY_EVENT_TYPES:
             # Defensive — the DB CHECK is authoritative, but fail loud and early on a typo'd caller.
             raise ValueError(f"unknown event_type: {event_type!r}")
 

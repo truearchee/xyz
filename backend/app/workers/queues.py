@@ -131,6 +131,19 @@ def enqueue_try_assemble_attempt(attempt_id: UUID) -> str:
     return job_id
 
 
+def enqueue_generate_glossary_definition(cache_row_id: UUID) -> str:
+    from app.domains.glossary.jobs import generate_glossary_definition
+
+    job_id = f"glossary-definition-{cache_row_id}"
+    get_ai_queue().enqueue(
+        generate_glossary_definition,
+        str(cache_row_id),
+        job_id=job_id,
+        retry=Retry(max=AI_RQ_RETRY_MAX, interval=AI_RQ_RETRY_INTERVALS),
+    )
+    return job_id
+
+
 def enqueue_summary_job(job_type: str, ingestion_job_id: UUID) -> None:
     if job_type == "generate_brief_summary":
         enqueue_generate_brief_summary(ingestion_job_id)
