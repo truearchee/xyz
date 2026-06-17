@@ -9,9 +9,12 @@ import type { MaintenanceRunRead } from '../models/MaintenanceRunRead';
 import type { MembershipResponse } from '../models/MembershipResponse';
 import type { ModuleMemberResponse } from '../models/ModuleMemberResponse';
 import type { ModuleResponse } from '../models/ModuleResponse';
+import type { ModuleScheduleInput } from '../models/ModuleScheduleInput';
+import type { ModuleSchedulePreviewResponse } from '../models/ModuleSchedulePreviewResponse';
 import type { ReapStuckRowsRequest } from '../models/ReapStuckRowsRequest';
 import type { ReconcileStorageRequest } from '../models/ReconcileStorageRequest';
 import type { ResetPasswordRequest } from '../models/ResetPasswordRequest';
+import type { SectionWeekRead } from '../models/SectionWeekRead';
 import type { StatusResponse } from '../models/StatusResponse';
 import type { UserResponse } from '../models/UserResponse';
 import type { CancelablePromise } from '../core/CancelablePromise';
@@ -195,6 +198,63 @@ export class AdminService {
             query: {
                 'limit': limit,
                 'offset': offset,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Preview Module Sections
+     * @param requestBody
+     * @param authorization
+     * @returns ModuleSchedulePreviewResponse Successful Response
+     * @throws ApiError
+     */
+    public static previewModuleSectionsAdminModulesPreviewSectionsPost(
+        requestBody: ModuleScheduleInput,
+        authorization?: (string | null),
+    ): CancelablePromise<ModuleSchedulePreviewResponse> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/admin/modules/preview-sections',
+            headers: {
+                'Authorization': authorization,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * List Admin Module Sections By Week
+     * @param moduleId
+     * @param coveredWeeks
+     * @param includeUnstamped
+     * @param authorization
+     * @returns SectionWeekRead Successful Response
+     * @throws ApiError
+     */
+    public static listAdminModuleSectionsByWeekAdminModulesModuleIdSectionsByWeekGet(
+        moduleId: string,
+        coveredWeeks?: (Array<number> | null),
+        includeUnstamped: boolean = false,
+        authorization?: (string | null),
+    ): CancelablePromise<Array<SectionWeekRead>> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/admin/modules/{module_id}/sections/by-week',
+            path: {
+                'module_id': moduleId,
+            },
+            headers: {
+                'Authorization': authorization,
+            },
+            query: {
+                'coveredWeeks': coveredWeeks,
+                'includeUnstamped': includeUnstamped,
             },
             errors: {
                 422: `Validation Error`,

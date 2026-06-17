@@ -9,6 +9,7 @@ import type { SectionDetail } from '../models/SectionDetail';
 import type { SectionListItem } from '../models/SectionListItem';
 import type { SectionMetadataDetail } from '../models/SectionMetadataDetail';
 import type { SectionMetadataPatchRequest } from '../models/SectionMetadataPatchRequest';
+import type { SectionWeekRead } from '../models/SectionWeekRead';
 import type { StudentSectionDetail } from '../models/StudentSectionDetail';
 import type { UpdateSectionNotesRequest } from '../models/UpdateSectionNotesRequest';
 import type { CancelablePromise } from '../core/CancelablePromise';
@@ -34,6 +35,39 @@ export class ContentService {
             },
             headers: {
                 'Authorization': authorization,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * List Sections By Week
+     * @param moduleId
+     * @param coveredWeeks
+     * @param includeUnstamped
+     * @param authorization
+     * @returns SectionWeekRead Successful Response
+     * @throws ApiError
+     */
+    public static listSectionsByWeekModulesModuleIdSectionsByWeekGet(
+        moduleId: string,
+        coveredWeeks?: (Array<number> | null),
+        includeUnstamped: boolean = false,
+        authorization?: (string | null),
+    ): CancelablePromise<Array<SectionWeekRead>> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/modules/{module_id}/sections/by-week',
+            path: {
+                'module_id': moduleId,
+            },
+            headers: {
+                'Authorization': authorization,
+            },
+            query: {
+                'coveredWeeks': coveredWeeks,
+                'includeUnstamped': includeUnstamped,
             },
             errors: {
                 422: `Validation Error`,

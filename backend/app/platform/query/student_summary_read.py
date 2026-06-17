@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from datetime import datetime
 from uuid import UUID
 
 from sqlalchemy import select
@@ -41,6 +42,7 @@ class VisibleStudentSection:
     title: str
     type: str
     order_index: int
+    due_at: datetime | None
     lecturer_notes: str | None
     course_module_id: UUID
 
@@ -51,6 +53,7 @@ class StudentMaterialRow:
     file_name: str
     mime_type: str
     file_size: int
+    asset_kind: str
 
 
 @dataclass(frozen=True)
@@ -99,6 +102,7 @@ async def get_visible_student_section(
             ModuleSection.title,
             ModuleSection.type,
             ModuleSection.order_index,
+            ModuleSection.due_at,
             ModuleSection.lecturer_notes,
             ModuleSection.course_module_id,
         )
@@ -122,6 +126,7 @@ async def get_visible_student_section(
         title=row.title,
         type=row.type,
         order_index=row.order_index,
+        due_at=row.due_at,
         lecturer_notes=row.lecturer_notes,
         course_module_id=row.course_module_id,
     )
@@ -139,6 +144,7 @@ async def get_student_section_materials(
             SectionAsset.file_name,
             SectionAsset.mime_type,
             SectionAsset.file_size,
+            SectionAsset.asset_kind,
         )
         .where(
             SectionAsset.module_section_id == section_id,
@@ -147,7 +153,13 @@ async def get_student_section_materials(
         .order_by(SectionAsset.created_at.asc(), SectionAsset.id.asc())
     )
     return [
-        StudentMaterialRow(id=r.id, file_name=r.file_name, mime_type=r.mime_type, file_size=r.file_size)
+        StudentMaterialRow(
+            id=r.id,
+            file_name=r.file_name,
+            mime_type=r.mime_type,
+            file_size=r.file_size,
+            asset_kind=r.asset_kind,
+        )
         for r in result.all()
     ]
 

@@ -15,6 +15,7 @@ type UploadSectionAssetInput = {
   moduleId: string;
   sectionId: string;
   file: File;
+  dueAt?: string | null;
   signal?: AbortSignal;
 };
 
@@ -112,6 +113,7 @@ function apiError(
 async function uploadMultipart(
   request: ApiRequestOptions,
   input: {
+    dueAt?: string | null;
     file: File;
     signal?: AbortSignal;
   },
@@ -119,6 +121,9 @@ async function uploadMultipart(
   const token = await getBearerToken(request);
   const formData = new FormData();
   formData.append(FILE_FIELD_NAME, input.file);
+  if (input.dueAt !== undefined && input.dueAt !== null) {
+    formData.append('dueAt', input.dueAt);
+  }
 
   const response = await fetch(uploadUrl(request.url), {
     body: formData,
@@ -164,6 +169,7 @@ async function uploadMultipart(
 }
 
 export async function uploadSectionAsset({
+  dueAt,
   moduleId,
   sectionId,
   file,
@@ -176,7 +182,7 @@ export async function uploadSectionAsset({
       method: 'POST',
       url: path,
     },
-    { file, signal },
+    { dueAt, file, signal },
   ) as Promise<SectionAssetResponse>;
 }
 

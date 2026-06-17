@@ -62,7 +62,7 @@ DONE             — governance stages where no browser gate applies (Stage 0 on
 Stage 4.8   First hosted deploy (staging)              NOT STARTED  (new in v3)  ← next
 Stage 4.9   Frontend foundation + platform hygiene     NOT STARTED  (new in v3)
 ✅ Stage 5   Shared quiz engine + event spine           FULLY VERIFIED (branch spec-5; not yet merged) — 5a schema+event spine (migs 0014–0019), 5b generation+recovery (0020 AIRequestLog decouple), 5c HTTP surface, 5d UI+gates, 5e review fixes. Gate 1 (browser) GREEN (--workers=1, 1 passed); Gate 3 (real-provider smoke) GREEN (rule-11 echo). Backend 442 pytest; frontend tsc green; ADR-040..046; F-5d-1 resolved (max_tokens→16000). ⚠ MERGE: migration block 0014–0020 collides with sibling branches' 0014–0016 — renumber at merge (open-questions #5a)
-Stage 5.5   Module schedule & section metadata         IN PROGRESS — 5.5c BACKEND VERIFIED  (parallel-OK with 5; blocks 6)
+✅ Stage 5.5   Module schedule & section metadata       FULLY VERIFIED — gate 5.5e GREEN; reference schedule 28 sections; full active suite 12/12 after reseed
 Stage 6     Complete quiz modes                        NOT STARTED
 Stage 7     Glossary                                   NOT STARTED
 Stage 8     Assistant                                  NOT STARTED

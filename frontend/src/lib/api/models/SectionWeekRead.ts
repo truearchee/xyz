@@ -2,13 +2,14 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { StudentAssetMeta } from './StudentAssetMeta';
-export type StudentSectionDetail = {
+export type SectionWeekRead = {
     id: string;
+    courseModuleId: string;
     title: string;
     type: string;
     orderIndex: number;
+    weekNumber: (number | null);
+    sessionDate: (string | null);
     dueAt: (string | null);
-    lecturerNotes: (string | null);
-    assets: Array<StudentAssetMeta>;
+    publishStatus: string;
 };

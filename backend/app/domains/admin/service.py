@@ -15,8 +15,11 @@ from app.domains.admin.schemas import (
     CreateModuleRequest,
     CreateUserRequest,
     ModuleMemberResponse,
+    ModuleScheduleInput,
+    ModuleSchedulePreviewResponse,
+    ModuleSectionPreview,
 )
-from app.domains.admin.section_generation import generate_initial_sections
+from app.domains.admin.section_generation import generate_initial_sections, generate_sections
 from app.platform.auth.context import CurrentUserContext
 from app.platform.db.models import AppUser, CourseMembership, CourseModule
 from app.platform.supabase_client import get_supabase_admin_client
@@ -221,6 +224,36 @@ async def create_module(
     await db.flush()
     await db.refresh(module)
     return module
+
+
+def preview_module_schedule(schedule: ModuleScheduleInput) -> ModuleSchedulePreviewResponse:
+    drafts = generate_sections(
+        start=schedule.course_start_date,
+        end=schedule.course_end_date,
+        week_start_day=schedule.week_start_day,
+        session_pattern=[
+            {"weekday": entry.weekday, "sectionType": entry.section_type}
+            for entry in schedule.session_pattern
+        ],
+    )
+    weeks = {draft.week_number for draft in drafts}
+    return ModuleSchedulePreviewResponse(
+        total_sections=len(drafts),
+        week_count=len(weeks),
+        lecture_count=sum(1 for draft in drafts if draft.type == "lecture"),
+        lab_count=sum(1 for draft in drafts if draft.type == "lab"),
+        friday_section_count=sum(1 for draft in drafts if draft.session_date.weekday() == 4),
+        sections=[
+            ModuleSectionPreview(
+                title=draft.title,
+                type=draft.type,
+                order_index=draft.order_index,
+                week_number=draft.week_number,
+                session_date=draft.session_date,
+            )
+            for draft in drafts
+        ],
+    )
 
 
 async def get_module(db: AsyncSession, module_id: UUID) -> CourseModule:

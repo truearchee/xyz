@@ -1204,6 +1204,93 @@ async def test_metadata_patch_authz_cross_module_and_type_boundaries(
 
 
 @pytest.mark.anyio
+async def test_assigned_lecturer_sections_by_week_uses_resolver_modes(
+    auth_client: AsyncClient,
+    db_session: AsyncSession,
+    jwt_factory,
+    mock_jwks_client,
+) -> None:
+    lecturer = await _create_user(db_session, email="by-week-lecturer@example.com", role="lecturer")
+    student = await _create_user(db_session, email="by-week-student@example.com")
+    module = await _create_module(db_session, owner_id=lecturer.id)
+    await _create_membership(db_session, user_id=lecturer.id, module_id=module.id, role="lecturer")
+    await _create_membership(db_session, user_id=student.id, module_id=module.id, role="student")
+    week_one_lecture = await _create_section(
+        db_session,
+        module_id=module.id,
+        title="Lecture week one",
+        section_type="lecture",
+        order_index=1,
+        week_number=1,
+        session_date=date(2026, 5, 11),
+    )
+    week_one_lab = await _create_section(
+        db_session,
+        module_id=module.id,
+        title="Lab week one",
+        section_type="lab",
+        order_index=2,
+        week_number=1,
+        session_date=date(2026, 5, 14),
+    )
+    week_two = await _create_section(
+        db_session,
+        module_id=module.id,
+        title="Lecture week two",
+        section_type="lecture",
+        order_index=3,
+        week_number=2,
+        session_date=date(2026, 5, 18),
+    )
+    unstamped = await _create_section(
+        db_session,
+        module_id=module.id,
+        title="Needs curation",
+        section_type="lab",
+        order_index=4,
+    )
+    assignment = await _create_section(
+        db_session,
+        module_id=module.id,
+        title="Legacy assignment",
+        section_type="assignment",
+        order_index=5,
+        week_number=1,
+        session_date=date(2026, 5, 15),
+    )
+
+    lecturer_headers = _headers(lecturer, jwt_factory)
+    week_one_response = await auth_client.get(
+        f"/modules/{module.id}/sections/by-week?coveredWeeks=1",
+        headers=lecturer_headers,
+    )
+    curation_response = await auth_client.get(
+        f"/modules/{module.id}/sections/by-week?includeUnstamped=true",
+        headers=lecturer_headers,
+    )
+    student_response = await auth_client.get(
+        f"/modules/{module.id}/sections/by-week?includeUnstamped=true",
+        headers=_headers(student, jwt_factory),
+    )
+
+    assert week_one_response.status_code == 200
+    assert [row["id"] for row in week_one_response.json()] == [
+        str(week_one_lecture.id),
+        str(week_one_lab.id),
+    ]
+    assert curation_response.status_code == 200
+    assert [row["id"] for row in curation_response.json()] == [
+        str(week_one_lecture.id),
+        str(week_one_lab.id),
+        str(week_two.id),
+        str(unstamped.id),
+    ]
+    assert str(assignment.id) not in curation_response.text
+    assert student_response.status_code == 403
+    assert student_response.json()["detail"] == "CONTENT_FORBIDDEN"
+
+
+@pytest.mark.anyio
 async def test_student_reads_only_published_sections_and_completed_assets(
     auth_client: AsyncClient,
     db_session: AsyncSession,
@@ -1232,6 +1319,7 @@ async def test_student_reads_only_published_sections_and_completed_assets(
         title="Visible",
         order_index=1,
         publish_status="published",
+        due_at=datetime(2026, 5, 14, 17, 0, tzinfo=UTC),
         lecturer_notes="Read this first",
     )
     draft = await _create_section(
@@ -1339,6 +1427,7 @@ async def test_student_reads_only_published_sections_and_completed_assets(
         "title": "Visible",
         "type": "lecture",
         "orderIndex": 1,
+        "dueAt": "2026-05-14T17:00:00Z",
         "lecturerNotes": "Read this first",
         "assets": [
             {

@@ -4,7 +4,7 @@ from typing import Annotated
 from urllib.parse import quote
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, UploadFile, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.datastructures import UploadFile as StarletteUploadFile
 
@@ -16,6 +16,7 @@ from app.domains.content.schemas import (
     SectionListItem,
     SectionMetadataDetail,
     SectionMetadataPatchRequest,
+    SectionWeekRead,
     StudentSectionDetail,
     UpdateSectionNotesRequest,
 )
@@ -26,6 +27,7 @@ from app.domains.content.service import (
     get_module_section_detail,
     list_section_assets,
     list_module_sections,
+    list_module_sections_by_week,
     publish_section,
     replace_section_asset,
     unpublish_section,
@@ -170,6 +172,22 @@ async def list_sections(
     module_access: ModuleAccess,
 ) -> list[SectionListItem]:
     return await list_module_sections(db, module_access=module_access)
+
+
+@router.get("/modules/{module_id}/sections/by-week", response_model=list[SectionWeekRead])
+async def list_sections_by_week(
+    module_id: UUID,
+    db: DbSession,
+    module_access: ModuleAccess,
+    covered_weeks: Annotated[list[int] | None, Query(alias="coveredWeeks")] = None,
+    include_unstamped: Annotated[bool, Query(alias="includeUnstamped")] = False,
+) -> list[SectionWeekRead]:
+    return await list_module_sections_by_week(
+        db,
+        module_access=module_access,
+        covered_weeks=covered_weeks or [],
+        include_unstamped=include_unstamped,
+    )
 
 
 @router.get(

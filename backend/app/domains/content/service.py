@@ -20,7 +20,7 @@ from app.domains.content.validators import (
     spool_and_validate_section_asset,
 )
 from app.domains.admin.section_generation import DEFAULT_WEEK_START_DAY, week_number_for
-from app.domains.content.schemas import AssetDownloadUrl, SectionMetadataPatchRequest
+from app.domains.content.schemas import AssetDownloadUrl, SectionMetadataPatchRequest, SectionWeekRead
 from app.platform.auth.context import CurrentUserContext, ModuleAccessContext
 from app.platform.config import settings
 from app.platform.db.models import CourseMembership, CourseModule, ModuleSection, SectionAsset
@@ -39,6 +39,7 @@ from app.platform.query.content_read import (
     list_published_sections_for_student,
     list_section_asset_rows,
 )
+from app.platform.query.section_week_resolver import resolve_sections_by_weeks
 from app.platform.storage.base import (
     StorageProvider,
     StorageProviderError,
@@ -226,6 +227,38 @@ async def list_module_sections(
     if module_access.global_role == "lecturer":
         return await list_lecturer_section_rows(db, module_id=module_access.module_id)
     raise _coded_error(status.HTTP_403_FORBIDDEN, CONTENT_FORBIDDEN)
+
+
+async def list_module_sections_by_week(
+    db: AsyncSession,
+    *,
+    module_access: ModuleAccessContext,
+    covered_weeks: list[int],
+    include_unstamped: bool = False,
+) -> list[SectionWeekRead]:
+    if module_access.global_role != "lecturer":
+        raise _coded_error(status.HTTP_403_FORBIDDEN, CONTENT_FORBIDDEN)
+
+    rows = await resolve_sections_by_weeks(
+        db,
+        module_id=module_access.module_id,
+        covered_weeks=covered_weeks,
+        include_unstamped=include_unstamped,
+    )
+    return [
+        SectionWeekRead(
+            id=row.id,
+            course_module_id=row.course_module_id,
+            title=row.title,
+            type=row.type,
+            order_index=row.order_index,
+            week_number=row.week_number,
+            session_date=row.session_date,
+            due_at=row.due_at,
+            publish_status=row.publish_status,
+        )
+        for row in rows
+    ]
 
 
 async def get_module_section_detail(

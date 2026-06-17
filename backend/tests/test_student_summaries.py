@@ -43,6 +43,7 @@ from app.platform.db.models import (
     GeneratedLectureSummary,
     IngestionJob,
     ModuleSection,
+    SectionAsset,
     Transcript,
     TranscriptSegment,
 )
@@ -395,12 +396,14 @@ async def _section(
     order_index: int = 0,
     publish_status: str = "published",
     lecturer_notes: str | None = "notes",
+    due_at: datetime | None = None,
 ) -> ModuleSection:
     s = ModuleSection(
         course_module_id=module_id,
         title=title,
         type=section_type,
         order_index=order_index,
+        due_at=due_at,
         publish_status=publish_status,
         lecturer_notes=lecturer_notes,
         status="active",
@@ -408,6 +411,31 @@ async def _section(
     session.add(s)
     await session.flush()
     return s
+
+
+async def _asset(
+    session: AsyncSession,
+    *,
+    section_id: UUID,
+    uploader_id: UUID,
+    file_name: str = "lab.ipynb",
+    mime_type: str = "application/x-ipynb+json",
+    asset_kind: str = "attachment",
+) -> SectionAsset:
+    asset = SectionAsset(
+        module_section_id=section_id,
+        storage_key=f"modules/test/sections/{section_id}/{uuid4()}.ipynb",
+        file_name=file_name,
+        mime_type=mime_type,
+        file_size=64,
+        checksum_sha256=_checksum(file_name),
+        asset_kind=asset_kind,
+        processing_status="completed",
+        uploaded_by_user_id=uploader_id,
+    )
+    session.add(asset)
+    await session.flush()
+    return asset
 
 
 async def _transcript(
@@ -527,7 +555,14 @@ async def test_row1_both_summaries_ready(db_session, auth_client: AsyncClient, j
     student = await _user(db_session, role="student")
     module = await _module(db_session, owner_id=lecturer.id)
     await _membership(db_session, user_id=student.id, module_id=module.id, role="student")
-    section, _ = await _summarized_section(db_session, module_id=module.id, uploader_id=lecturer.id)
+    due_at = datetime(2026, 5, 14, 17, 0, tzinfo=UTC)
+    section, _ = await _summarized_section(
+        db_session,
+        module_id=module.id,
+        uploader_id=lecturer.id,
+        due_at=due_at,
+    )
+    material = await _asset(db_session, section_id=section.id, uploader_id=lecturer.id)
 
     resp = await auth_client.get(f"/student/sections/{section.id}/summaries", headers=_headers(student, jwt_factory))
     assert resp.status_code == 200
@@ -543,7 +578,17 @@ async def test_row1_both_summaries_ready(db_session, auth_client: AsyncClient, j
     d = detail.json()
     assert d["summaries"]["brief"]["state"] == "ready"
     assert d["summaries"]["detailed"]["state"] == "ready"
+    assert d["dueAt"] == "2026-05-14T17:00:00Z"
     assert d["lecturerNotes"] == "notes"
+    assert d["materials"] == [
+        {
+            "id": str(material.id),
+            "fileName": "lab.ipynb",
+            "mimeType": "application/x-ipynb+json",
+            "fileSize": 64,
+            "assetKind": "attachment",
+        }
+    ]
 
 
 async def test_row2_brief_ready_detailed_generating(db_session, auth_client, jwt_factory, mock_jwks_client):

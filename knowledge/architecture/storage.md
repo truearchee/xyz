@@ -31,6 +31,7 @@ related-session: knowledge/specs/stage-03/3.1-file-upload.md
 - Decision: [[decisions/adr-013-signed-read-url-download-authz]]
 - Decision: [[decisions/adr-042-lab-attachments]]
 - Decision: [[decisions/adr-043-dev-reseed]]
+- Report: [[steps/stage-05/5.5e-ui-browser-gate]]
 - Decision: [[decisions/adr-015-transcript-upload-boundary-active-invariant]]
 - Decision: [[decisions/adr-016-transcript-file-validation-storage-metadata]]
 - Decision: [[decisions/adr-019-transcript-parse-strategy]]
@@ -87,6 +88,11 @@ signed-URL endpoint because Supabase signed URLs cannot attach the `nosniff` hea
 Stage 5.5d's dev reseed creates one published lab fixture with both paths represented: a processable
 PDF for signed URL reads and an attachment `.ipynb` for backend streaming. The fixture is dev data only
 and exists to make the 5.5e browser gate deterministic.
+
+Stage 5.5e proves the frontend routing in a browser: student processable PDFs request signed URLs, while
+student attachment rows call the authenticated backend `/download` endpoint and receive attachment +
+`nosniff` headers. E2E teardown now accepts exact `.ipynb` section-asset keys in addition to exact PDF
+keys.
 
 ## Upload compensation
 Upload endpoints authorize the current user and section access before parsing multipart form data. After authorization, upload writes to storage first with `overwrite=False`, then inserts the DB row. If DB persistence fails after storage succeeds, the backend attempts an idempotent `delete_object(storage_key)` cleanup and returns a server error.

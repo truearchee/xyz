@@ -69,6 +69,7 @@ class StudentSectionDetailReadRow:
     title: str
     type: str
     order_index: int
+    due_at: datetime | None
     lecturer_notes: str | None
     assets: list[StudentAssetMetaReadRow]
 
@@ -300,6 +301,7 @@ async def get_published_section_for_student(
             ModuleSection.title,
             ModuleSection.type,
             ModuleSection.order_index,
+            ModuleSection.due_at,
             ModuleSection.lecturer_notes,
         ).where(
             ModuleSection.id == section_id,
@@ -331,6 +333,7 @@ async def get_published_section_for_student(
         title=section.title,
         type=section.type,
         order_index=section.order_index,
+        due_at=section.due_at,
         lecturer_notes=section.lecturer_notes,
         assets=[
             StudentAssetMetaReadRow(

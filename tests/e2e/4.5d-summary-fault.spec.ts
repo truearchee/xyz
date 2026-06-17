@@ -1,3 +1,4 @@
+import { execSync } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
@@ -20,11 +21,10 @@ import {
   waitForTranscriptEmbedded,
 } from './fixtures/db.mjs';
 
-// Stage 4.5d Gate 2 — forced-fault browser coverage (deterministic provider, NO key). Each test
-// assumes the ai_worker is running with the MATCHING global LLM_FAULT_INJECTION (global env can't
-// mix faults in one stack), so they are run one at a time via --grep:
-//   LLM_FAULT_INJECTION=invalid_output … docker compose up -d ai_worker ; playwright --grep invalid_output
-//   LLM_FAULT_INJECTION=invalid_input  … docker compose up -d ai_worker ; playwright --grep invalid_input
+// Stage 4.5d Gate 2 — forced-fault browser coverage (deterministic provider, NO key). The
+// LLM-transport fault is a global ai_worker env value, so the spec recreates ai_worker with the
+// matching fault before each test and restores it afterwards. This keeps the full active suite
+// runnable without a manual --grep + worker-recreate preamble.
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:8000';
 const PASSWORD = process.env.E2E_TEST_PASSWORD ?? 'LocalE2EPassword123!';
@@ -48,7 +48,7 @@ function nthSectionOfType(sections: SectionRow[], type: 'lecture' | 'lab', index
   return section;
 }
 
-test.setTimeout(180_000);
+test.setTimeout(600_000);
 
 function requireRunId(): string {
   const runId = process.env.E2E_RUN_ID;
@@ -65,6 +65,26 @@ function record(runId: string, field: string, value: string) {
   const m = JSON.parse(readFileSync(manifestPath(runId), 'utf8'));
   m[field] = [...new Set([...(Array.isArray(m[field]) ? m[field] : []), value])];
   writeFileSync(manifestPath(runId), `${JSON.stringify(m, null, 2)}\n`);
+}
+
+function recreateAiWorker(fault: 'invalid_output' | 'invalid_input' | null) {
+  const env = {
+    ...process.env,
+    LLM_FAULT_INJECTION: fault ?? '',
+    PIPELINE_FAULT_INJECTION_ENABLED: '',
+    PIPELINE_FAULT_INJECTION: '',
+  };
+  const compose = 'docker compose -f docker-compose.yml -f docker-compose.fault.yml';
+  execSync(`${compose} up -d --force-recreate ai_worker`, { env, stdio: 'inherit' });
+  const deadline = Date.now() + 60_000;
+  for (;;) {
+    const logs = execSync(`${compose} logs --tail=40 ai_worker`, { env }).toString();
+    if (logs.includes('Listening on ai')) return;
+    if (Date.now() > deadline) {
+      throw new Error('ai_worker did not become ready within 60s after recreate');
+    }
+    execSync('sleep 1');
+  }
 }
 
 async function signIn(page: Page, email: string, expectedPath: string) {
@@ -159,6 +179,7 @@ test('4.5d fault gate — invalid_output is rejected, retried, logged; no summar
   const adminCtx = await browser.newContext();
   let api: APIRequestContext | null = null;
   try {
+    recreateAiWorker('invalid_output');
     const adminPage = await adminCtx.newPage();
     await signIn(adminPage, ADMIN_EMAIL, '/admin');
     api = await apiContextFor(adminPage);
@@ -186,6 +207,7 @@ test('4.5d fault gate — invalid_output is rejected, retried, logged; no summar
       { timeout: 95_000 },
     );
   } finally {
+    recreateAiWorker(null);
     await api?.dispose();
     await lecturerCtx.close();
     await adminCtx.close();
@@ -198,6 +220,7 @@ test('4.5d fault gate — invalid_input is terminal, non-retryable; no summary r
   const adminCtx = await browser.newContext();
   let api: APIRequestContext | null = null;
   try {
+    recreateAiWorker('invalid_input');
     const adminPage = await adminCtx.newPage();
     await signIn(adminPage, ADMIN_EMAIL, '/admin');
     api = await apiContextFor(adminPage);
@@ -221,6 +244,7 @@ test('4.5d fault gate — invalid_input is terminal, non-retryable; no summary r
       { timeout: 95_000 },
     );
   } finally {
+    recreateAiWorker(null);
     await api?.dispose();
     await lecturerCtx.close();
     await adminCtx.close();

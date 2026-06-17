@@ -38,12 +38,29 @@ export function StudentAssetRow({
     setIsOpening(true);
 
     try {
-      const download = await api.content.getAssetDownloadUrl(
-        moduleId,
-        sectionId,
-        asset.id,
-      );
-      window.open(download.url, "_blank", "noopener,noreferrer");
+      if (asset.assetKind === "attachment") {
+        const download = await api.content.downloadAttachmentAsset(
+          moduleId,
+          sectionId,
+          asset.id,
+          asset.fileName,
+        );
+        const url = window.URL.createObjectURL(download.blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = download.fileName;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        window.setTimeout(() => window.URL.revokeObjectURL(url), 0);
+      } else {
+        const download = await api.content.getAssetDownloadUrl(
+          moduleId,
+          sectionId,
+          asset.id,
+        );
+        window.open(download.url, "_blank", "noopener,noreferrer");
+      }
     } catch (caught) {
       setError(errorMessage(caught));
     } finally {
@@ -69,7 +86,7 @@ export function StudentAssetRow({
           style={styles.button}
           type="button"
         >
-          {isOpening ? "Opening" : "Open file"}
+          {isOpening ? "Opening" : asset.assetKind === "attachment" ? "Download file" : "Open file"}
         </button>
         {error ? (
           <p role="alert" style={styles.error}>

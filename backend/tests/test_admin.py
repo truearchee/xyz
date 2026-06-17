@@ -1,3 +1,4 @@
+from datetime import date
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 from uuid import UUID, uuid4
@@ -82,6 +83,32 @@ async def _create_module(
     return module
 
 
+async def _create_section(
+    session: AsyncSession,
+    *,
+    module_id,
+    title: str,
+    section_type: str,
+    order_index: int,
+    week_number: int | None = None,
+    session_date: date | None = None,
+    status: str = "active",
+) -> ModuleSection:
+    section = ModuleSection(
+        course_module_id=module_id,
+        title=title,
+        type=section_type,
+        order_index=order_index,
+        week_number=week_number,
+        session_date=session_date,
+        publish_status="draft",
+        status=status,
+    )
+    session.add(section)
+    await session.flush()
+    return section
+
+
 async def _create_membership(
     session: AsyncSession,
     *,
@@ -151,6 +178,8 @@ def _admin_routes() -> list[tuple[str, str, dict | None]]:
             },
         ),
         ("GET", "/admin/modules?limit=1&offset=0", None),
+        ("POST", "/admin/modules/preview-sections", _schedule_payload()),
+        ("GET", f"/admin/modules/{module_id}/sections/by-week?includeUnstamped=true", None),
         (
             "POST",
             f"/admin/modules/{module_id}/members",
@@ -411,6 +440,110 @@ async def test_create_module_generates_schedule_sections(
     assert all(section.publish_status == "draft" for section in sections)
     assert all(section.lecturer_notes is None for section in sections)
     assert all(section.status == "active" for section in sections)
+
+
+@pytest.mark.anyio
+async def test_admin_preview_sections_uses_reference_generator(
+    auth_client: AsyncClient,
+    db_session: AsyncSession,
+    jwt_factory,
+    mock_jwks_client,
+) -> None:
+    headers, _ = await _auth_headers(db_session, jwt_factory, role="admin")
+
+    response = await auth_client.post(
+        "/admin/modules/preview-sections",
+        headers=headers,
+        json=_schedule_payload(),
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["totalSections"] == 28
+    assert data["weekCount"] == 7
+    assert data["lectureCount"] == 21
+    assert data["labCount"] == 7
+    assert data["fridaySectionCount"] == 0
+    assert len(data["sections"]) == 28
+    assert data["sections"][0] == {
+        "title": "Lecture — Week 1 (Mon 11 May)",
+        "type": "lecture",
+        "orderIndex": 1,
+        "weekNumber": 1,
+        "sessionDate": "2026-05-11",
+    }
+    assert data["sections"][-1] == {
+        "title": "Lab — Week 7 (Thu 25 Jun)",
+        "type": "lab",
+        "orderIndex": 28,
+        "weekNumber": 7,
+        "sessionDate": "2026-06-25",
+    }
+
+
+@pytest.mark.anyio
+async def test_admin_sections_by_week_uses_resolver_modes(
+    auth_client: AsyncClient,
+    db_session: AsyncSession,
+    jwt_factory,
+    mock_jwks_client,
+) -> None:
+    headers, _ = await _auth_headers(db_session, jwt_factory, role="admin")
+    lecturer = await _create_user(db_session, email="admin-by-week-owner@example.com", role="lecturer")
+    module = await _create_module(db_session, owner_id=lecturer.id)
+    week_one = await _create_section(
+        db_session,
+        module_id=module.id,
+        title="Lecture week one",
+        section_type="lecture",
+        order_index=1,
+        week_number=1,
+        session_date=date(2026, 5, 11),
+    )
+    week_two = await _create_section(
+        db_session,
+        module_id=module.id,
+        title="Lab week two",
+        section_type="lab",
+        order_index=2,
+        week_number=2,
+        session_date=date(2026, 5, 21),
+    )
+    unstamped = await _create_section(
+        db_session,
+        module_id=module.id,
+        title="Needs curation",
+        section_type="lecture",
+        order_index=3,
+    )
+    assignment = await _create_section(
+        db_session,
+        module_id=module.id,
+        title="Legacy assignment",
+        section_type="assignment",
+        order_index=4,
+        week_number=1,
+        session_date=date(2026, 5, 12),
+    )
+
+    week_response = await auth_client.get(
+        f"/admin/modules/{module.id}/sections/by-week?coveredWeeks=1",
+        headers=headers,
+    )
+    curation_response = await auth_client.get(
+        f"/admin/modules/{module.id}/sections/by-week?includeUnstamped=true",
+        headers=headers,
+    )
+
+    assert week_response.status_code == 200
+    assert [row["id"] for row in week_response.json()] == [str(week_one.id)]
+    assert curation_response.status_code == 200
+    assert [row["id"] for row in curation_response.json()] == [
+        str(week_one.id),
+        str(week_two.id),
+        str(unstamped.id),
+    ]
+    assert str(assignment.id) not in curation_response.text
 
 
 @pytest.mark.anyio

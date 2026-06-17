@@ -12,10 +12,13 @@ from app.domains.admin.schemas import (
     MembershipResponse,
     ModuleMemberResponse,
     ModuleResponse,
+    ModuleScheduleInput,
+    ModuleSchedulePreviewResponse,
     ResetPasswordRequest,
     StatusResponse,
     UserResponse,
 )
+from app.domains.content.schemas import SectionWeekRead
 from app.domains.recovery.reaper import run_stuck_row_reaper
 from app.domains.recovery.reconciliation import run_storage_reconciliation
 from app.domains.recovery.schemas import (
@@ -27,6 +30,7 @@ from app.platform.auth.context import CurrentUserContext
 from app.platform.auth.guards import require_role
 from app.platform.db.models import MaintenanceRun
 from app.platform.db.session import get_db_session
+from app.platform.query.section_week_resolver import resolve_sections_by_weeks
 from app.platform.storage import StorageProvider, get_storage_provider
 
 
@@ -111,6 +115,14 @@ async def create_module(
     return module
 
 
+@router.post("/modules/preview-sections", response_model=ModuleSchedulePreviewResponse)
+async def preview_module_sections(
+    payload: ModuleScheduleInput,
+    current_user: AdminUser,
+) -> ModuleSchedulePreviewResponse:
+    return service.preview_module_schedule(payload)
+
+
 @router.get("/modules", response_model=list[ModuleResponse])
 async def list_modules(
     db: DbSession,
@@ -119,6 +131,37 @@ async def list_modules(
     offset: Offset = 0,
 ):
     return await service.list_modules(db, limit=limit, offset=offset)
+
+
+@router.get("/modules/{module_id}/sections/by-week", response_model=list[SectionWeekRead])
+async def list_admin_module_sections_by_week(
+    module_id: UUID,
+    db: DbSession,
+    current_user: AdminUser,
+    covered_weeks: Annotated[list[int] | None, Query(alias="coveredWeeks")] = None,
+    include_unstamped: Annotated[bool, Query(alias="includeUnstamped")] = False,
+) -> list[SectionWeekRead]:
+    await service.get_module(db, module_id)
+    rows = await resolve_sections_by_weeks(
+        db,
+        module_id=module_id,
+        covered_weeks=covered_weeks or [],
+        include_unstamped=include_unstamped,
+    )
+    return [
+        SectionWeekRead(
+            id=row.id,
+            course_module_id=row.course_module_id,
+            title=row.title,
+            type=row.type,
+            order_index=row.order_index,
+            week_number=row.week_number,
+            session_date=row.session_date,
+            due_at=row.due_at,
+            publish_status=row.publish_status,
+        )
+        for row in rows
+    ]
 
 
 @router.post(

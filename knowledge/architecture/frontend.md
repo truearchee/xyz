@@ -2,7 +2,7 @@
 type: architecture
 stage: 04
 created: 2026-06-05
-updated: 2026-06-09 01:30
+updated: 2026-06-17
 related-session: knowledge/specs/stage-04/4.3.5c-stage2-admin-ui-backfill.md
 ---
 
@@ -21,6 +21,8 @@ related-session: knowledge/specs/stage-04/4.3.5c-stage2-admin-ui-backfill.md
 - Recovery final report: [[4.3.5-client-edge-recovery-final-report]]
 - Recovery plan: [[specs/recovery/client-edge-recovery-plan]]
 - Architecture: [[architecture/auth-current-user-context]]
+- Spec: [[specs/stage-05/5.5e-ui-browser-gate]]
+- Report: [[steps/stage-05/5.5e-ui-browser-gate]]
 
 ## Route structure
 The root `frontend/src/app/layout.tsx` owns global providers only. The public auth page lives under `(auth)/login` and renders without the AppShell. Protected app pages live under `(app)` and are wrapped by `ProtectedAppLayout` plus `AppShell`.
@@ -145,6 +147,26 @@ Session 4.3.5e Part 5 verifies Stage 4.1-4.3 through Playwright:
 - Student UI renders no transcript controls, student upload/status API calls return 403, the student session remains active, and no raw transcript text/segment/chunk fields are exposed.
 
 No product endpoint was added for segment/chunk counts. Count proof remains test-only.
+
+## Stage 5.5e schedule and lab UI
+Session 5.5e extends the existing thin admin/lecturer/student surfaces for schedule metadata:
+
+- `CreateModuleForm.tsx` collects course dates, week-start day, quiz day, and weekday pattern, then calls
+  the admin preview endpoint before enabling create. The preview response is the server dry-run from the
+  same generator used by persisted creation.
+- `AdminModulesPanel.tsx` renders resolver-backed by-week rows from
+  `GET /admin/modules/{moduleId}/sections/by-week` with `includeUnstamped=true`; it does not regroup a
+  client-side section list.
+- `LecturerModuleDetail.tsx` renders an assigned-lecturer by-week view from
+  `GET /modules/{moduleId}/sections/by-week`, plus `SectionMetadataEditor` for stored week/date/lab
+  deadline edits.
+- `SectionUploadControl.tsx` accepts `.ipynb` only for lab sections and can send upload-time `dueAt`
+  through the controlled multipart helper.
+- Student section views display lab deadlines. `StudentAssetRow.tsx` routes `assetKind='processable'`
+  through signed URLs and `assetKind='attachment'` through the authenticated backend download endpoint.
+
+Section add/delete/reorder remains absent from the UI. The 5.5e browser gate asserts those controls are
+not present and backend mutation routes are absent/rejected.
 
 ## E2E bridge and run teardown
 `NEXT_PUBLIC_E2E_TEST_HOOKS=true` enables a browser-only `window.__xyzE2E` bridge for Playwright. It exposes Supabase session helpers, wrapper-backed `/me` and `/admin/users` calls with serializable result envelopes, and a single-use forced bearer-token override for deterministic 401 testing. The bridge is not registered unless the flag is exactly `true`.

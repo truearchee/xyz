@@ -55,6 +55,7 @@ class StudentSectionDetail(CamelModel):
     title: str
     type: str
     order_index: int
+    due_at: datetime | None
     lecturer_notes: str | None
     assets: list[StudentAssetMeta]
 
@@ -114,3 +115,15 @@ class SectionMetadataDetail(CamelModel):
     session_date: date | None
     due_at: datetime | None
     updated_at: datetime
+
+
+class SectionWeekRead(CamelModel):
+    id: UUID
+    course_module_id: UUID
+    title: str
+    type: str
+    order_index: int
+    week_number: int | None
+    session_date: date | None
+    due_at: datetime | None
+    publish_status: str

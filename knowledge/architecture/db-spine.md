@@ -24,6 +24,7 @@ related-session: knowledge/specs/stage-02/2.1-db-spine.md
 - Report: [[steps/stage-05/5.5b-metadata-edit-and-week-resolver]]
 - Report: [[steps/stage-05/5.5c-lab-attachments]]
 - Report: [[steps/stage-05/5.5d-dev-reseed]]
+- Report: [[steps/stage-05/5.5e-ui-browser-gate]]
 - Decision: [[decisions/adr-040-schedule-driven-section-generation]]
 - Decision: [[decisions/adr-041-section-metadata-and-week-resolver]]
 - Decision: [[decisions/adr-042-lab-attachments]]
@@ -98,6 +99,10 @@ The backend now has a SQLAlchemy declarative model package under `backend/app/pl
 - Stage 5.5d adds dev-only reseed tooling. It snapshots existing dev modules, deletes dependent rows,
   recreates modules with the Stage 5.5 reference schedule, and seeds one published lab fixture. This is
   replacement of throwaway dev data, not an in-place schema migration or production data path.
+- Stage 5.5e adds browser-facing admin and lecturer by-week read routes over the same stored-week
+  resolver. These routes do not add structure-mutation capability; section add/delete/reorder remains
+  absent from the API/UI. Student-facing section DTOs now include lab `due_at` and material
+  `asset_kind` so the frontend can display deadlines and choose the correct download path.
 
 ## Transcript schema notes
 - `transcripts.module_section_id` points at `module_sections(id)` and has a partial unique index, `uq_active_transcript_per_section`, for `is_active = true`.

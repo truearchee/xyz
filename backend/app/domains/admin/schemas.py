@@ -106,6 +106,23 @@ class ModuleResponse(CamelModel):
     created_at: datetime
 
 
+class ModuleSectionPreview(CamelModel):
+    title: str
+    type: GeneratedSectionType
+    order_index: int
+    week_number: int
+    session_date: date
+
+
+class ModuleSchedulePreviewResponse(CamelModel):
+    total_sections: int
+    week_count: int
+    lecture_count: int
+    lab_count: int
+    friday_section_count: int
+    sections: list[ModuleSectionPreview]
+
+
 class MembershipResponse(CamelModel):
     id: UUID
     user_id: UUID

@@ -10,6 +10,7 @@ import {
 } from "../../../lib/api";
 import { ForbiddenError, api } from "../../../lib/api/wrapper";
 import { PostClassQuizPanel } from "../../quiz/PostClassQuizPanel";
+import { StudentAssetRow } from "./StudentAssetRow";
 import { SummaryMarkdown } from "./SummaryMarkdown";
 
 // Reuse the 4.5d backoff (no hard timeout), narrowed to the student summary sub-resource and bounded to
@@ -98,6 +99,15 @@ export function StudentSectionDetail({ moduleId, sectionId }: { moduleId: string
         )}
       </section>
 
+      {section.type === "lab" ? (
+        <section aria-label="Deadline" style={styles.block}>
+          <h2 style={styles.blockHeading}>Deadline</h2>
+          <p data-testid={`student-section-detail-due-at-${section.id}`} style={styles.bodyText}>
+            {section.dueAt ? formatDateTime(section.dueAt) : "No deadline set"}
+          </p>
+        </section>
+      ) : null}
+
       <section aria-label="Learning materials" style={styles.block}>
         <h2 style={styles.blockHeading}>Learning materials</h2>
         {section.materials.length === 0 ? (
@@ -105,9 +115,12 @@ export function StudentSectionDetail({ moduleId, sectionId }: { moduleId: string
         ) : (
           <ul style={styles.materialList}>
             {section.materials.map((m) => (
-              <li key={m.id} style={styles.bodyText}>
-                {m.fileName}
-              </li>
+              <StudentAssetRow
+                asset={m}
+                key={m.id}
+                moduleId={moduleId}
+                sectionId={section.id}
+              />
             ))}
           </ul>
         )}
@@ -118,6 +131,13 @@ export function StudentSectionDetail({ moduleId, sectionId }: { moduleId: string
       <PostClassQuizPanel sectionId={sectionId} />
     </section>
   );
+}
+
+function formatDateTime(value: string): string {
+  return new Intl.DateTimeFormat("en", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(value));
 }
 
 function SummariesPanel({ sectionId }: { sectionId: string }) {
@@ -261,5 +281,5 @@ const styles = {
   muted: { color: "#4b5563", fontSize: 14, fontStyle: "italic", margin: 0 },
   stateTitle: { fontSize: 18, lineHeight: 1.35, margin: 0 },
   stateText: { fontSize: 14, lineHeight: 1.5, margin: "8px 0 0" },
-  materialList: { color: "#111827", display: "grid", gap: 4, margin: 0, paddingLeft: 18 },
+  materialList: { color: "#111827", display: "grid", gap: 8, listStyle: "none", margin: 0, padding: 0 },
 } satisfies Record<string, React.CSSProperties>;

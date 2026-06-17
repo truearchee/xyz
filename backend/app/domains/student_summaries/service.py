@@ -97,10 +97,15 @@ async def get_student_section_detail(
         title=section.title,
         type=section.type,
         order_index=section.order_index,
+        due_at=section.due_at,
         lecturer_notes=section.lecturer_notes,
         materials=[
             StudentMaterialMeta(
-                id=m.id, file_name=m.file_name, mime_type=m.mime_type, file_size=m.file_size
+                id=m.id,
+                file_name=m.file_name,
+                mime_type=m.mime_type,
+                file_size=m.file_size,
+                asset_kind=m.asset_kind,
             )
             for m in materials
         ],

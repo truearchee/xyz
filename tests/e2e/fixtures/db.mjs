@@ -65,14 +65,18 @@ WITH next_index AS (
   SELECT coalesce(max(order_index), 0) + 1 AS oi
   FROM module_sections
   WHERE course_module_id = ${sqlLiteral(moduleId)}::uuid
-)
+),
+inserted AS (
 INSERT INTO module_sections (id, course_module_id, title, type, order_index, publish_status, status)
 SELECT gen_random_uuid(), ${sqlLiteral(moduleId)}::uuid, ${sqlLiteral(title)}, ${sqlLiteral(type)},
        next_index.oi, ${sqlLiteral(publishStatus)}, 'active'
 FROM next_index
-RETURNING json_build_object(
+RETURNING id, title, type, order_index, publish_status
+)
+SELECT json_build_object(
   'id', id, 'title', title, 'type', type, 'orderIndex', order_index, 'publishStatus', publish_status
-)::text;
+)::text
+FROM inserted;
 `);
 }
 
