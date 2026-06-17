@@ -75,6 +75,8 @@ class QuizAttemptForStudent(CamelModel):
     status: str
     attempt_number: int
     total_questions: int | None = None
+    new_question_count: int | None = None
+    mistake_review_question_count: int | None = None
     questions: list[QuizQuestionForStudent] = []
 
 

@@ -1,7 +1,7 @@
 """Is an IngestionJob still live in RQ? (ADR-46-C liveness signal — no heartbeat columns.)
 
 embed/summary/quiz jobs are enqueued with stable RQ job_ids (``embed-{id}``, ``summary-brief-{id}``,
-``summary-detailed-{id}``, ``quiz-generate:{id}``), so we can ask RQ directly. parse/chunk are enqueued
+``summary-detailed-{id}``, ``quiz-generate-{id}``), so we can ask RQ directly. parse/chunk are enqueued
 WITHOUT a stable id, so their liveness is unknowable from RQ (``None``) — the reaper falls back to
 per-step age there.
 """

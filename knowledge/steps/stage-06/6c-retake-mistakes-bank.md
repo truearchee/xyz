@@ -134,3 +134,6 @@ course-above-module quiz/authz concept in this codebase.
 
 ## Change history
 - 2026-06-17 — initial completion (backend-verified; client regenerated; tsc green). Commit pending.
+- 2026-06-17 16:56 — [Session 6d] surfaced the existing `mistake_review_question_count` and
+  `new_question_count` attempt fields through the student DTO/client and rendered the retake-prefix banner
+  from those fields in the browser UI; 6c backend gates still pass in the 6d focused suite.

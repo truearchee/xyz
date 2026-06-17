@@ -2,7 +2,7 @@
 
 Lazy, per-attempt generation: ``start_quiz_attempt`` get-or-creates the QuizDefinition, creates a
 ``generating`` QuizAttempt snapshotting the active detailed-summary provenance, COMMITS, then enqueues
-``quiz-generate:{attemptId}`` AFTER commit (a rollback can never leave a phantom job; an enqueue
+``quiz-generate-{attemptId}`` AFTER commit (a rollback can never leave a phantom job; an enqueue
 failure is compensated to ``failed/enqueue_failed``). The job (``generate_post_class_quiz_async``)
 makes ONE gateway call (rule 15) through the 4.5 chain, validates, and in a SINGLE transaction persists
 all questions+options (shuffled display order), stamps provenance, and flips ``generating →
@@ -24,6 +24,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.domains.quiz.assembly_service import PooledStartResult, start_pooled_attempt
 from app.platform.db.models import (
     AIRequestLog,
     AnswerOption,
@@ -58,6 +59,7 @@ __all__ = [
     "QuizUnavailableError",
     "SectionNotFoundError",
     "StartResult",
+    "start_post_class_pooled_attempt",
     "start_quiz_attempt",
     "generate_post_class_quiz_async",
 ]
@@ -163,6 +165,41 @@ async def start_quiz_attempt(
             return StartResult(outcome.attempt_id, "failed", created=True)
         await _stamp_generation_job_id(f, attempt_id=outcome.attempt_id, job_id=job_id)
     return outcome
+
+
+async def start_post_class_pooled_attempt(
+    factory: async_sessionmaker[AsyncSession] | None,
+    *,
+    student_id: UUID,
+    section_id: UUID,
+    enqueue: bool = True,
+) -> PooledStartResult:
+    """6d retrofit entry: post_class now uses the per-section pool + per-attempt sampling path.
+
+    The Stage 5 ``start_quiz_attempt`` / ``generate_post_class_quiz_async`` path remains callable as the
+    clean revert path and for historical tests. This function preserves the Start contract while routing
+    new post-class attempts through the shared Stage 6 pool engine.
+    """
+    f = factory or async_session
+    if f is None:
+        raise RuntimeError("DATABASE_URL environment variable is required")
+
+    async with f() as session:
+        async with session.begin():
+            section = await session.get(ModuleSection, section_id)
+            if section is None:
+                raise SectionNotFoundError(str(section_id))
+            summary = await resolve_quiz_source_summary(
+                session, section_id=section_id, section_type=section.type
+            )
+            if summary is None:
+                raise QuizUnavailableError(str(section_id))
+            definition = await _get_or_create_definition(session, section=section)
+            definition_id = definition.id
+
+    return await start_pooled_attempt(
+        f, student_id=student_id, quiz_definition_id=definition_id, enqueue=enqueue
+    )
 
 
 async def _create_or_resume_attempt(

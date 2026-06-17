@@ -63,7 +63,7 @@ Stage 4.8   First hosted deploy (staging)              NOT STARTED  (new in v3) 
 Stage 4.9   Frontend foundation + platform hygiene     NOT STARTED  (new in v3)
 ✅ Stage 5   Shared quiz engine + event spine           FULLY VERIFIED — merged to main; migrations 0014–0020; gate 1 browser GREEN; gate 3 real-provider smoke GREEN; backend 442 pytest; frontend tsc green; ADR-040..046; F-5d-1 resolved
 ✅ Stage 5.5   Module schedule & section metadata       FULLY VERIFIED — gate 5.5e GREEN; reference schedule 28 sections; full active suite 12/12 after reseed; migration chain rebased after Stage 5 main (`0020 -> 0021 -> 0022`)
-Stage 6     Complete quiz modes                        NOT STARTED
+✅ Stage 6   Complete quiz modes                        FULLY VERIFIED — 6a–6d committed (engine→modes→retake/bank→UI); migrations 0023–0025; 6d browser gate GREEN + 5d preservation GREEN; full active Playwright 14/14; backend 501 passed; gate 3 real-provider smoke GREEN (K2-Think-v2 model echo, GeneratedQuizPool validated); ADR-047
 Stage 7     Glossary                                   NOT STARTED
 Stage 8     Assistant                                  NOT STARTED
 Stage 9     My Progress                                NOT STARTED
@@ -518,7 +518,10 @@ Admin creates module with schedule → sections carry week/date metadata
 
 ## Stage 6 — Complete Quiz Modes
 
-**Status:** NOT STARTED. **Prerequisite satisfied:** Stage 5.5 is FULLY VERIFIED.
+**Status:** FULLY VERIFIED (2026-06-17). Sub-sessions 6a–6d all committed and gated; migrations 0023–0025;
+6d browser gate + 5d preservation gate GREEN; full active Playwright 14/14; backend 501 passed; rule-11
+real-provider quiz-pool smoke GREEN (model echo `MBZUAI-IFM/K2-Think-v2`, `GeneratedQuizPool` validated).
+**Prerequisite satisfied:** Stage 5.5 is FULLY VERIFIED.
 
 **Backend scope (v2 carried):** `recap_period`, `exam_prep`, `mistakes_bank`; assessment scope by covered weeks (`AssessmentScope`); mistake-review prefix; retake reinforcement (`retakeCorrectCount`; prefix flag flips false after 2 correct retake answers; mistake stays in the bank).
 

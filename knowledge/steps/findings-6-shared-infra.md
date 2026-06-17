@@ -55,6 +55,17 @@ collision points are the two **union hint lines** (`validation.validate` and `ga
 feature/event **names** are reconciled via the shared registry above, not by ad-hoc enum edits. Resolve by
 keeping both members.
 
+## Cross-stage UI design-system gap (added 2026-06-17)
+Stage 6's overview references `knowledge/design-system.md` as the shipped 4.9 component authority, but the
+file is absent in the current repo search. For 6d, the developer approved code-wins handling: use the
+shipped 4.9/5d/5.5 source components and patterns as the binding design authority, especially `mcq.tsx` and
+the post-class panel interaction patterns, and do **not** expand 6d to author the missing document.
+
+This is cross-stage: Stage 7 will hit the same gap while reusing quiz MCQ primitives for glossary
+learn/test surfaces. Do not let Stage 6 and Stage 7 independently invent divergent styles. Track the
+missing `knowledge/design-system.md` as Stage 4.9 residual debt and derive it after Stages 6 and 7 land,
+before Stage 8's heavier UI work.
+
 ## Migrations — RESERVATION (updated 2026-06-17 per Stage 7 lock)
 **Stage 6 holds Alembic revisions `0023`–`0029`.** 6a landed `0023` (section pools) + `0024` (mistake-record
 pool identity); `0025`–`0029` are reserved for 6b–6d (6b's `quiz_definitions` multi-section +

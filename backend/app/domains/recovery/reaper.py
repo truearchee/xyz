@@ -283,13 +283,15 @@ async def _reap_lost_quiz_generation(factory, report_only, rq_liveness, counts, 
 
 
 async def _pooled_attempt_awaiting_pool(factory, attempt) -> bool:
-    """True iff ``attempt`` is a POOLED (non-post_class) attempt with at least one in-scope section pool
-    still ``generating`` — i.e. legitimately waiting on the scheduler-free two-level pool/assembly flow,
-    not a lost generation. post_class (Stage 5, not pooled) always returns False so its liveness reaping is
-    unchanged."""
+    """True iff ``attempt`` is waiting on an in-scope section pool that is still ``generating``.
+
+    Stage 6d retrofits post_class onto the same pooled wait path as recap/exam-prep, so this can no longer
+    exclude by quiz mode. Old Stage 5 post_class attempts have no pool generating for their section and
+    still fall through to the lost-job reaper.
+    """
     async with factory() as session:
         definition = await session.get(QuizDefinition, attempt.quiz_definition_id)
-        if definition is None or definition.quiz_mode == "post_class":
+        if definition is None:
             return False
         scope = definition.source_scope or {}
         raw_ids = scope.get("sectionIds")

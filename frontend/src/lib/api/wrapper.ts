@@ -6,25 +6,33 @@ import {
   type AnswerFeedback,
   type AnswerSubmission,
   ApiError,
+  AssessmentsService,
+  type AssessmentScopeResponse,
   type AssignMemberRequest,
   ContentService,
+  type CreateAssessmentScopeRequest,
   type CreateModuleRequest,
   type CreateUserRequest,
+  type ExamPrepScopeSummary,
   MeService,
   type ModuleScheduleInput,
   type ModuleSchedulePreviewResponse,
   ModulesService,
   OpenAPI,
+  type PaginatedResponse_AssessmentScopeResponse_,
+  type PaginatedResponse_MistakeBankItem_,
   type QuizAttemptForStudent,
   type QuizAttemptResult,
   type QuizAttemptsSummary,
   type QuizAvailabilityResponse,
   QuizService,
+  type RecapScopeRequest,
   type ResetPasswordRequest,
   type SectionAssetListResponse,
   type SectionMetadataPatchRequest,
   type SectionMetadataDetail,
   type SectionWeekRead,
+  type ScopeAvailabilityResponse,
   type StudentSectionListItem,
   type StudentSectionRead,
   type StudentSectionSummariesRead,
@@ -342,6 +350,25 @@ export const api = {
       withAuthRecovery(() => ModulesService.getModuleModulesModuleIdGet(moduleId)),
     list: () => withAuthRecovery(() => ModulesService.listModulesModulesGet()),
   },
+  assessments: {
+    create: (
+      moduleId: string,
+      requestBody: CreateAssessmentScopeRequest,
+    ): Promise<AssessmentScopeResponse> =>
+      withAuthRecovery(() =>
+        AssessmentsService.createAssessmentScope(moduleId, requestBody),
+      ),
+    list: (
+      moduleId: string,
+      limit = 50,
+      offset = 0,
+    ): Promise<PaginatedResponse_AssessmentScopeResponse_> =>
+      withAuthRecovery(() =>
+        AssessmentsService.listAssessmentScopes(moduleId, limit, offset),
+      ),
+    get: (scopeId: string): Promise<AssessmentScopeResponse> =>
+      withAuthRecovery(() => AssessmentsService.getAssessmentScope(scopeId)),
+  },
   quiz: {
     getAvailability: (sectionId: string): Promise<QuizAvailabilityResponse> =>
       withAuthRecovery(() => QuizService.getStudentQuizAvailability(sectionId)),
@@ -360,6 +387,34 @@ export const api = {
       withAuthRecovery(() => QuizService.completeStudentQuiz(attemptId)),
     getAttemptsSummary: (sectionId: string): Promise<QuizAttemptsSummary> =>
       withAuthRecovery(() => QuizService.getStudentQuizAttemptsSummary(sectionId)),
+    getRecapAvailability: (
+      moduleId: string,
+      requestBody: RecapScopeRequest,
+    ): Promise<ScopeAvailabilityResponse> =>
+      withAuthRecovery(() =>
+        QuizService.getStudentRecapAvailability(moduleId, requestBody),
+      ),
+    startRecap: (
+      moduleId: string,
+      requestBody: RecapScopeRequest,
+    ): Promise<QuizAttemptForStudent> =>
+      withAuthRecovery(() =>
+        QuizService.startStudentRecapQuiz(moduleId, requestBody),
+      ),
+    listExamPrepScopes: (moduleId: string): Promise<Array<ExamPrepScopeSummary>> =>
+      withAuthRecovery(() => QuizService.listStudentExamPrepScopes(moduleId)),
+    startExamPrep: (scopeId: string): Promise<QuizAttemptForStudent> =>
+      withAuthRecovery(() => QuizService.startStudentExamPrepQuiz(scopeId)),
+    listMistakesBank: (
+      moduleId: string,
+      limit = 50,
+      offset = 0,
+    ): Promise<PaginatedResponse_MistakeBankItem_> =>
+      withAuthRecovery(() =>
+        QuizService.listStudentMistakesBank(moduleId, limit, offset),
+      ),
+    startMistakesBank: (moduleId: string): Promise<QuizAttemptForStudent> =>
+      withAuthRecovery(() => QuizService.startStudentMistakesBank(moduleId)),
   },
   studentSummaries: {
     listSections: (moduleId: string): Promise<Array<StudentSectionListItem>> =>

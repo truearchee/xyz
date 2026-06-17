@@ -259,7 +259,7 @@ async def test_start_successful_enqueue_stamps_generation_job_id(
     factory = _factory(db_session)
 
     def _enqueue(attempt_id):
-        return f"quiz-generate:{attempt_id}"
+        return f"quiz-generate-{attempt_id}"
 
     monkeypatch.setattr(gen_service, "enqueue_generate_post_class_quiz", _enqueue)
     result = await start_quiz_attempt(
@@ -267,7 +267,7 @@ async def test_start_successful_enqueue_stamps_generation_job_id(
     )
 
     attempt = await _attempt(factory, result.attempt_id)
-    assert attempt.generation_job_id == f"quiz-generate:{result.attempt_id}"
+    assert attempt.generation_job_id == f"quiz-generate-{result.attempt_id}"
 
 
 # ── generation: success / fence / failure ────────────────────────────────────────────────────────

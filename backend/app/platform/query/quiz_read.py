@@ -45,6 +45,8 @@ class VisibleAttempt:
     status: str
     attempt_number: int
     total_questions: int | None
+    new_question_count: int | None
+    mistake_review_question_count: int | None
     correct_count: int | None
     incorrect_count: int | None
     score_percentage: Decimal | None
@@ -70,6 +72,8 @@ async def get_visible_attempt(
                 QuizAttempt.status,
                 QuizAttempt.attempt_number,
                 QuizAttempt.total_questions,
+                QuizAttempt.new_question_count,
+                QuizAttempt.mistake_review_question_count,
                 QuizAttempt.correct_count,
                 QuizAttempt.incorrect_count,
                 QuizAttempt.score_percentage,
@@ -116,11 +120,13 @@ async def get_visible_attempt(
         status=row[7],
         attempt_number=row[8],
         total_questions=row[9],
-        correct_count=row[10],
-        incorrect_count=row[11],
-        score_percentage=row[12],
-        completed_at=row[13],
-        source_scope=row[14] or {},
+        new_question_count=row[10],
+        mistake_review_question_count=row[11],
+        correct_count=row[12],
+        incorrect_count=row[13],
+        score_percentage=row[14],
+        completed_at=row[15],
+        source_scope=row[16] or {},
     )
 
 

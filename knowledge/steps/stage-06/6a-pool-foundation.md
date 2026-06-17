@@ -148,3 +148,8 @@ ADR-047 — Per-section question pool: the Stage 6 capacity decision.
 - 2026-06-17 — [Session 6c] extended `domains/quiz/assembly_service.py` with retake-prefix snapshot
   assembly and synchronous no-AI mistakes-bank assembly; 6a pool generation/reuse behavior remains covered
   by `tests/test_quiz_pool.py` in the 6c focused gate.
+- 2026-06-17 16:56 — [Session 6d] updated `backend/app/domains/recovery/reaper.py` so pooled-attempt
+  liveness includes `post_class` after the D4 post-class retrofit; 6a pool behavior remains backend/static
+  verified, with browser proof blocked in 6d by runtime environment.
+- 2026-06-17 18:59 — [Session 6d] updated `backend/app/workers/queues.py` and related recovery/test
+  references to use dash-only RQ job IDs (`quiz-generate-*`, `quiz-pool-*`) because RQ rejects colons.

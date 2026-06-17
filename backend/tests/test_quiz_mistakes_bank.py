@@ -53,7 +53,7 @@ def captured(monkeypatch) -> SimpleNamespace:
     pools: list = []
     assemblies: list = []
     monkeypatch.setattr(
-        pool_service, "enqueue_generate_section_pool", lambda pid: pools.append(pid) or f"quiz-pool:{pid}"
+        pool_service, "enqueue_generate_section_pool", lambda pid: pools.append(pid) or f"quiz-pool-{pid}"
     )
     monkeypatch.setattr(
         pool_service, "enqueue_try_assemble_attempt", lambda aid: assemblies.append(aid) or f"q:{aid}"

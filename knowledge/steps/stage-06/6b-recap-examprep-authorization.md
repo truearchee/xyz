@@ -114,3 +114,6 @@ OR-predicate are documented in the plan + this report; promote to an ADR only if
 - 2026-06-17 — [Session 6c] extended the 6b multi-section quiz surface with `mistakes_bank` definition
   creation, student bank list/start endpoints, and retake-prefix progress; 6b recap/exam-prep behavior
   remains covered by `tests/test_quiz_recap_examprep.py` in the 6c focused gate.
+- 2026-06-17 16:56 — [Session 6d] exposed pooled attempt count metadata through
+  `backend/app/platform/query/quiz_read.py` and `backend/app/domains/quiz/schemas.py` so recap/exam-prep
+  attempts can render browser retake-prefix state; 6b backend gates still pass in the 6d focused suite.

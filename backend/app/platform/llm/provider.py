@@ -302,6 +302,8 @@ class DeterministicTestProvider:
     """Boundary-only test double. ``fault`` forces a classified failure for gate assertions — one
     fault per §8 outcome so the error map and the in-call 429 backoff are provable without a key."""
 
+    is_deterministic_test_provider = True
+
     def __init__(self, *, fault: str | None = None) -> None:
         if fault is None and settings.IS_NON_PROD:
             fault = os.environ.get("LLM_FAULT_INJECTION") or None

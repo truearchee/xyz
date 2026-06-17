@@ -26,7 +26,7 @@ from app.domains.quiz.assembly_service import (
 from app.domains.quiz.generation_service import (
     QuizUnavailableError,
     SectionNotFoundError,
-    start_quiz_attempt,
+    start_post_class_pooled_attempt,
 )
 from app.domains.quiz.mistakes import upsert_pool_mistake
 from app.domains.quiz.schemas import (
@@ -142,10 +142,10 @@ async def start(
 
     factory = async_sessionmaker(db.bind, class_=AsyncSession, expire_on_commit=False)
     try:
-        result = await start_quiz_attempt(
+        result = await start_post_class_pooled_attempt(
             factory, student_id=current_user.user_id, section_id=section_id, enqueue=True
         )
-    except QuizUnavailableError:
+    except (QuizUnavailableError, PooledQuizUnavailableError):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail={"code": "quiz_unavailable"}
         ) from None
@@ -197,6 +197,8 @@ async def _build_attempt_detail(db: AsyncSession, visible: VisibleAttempt) -> Qu
         status=visible.status,
         attempt_number=visible.attempt_number,
         total_questions=visible.total_questions,
+        new_question_count=visible.new_question_count,
+        mistake_review_question_count=visible.mistake_review_question_count,
         questions=questions,
     )
 

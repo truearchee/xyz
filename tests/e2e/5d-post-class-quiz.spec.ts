@@ -42,6 +42,7 @@ const TRANSCRIPT_FILE = 'sentinel-lecture.vtt';
 type ApiResponse<T = unknown> = { body: T; status: number };
 type SectionRow = { id: string; orderIndex: number; publishStatus: string; title: string; type: string };
 type OptionRow = { questionId: string; optionId: string; isCorrect: boolean };
+type AttemptCounts = { total: number; newQuestions: number; mistakePrefix: number };
 
 test.setTimeout(180_000);
 
@@ -101,9 +102,10 @@ function recordManifestValue(runId: string, field: string, value: string) {
   manifest[field] = [...new Set([...current, value])];
   writeFileSync(manifestPathForRunId(runId), `${JSON.stringify(manifest, null, 2)}\n`);
 }
-function sectionByTitle(sections: SectionRow[], title: string): SectionRow {
-  const s = sections.find((c) => c.title === title);
-  if (!s) throw new Error(`Missing generated section ${title}`);
+function nthSectionOfType(sections: SectionRow[], type: 'lecture' | 'lab', index = 0): SectionRow {
+  const matches = sections.filter((candidate) => candidate.type === type);
+  const s = matches[index];
+  if (!s) throw new Error(`Missing generated ${type} section #${index} (have ${matches.length})`);
   return s;
 }
 
@@ -131,6 +133,17 @@ function countQuestions(attemptId: string): number {
     `SELECT to_json(count(*)::int)::text FROM quiz_questions WHERE quiz_attempt_id = ${sqlLiteral(attemptId)}::uuid;`,
   ) as unknown as number;
 }
+function attemptCounts(attemptId: string): AttemptCounts {
+  return runPsqlJson(
+    `SELECT json_build_object(
+       'total', (SELECT count(*)::int FROM quiz_questions WHERE quiz_attempt_id = qa.id),
+       'newQuestions', qa.new_question_count,
+       'mistakePrefix', qa.mistake_review_question_count
+     )::text
+     FROM quiz_attempts qa
+     WHERE qa.id = ${sqlLiteral(attemptId)}::uuid;`,
+  ) as unknown as AttemptCounts;
+}
 function countEvents(attemptId: string, eventType: string): number {
   return runPsqlJson(
     `SELECT to_json(count(*)::int)::text FROM student_activity_events WHERE source_id = ${sqlLiteral(attemptId)}::uuid AND event_type = ${sqlLiteral(eventType)};`,
@@ -147,6 +160,18 @@ async function setupPublishedSectionWithSummary(runId: string, apiAdmin: APIRequ
     title: `Stage 5d Quiz Module ${runId}`,
     ownerId: getAppUserByEmail(LECTURER_EMAIL).id,
     timezone: 'UTC',
+    schedule: {
+      courseStartDate: '2026-01-12',
+      courseEndDate: '2026-05-01',
+      weekStartDay: 'monday',
+      sessionPattern: [
+        { weekday: 'monday', sectionType: 'lecture' },
+        { weekday: 'tuesday', sectionType: 'lecture' },
+        { weekday: 'wednesday', sectionType: 'lecture' },
+        { weekday: 'thursday', sectionType: 'lab' },
+      ],
+      quizDay: 'friday',
+    },
   });
   expect(created.status).toBe(201);
   const moduleId = created.body.id;
@@ -155,7 +180,7 @@ async function setupPublishedSectionWithSummary(runId: string, apiAdmin: APIRequ
   await apiJson(apiAdmin, 'POST', `/admin/modules/${moduleId}/members`, { userId: student.id, role: 'student' });
 
   const sections = getSectionsForModule(moduleId) as SectionRow[];
-  const lecture = sectionByTitle(sections, 'Lecture 1');
+  const lecture = nthSectionOfType(sections, 'lecture', 0);
   const upload = await apiUpload<{ id: string }>(
     apiLecturer,
     `/modules/${moduleId}/sections/${lecture.id}/transcript`,
@@ -246,7 +271,7 @@ test('5d post-class quiz browser gate', async ({ browser }) => {
     const attempt2 = latestAttemptId(studentId);
     recordManifestValue(runId, 'quizAttemptIds', attempt2);
     expect(attempt2).not.toBe(attemptId);
-    expect(countQuestions(attempt2)).toBe(10);
+    expect(attemptCounts(attempt2)).toEqual({ total: 11, newQuestions: 10, mistakePrefix: 1 });
 
     // DETERMINISTIC-ONLY: answer all correct → 100 → perfect_quiz_score event.
     await answerAll(studentPage, attempt2, true);
