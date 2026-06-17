@@ -1,7 +1,15 @@
 # Status
 
-_Last updated: 2026-06-17 — **Stage 6 IN PROGRESS — 6a per-section pool foundation BACKEND VERIFIED**
-(uncommitted, on branch `stage-6`, off main head `a8cea6e`). 6a builds the Stage 6 question ENGINE — no
+_Last updated: 2026-06-17 — **Stage 6 IN PROGRESS — 6b recap + exam-prep + authorization BACKEND VERIFIED**
+(on branch `stage-6`; 6a committed at `19af1d3`). 6b adds the two multi-section modes on the 6a engine —
+migration 0025, AssessmentScope lecturer CRUD, recap/exam-prep scope resolution + canonical-key SHARED
+definitions, the binding authorization (404-not-403, lecturer-on-module, published-only sampling), unified
+multi-section visibility, D1 pre-warm + D3 all-or-wait; OpenAPI client regenerated, tsc green; full backend
+**497 passed**, single head **0025**. Detail: [[steps/stage-06/6b-recap-examprep-authorization]]. Below is
+the prior 6a foundation summary._
+
+_Prior (6a): **Stage 6a per-section pool foundation BACKEND VERIFIED + COMMITTED** (`19af1d3`). 6a builds
+the Stage 6 question ENGINE — no
 mode UI, no recap/exam_prep/mistakes_bank endpoints, no AssessmentScope, no post-class retrofit (those are
 6b–6d). Migrations **0023** (`section_question_pools` + `pool_questions` + `quiz_questions.
 source_pool_question_id` + the `ai_request_logs.feature` `'quiz_pool'` CHECK) and **0024**
@@ -32,15 +40,25 @@ _Prior: 2026-06-12 — **Stage 4.7 (student-facing summaries) FULLY VERIFIED —
 ## Current state
 
 **Stage 6 — Complete Quiz Modes — IN PROGRESS** (overview spec [[specs/stage-06/6-complete-quiz-modes]];
-sub-sessions 6a→6d, each gated before the next). Migration block **0023–0028** (6a used 0023–0024;
-0025–0028 reserved). The capacity decision (per-section pool + per-attempt sampling, ADR-047) is the spine.
+sub-sessions 6a→6d, each gated before the next). Migration block **0023–0029** (6a used 0023–0024;
+0025–0029 reserved; Stage 7 owns 0030–0031 — updated 2026-06-17 per the Stage 7 lock). The capacity
+decision (per-section pool + per-attempt sampling, ADR-047) is the spine. **Stage 7 coordination (locked):**
+event-type + AIRequestLog feature names go through Stage 7's single shared registry (union-aware CHECK +
+CI union test) — Stage 6 registers its names there, never a second copy; 6a's hard-coded `quiz_pool`
+feature is a tracked reconcile-at-integration item (not a 6a reopen). See [[steps/findings-6-shared-infra]].
 
-- **6a — pool foundation — BACKEND VERIFIED** (this session). The engine + sampling/assembly/mistake-
-  identity primitives, gate-proven. No student/lecturer surface yet.
-- **6b — NOT STARTED.** Recap + exam_prep modes + AssessmentScope + authorization (migration 0025:
-  `quiz_definitions` DROP NOT NULL on `module_section_id` + `scope_key` + `assessment_scope_id`); D1
-  exam-prep pre-warm; section-eligibility + student published/assigned filter + 404 rules; multi-section
-  visibility read.
+- **6a — pool foundation — BACKEND VERIFIED + COMMITTED** (`19af1d3`). The engine + sampling/assembly/
+  mistake-identity primitives, gate-proven.
+- **6b — recap + exam_prep + authorization — BACKEND VERIFIED** (this session). Migration 0025
+  (`assessment_scopes` + multi-section `quiz_definitions`: nullable section + `scope_key` +
+  `assessment_scope_id` + dedup index). AssessmentScope lecturer CRUD (lecturer-on-module 403);
+  recap/exam-prep scope resolution → canonical-key SHARED definition → 6a `start_pooled_attempt`;
+  section-eligibility read (assignment/supplementary + unpublished excluded silently); unified
+  `get_visible_attempt` (multi-section module-level; post_class S7 gate preserved); D1 pre-warm; D3
+  all-or-wait; 404-not-403 for unassigned. Pulled forward from 6c (forced by multi-section completion):
+  scope-aware event metadata + section/pool-aware `answer()` mistake creation. OpenAPI client regenerated;
+  `tsc` green. **Verified:** single head **0025**; 6b suite **7 passed**; full backend **497 passed**; ruff
+  clean; tsc exit 0. See [[steps/stage-06/6b-recap-examprep-authorization]].
 - **6c — NOT STARTED.** Retake reinforcement (wire `upsert_pool_mistake` + the atomic flip-at-2 into
   `service.answer`) + mistakes-bank (per module, from snapshots, paginated) + event metadata (mode +
   multi-section scope) for all modes.

@@ -1,5 +1,6 @@
 from app.platform.db.models.ai_request_log import AIRequestLog
 from app.platform.db.models.answer_option import AnswerOption
+from app.platform.db.models.assessment_scope import AssessmentScope
 from app.platform.db.models.base import Base
 from app.platform.db.models.course_membership import CourseMembership
 from app.platform.db.models.course_module import CourseModule
@@ -25,6 +26,7 @@ __all__ = [
     "AIRequestLog",
     "AnswerOption",
     "AppUser",
+    "AssessmentScope",
     "Base",
     "CourseMembership",
     "CourseModule",

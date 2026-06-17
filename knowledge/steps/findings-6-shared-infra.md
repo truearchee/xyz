@@ -19,22 +19,51 @@
 | `app/platform/llm/provider.py` | `DeterministicTestProvider` gains a `quiz_pool_generation` fixture | test-double canned output (the established per-prompt pattern) |
 | `backend/prompts/quiz_pool_generation/v1.yaml` + `CHECKSUMS.json` | NEW prompt dir + its drift-guard baseline entry | new prompt only — summary/quiz/glossary prompts untouched |
 
-## Expected Stage 7 (Glossary) overlap
+## Shared event-type / AIRequestLog feature-name REGISTRY (Stage 7 — official pattern, locked 2026-06-17)
+Stage 7 introduces a **single shared source-of-truth list** for `student_activity_events.event_type` and
+`ai_request_logs.feature` names, with **union-aware CHECK migrations** and a **CI test asserting the
+constraint equals the union of all stages' values**. This is now the official pattern for BOTH stages —
+spec v2's coordination section forbids forking it.
+
+**Why it matters mechanically:** each migration that touches the feature/event CHECK **rewrites it
+wholesale**. A name that is not in the shared list gets **silently dropped** by whoever writes the next
+such migration. Stage 7's CI union test is the guard; Stage 6's only job is to ensure its names live in
+that one list.
+
+**Stage 6 rules:**
+- **Register every event-type / feature name through the shared list.** Do NOT keep a second copy in the
+  quiz domain. When Stage 7's shared list lands in the integration branch, **point the references at it**.
+- **6a reconcile item (NOT a 6a reopen — a small 6b/6c cleanup):** 6a hard-coded the AIRequestLog feature
+  `'quiz_pool'` in two places that will reconcile to the shared list at integration — (a)
+  `GatewayFeature` Literal in `app/platform/llm/models/prompt.py`, (b) the `ai_request_logs.feature` CHECK
+  in migration `0023`. Both are correct + isolated today; when the shared list exists, repoint them so the
+  union migration cannot drop `'quiz_pool'`.
+- **Events (6c):** `completed_quiz` / `perfect_quiz_score` are **Stage 5's existing types** — 6c only adds
+  METADATA (mode + `source_scope` section ids), NOT new types. 6c must read those names **from the shared
+  list**, not a local copy.
+- **Sequencing (rule 10):** if 6c needs to register a name **before** the shared list exists in this
+  branch, do **not** pre-empt it with a local constant — write a findings note and let the two stages be
+  ordered. (6c is expected to add no NEW feature/event name beyond the existing `quiz_pool` + the Stage 5
+  event types, so this should not bite; flag if it does.)
+- **6b introduces NO new event/feature name.** `assessment_scopes.status` (`active|locked`) is a domain
+  enum, not part of the shared registry; pre-warm reuses the existing `quiz_pool` feature.
+
+## Expected Stage 7 (Glossary) `platform/llm` overlap
 Glossary's definition generation will add its own `output_schema` member the same way (a new Pydantic
-model + a new validator branch + a `GatewayFeature`/feature-CHECK value + a new prompt dir). The only
-textual collision points are the two **union hint lines** (`validation.validate` and `gateway.complete`)
-and the two **enum lines** (`GatewayFeature`, the `ai_request_logs.feature` CHECK). All four are
-add-a-member edits with **no behavioral coupling** — resolve by keeping both members.
+model + a new validator branch + a `GatewayFeature`/feature value + a new prompt dir). The textual
+collision points are the two **union hint lines** (`validation.validate` and `gateway.complete`); the
+feature/event **names** are reconciled via the shared registry above, not by ad-hoc enum edits. Resolve by
+keeping both members.
 
-## Migrations — RESERVATION (read before adding a Stage 7 migration)
-**Stage 6 reserves Alembic revisions `0023`–`0028`.** 6a has landed `0023` (section pools) and `0024`
-(mistake-record pool identity); `0025`–`0028` are reserved for 6b–6d (6b's `quiz_definitions` multi-section
-+ `assessment_scopes` is `0025`). Stage 6 is at a **single head `0024`**.
+## Migrations — RESERVATION (updated 2026-06-17 per Stage 7 lock)
+**Stage 6 holds Alembic revisions `0023`–`0029`.** 6a landed `0023` (section pools) + `0024` (mistake-record
+pool identity); `0025`–`0029` are reserved for 6b–6d (6b's `quiz_definitions` multi-section +
+`assessment_scopes` is `0025`). Stage 6 stays **at or below `0029`**; single head `0024` today.
 
-**Stage 7 must number its migrations at `0029` or above.** Do NOT take `0023`–`0028`.
+**Stage 7 owns `0030` + `0031`** (incl. its feature/event union migration). The branches diverged (Stage 7
+branched earlier), so **expect a small merge migration at integration** to reconcile the two heads — normal
+parallel-work housekeeping, recorded on both findings notes.
 
-Proactive check (2026-06-17, from this branch): the `stage-7` branch is 12 commits ahead of `main` but has
-**no migration beyond `0022`** — so there is **no clash today**. The risk is only forward: a Stage 7
-migration that naively picks "head + 1" would grab `0023` and collide, producing a second Alembic head at
-integration. If Stage 7 has since added a `0023`–`0028` revision, raise it in a findings note now and
-renumber to `0029+` before merge — do not discover it at merge.
+Proactive check (2026-06-17): the `stage-7` branch is 12 commits ahead of `main` but has **no migration
+beyond `0022`** — **no clash today**. If Stage 7 ever claims a revision inside `0025`–`0029`, raise it now,
+not at merge.

@@ -18,25 +18,38 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.domains.quiz.assembly_service import start_pooled_attempt
 from app.domains.quiz.generation_service import (
     QuizUnavailableError,
     SectionNotFoundError,
     start_quiz_attempt,
 )
+from app.domains.quiz.mistakes import upsert_pool_mistake
 from app.domains.quiz.schemas import (
     AnswerFeedback,
     AnswerForStudent,
     AnswerSubmission,
+    ExamPrepScopeSummary,
     QuizAttemptForStudent,
     QuizAttemptResult,
     QuizAttemptsSummary,
     QuizAvailabilityResponse,
     QuizOptionForStudent,
     QuizQuestionForStudent,
+    RecapScopeRequest,
+    ScopeAvailabilityResponse,
+)
+from app.domains.quiz.scope_service import (
+    EXAM_PREP_MODE,
+    RECAP_MODE,
+    get_or_create_pooled_definition,
+    resolve_exam_prep_scope,
+    resolve_recap_scope,
 )
 from app.platform.auth.context import CurrentUserContext
 from app.platform.db.models import (
     AnswerOption,
+    AssessmentScope,
     MistakeRecord,
     QuizAttempt,
     QuizQuestion,
@@ -44,6 +57,7 @@ from app.platform.db.models import (
 )
 from app.platform.events import COMPLETED_QUIZ, PERFECT_QUIZ_SCORE, EventRecorder
 from app.platform.query.quiz_availability_read import get_quiz_availability
+from app.platform.query.section_eligibility_read import student_is_active_member
 from app.platform.query.quiz_read import (
     VisibleAttempt,
     get_attempt_questions_for_student,
@@ -72,6 +86,25 @@ def _correct_option(options: list[AnswerOption]) -> AnswerOption | None:
         if opt.is_correct:
             return opt
     return None
+
+
+def _event_scope_metadata(visible) -> dict:
+    """Scope reference for the activity-event metadata. POSITIVELY carries scope so Stages 9/10/11 can
+    attribute it — a single-section (post_class) attempt emits ``moduleSectionId``; a MULTI-SECTION
+    (recap/exam_prep) attempt (``module_section_id`` is NULL) emits the in-scope ``moduleSectionIds`` (and
+    ``assessmentScopeId`` when exam-prep) from the definition's ``source_scope``. Never ``str(None)``."""
+    meta: dict = {
+        "quizMode": visible.quiz_mode,
+        "quizDefinitionId": str(visible.quiz_definition_id),
+    }
+    if visible.module_section_id is not None:
+        meta["moduleSectionId"] = str(visible.module_section_id)
+    else:
+        scope = visible.source_scope or {}
+        meta["moduleSectionIds"] = [str(s) for s in (scope.get("sectionIds") or [])]
+        if scope.get("assessmentScopeId"):
+            meta["assessmentScopeId"] = str(scope["assessmentScopeId"])
+    return meta
 
 
 # ── availability ─────────────────────────────────────────────────────────────────────────────────
@@ -249,29 +282,56 @@ async def answer(
             }
             for o in options
         ]
-        try:
-            async with db.begin_nested():
-                db.add(
-                    MistakeRecord(
-                        student_id=current_user.user_id,
-                        module_id=visible.module_id,
-                        module_section_id=visible.module_section_id,
-                        source_quiz_definition_id=visible.quiz_definition_id,
-                        source_quiz_attempt_id=attempt_id,
-                        source_question_id=question.id,
-                        question_snapshot={
-                            "questionText": question.question_text,
-                            "displayOrder": question.display_order,
-                            "explanation": question.explanation,
-                        },
-                        answer_options_snapshot={"options": snapshot_options},
-                        selected_wrong_answer=selected.text,
-                        correct_answer=(correct.text if correct is not None else ""),
-                        explanation=question.explanation,
+        question_snapshot = {
+            "questionText": question.question_text,
+            "displayOrder": question.display_order,
+            "explanation": question.explanation,
+        }
+        answer_options_snapshot = {"options": snapshot_options}
+        # Stage 6b: a pooled question's mistake lives at its SOURCE section (a multi-section attempt has a
+        # NULL definition section); a post_class question's source_section_id equals its single section.
+        mistake_section_id = question.source_section_id or visible.module_section_id
+        correct_answer = correct.text if correct is not None else ""
+        if question.source_pool_question_id is not None and mistake_section_id is not None:
+            # Pooled question → durable upsert identity (6a): re-missing the same pool question in the same
+            # QuizDefinition across attempts updates ONE record (the answer insert above already fenced the
+            # double-submit, so the (attempt, question) pair here is always new — only the pool key conflicts).
+            await upsert_pool_mistake(
+                db,
+                student_id=current_user.user_id,
+                module_id=visible.module_id,
+                module_section_id=mistake_section_id,
+                source_quiz_definition_id=visible.quiz_definition_id,
+                source_quiz_attempt_id=attempt_id,
+                source_question_id=question.id,
+                source_pool_question_id=question.source_pool_question_id,
+                question_snapshot=question_snapshot,
+                answer_options_snapshot=answer_options_snapshot,
+                selected_wrong_answer=selected.text,
+                correct_answer=correct_answer,
+                explanation=question.explanation,
+            )
+        else:
+            # Pre-pool (post_class / mistake_review) → Stage 5 identity on (attempt, question).
+            try:
+                async with db.begin_nested():
+                    db.add(
+                        MistakeRecord(
+                            student_id=current_user.user_id,
+                            module_id=visible.module_id,
+                            module_section_id=mistake_section_id,
+                            source_quiz_definition_id=visible.quiz_definition_id,
+                            source_quiz_attempt_id=attempt_id,
+                            source_question_id=question.id,
+                            question_snapshot=question_snapshot,
+                            answer_options_snapshot=answer_options_snapshot,
+                            selected_wrong_answer=selected.text,
+                            correct_answer=correct_answer,
+                            explanation=question.explanation,
+                        )
                     )
-                )
-        except IntegrityError:
-            pass  # already recorded for this (attempt, question) — idempotent
+            except IntegrityError:
+                pass  # already recorded for this (attempt, question) — idempotent
 
     await db.commit()
     # 7. feedback (no score, no event)
@@ -343,6 +403,7 @@ async def complete(
     attempt.completed_at = now
     attempt.updated_at = now
 
+    scope_meta = _event_scope_metadata(visible)
     recorder = EventRecorder()
     await recorder.record(
         db,
@@ -351,9 +412,7 @@ async def complete(
         event_type=COMPLETED_QUIZ,
         source_id=attempt.id,
         metadata={
-            "quizMode": visible.quiz_mode,
-            "quizDefinitionId": str(visible.quiz_definition_id),
-            "moduleSectionId": str(visible.module_section_id),
+            **scope_meta,
             "attemptNumber": attempt.attempt_number,
             "correctCount": correct,
             "totalQuestions": total,
@@ -369,9 +428,7 @@ async def complete(
             event_type=PERFECT_QUIZ_SCORE,
             source_id=attempt.id,
             metadata={
-                "quizMode": visible.quiz_mode,
-                "quizDefinitionId": str(visible.quiz_definition_id),
-                "moduleSectionId": str(visible.module_section_id),
+                **scope_meta,
                 "attemptNumber": attempt.attempt_number,
             },
         )
@@ -406,3 +463,142 @@ async def attempts_summary(
     return QuizAttemptsSummary(
         attempt_count=agg.attempt_count, best_score_percentage=agg.best_score_percentage
     )
+
+
+# ── recap + exam-prep (Stage 6b) ──────────────────────────────────────────────────────────────────
+MODULE_NOT_FOUND = "MODULE_NOT_FOUND"
+SCOPE_NOT_FOUND = "ASSESSMENT_SCOPE_NOT_FOUND"
+
+
+def _scope_factory(db: AsyncSession) -> async_sessionmaker[AsyncSession]:
+    return async_sessionmaker(db.bind, class_=AsyncSession, expire_on_commit=False)
+
+
+async def recap_availability(
+    db: AsyncSession,
+    *,
+    current_user: CurrentUserContext,
+    module_id: UUID,
+    payload: RecapScopeRequest,
+) -> ScopeAvailabilityResponse:
+    _require_student(current_user.role)
+    if not await student_is_active_member(
+        db, student_id=current_user.user_id, module_id=module_id
+    ):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=MODULE_NOT_FOUND)
+    resolution = await resolve_recap_scope(
+        db,
+        module_id=module_id,
+        student_id=current_user.user_id,
+        weeks=payload.weeks,
+        start_date=payload.start_date,
+        end_date=payload.end_date,
+    )
+    return ScopeAvailabilityResponse(
+        available=resolution.available,
+        reason_code=resolution.reason_code,
+        ready_section_count=len(resolution.ready_section_ids),
+        processing_section_count=len(resolution.processing_section_ids),
+    )
+
+
+async def start_recap(
+    db: AsyncSession,
+    *,
+    current_user: CurrentUserContext,
+    module_id: UUID,
+    payload: RecapScopeRequest,
+) -> QuizAttemptForStudent:
+    _require_student(current_user.role)
+    if not await student_is_active_member(
+        db, student_id=current_user.user_id, module_id=module_id
+    ):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=MODULE_NOT_FOUND)
+    resolution = await resolve_recap_scope(
+        db,
+        module_id=module_id,
+        student_id=current_user.user_id,
+        weeks=payload.weeks,
+        start_date=payload.start_date,
+        end_date=payload.end_date,
+    )
+    if not resolution.available:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": resolution.reason_code or "recap_unavailable"},
+        )
+    factory = _scope_factory(db)
+    definition_id = await get_or_create_pooled_definition(
+        factory,
+        module_id=module_id,
+        quiz_mode=RECAP_MODE,
+        scope_key=resolution.scope_key,
+        section_ids=resolution.ready_section_ids,
+    )
+    start = await start_pooled_attempt(
+        factory, student_id=current_user.user_id, quiz_definition_id=definition_id
+    )
+    return await get_attempt(db, current_user=current_user, attempt_id=start.attempt_id)
+
+
+async def list_exam_prep_scopes(
+    db: AsyncSession, *, current_user: CurrentUserContext, module_id: UUID
+) -> list[ExamPrepScopeSummary]:
+    _require_student(current_user.role)
+    if not await student_is_active_member(
+        db, student_id=current_user.user_id, module_id=module_id
+    ):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=MODULE_NOT_FOUND)
+    scopes = (
+        await db.scalars(
+            select(AssessmentScope)
+            .where(AssessmentScope.module_id == module_id)
+            .order_by(AssessmentScope.created_at.desc(), AssessmentScope.id.desc())
+        )
+    ).all()
+    summaries: list[ExamPrepScopeSummary] = []
+    for scope in scopes:
+        resolution = await resolve_exam_prep_scope(
+            db, scope=scope, student_id=current_user.user_id
+        )
+        summaries.append(
+            ExamPrepScopeSummary(
+                id=scope.id,
+                name=scope.name,
+                covered_weeks=[int(w) for w in (scope.covered_weeks or [])],
+                available=resolution.available,
+                reason_code=resolution.reason_code,
+            )
+        )
+    return summaries
+
+
+async def start_exam_prep(
+    db: AsyncSession, *, current_user: CurrentUserContext, scope_id: UUID
+) -> QuizAttemptForStudent:
+    _require_student(current_user.role)
+    scope = await db.get(AssessmentScope, scope_id)
+    # A scope the student is not assigned to (or that does not exist) is a pinned 404 — never reveal it.
+    if scope is None or not await student_is_active_member(
+        db, student_id=current_user.user_id, module_id=scope.module_id
+    ):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=SCOPE_NOT_FOUND)
+    resolution = await resolve_exam_prep_scope(db, scope=scope, student_id=current_user.user_id)
+    if not resolution.available:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": resolution.reason_code or "exam_prep_unavailable"},
+        )
+    factory = _scope_factory(db)
+    definition_id = await get_or_create_pooled_definition(
+        factory,
+        module_id=scope.module_id,
+        quiz_mode=EXAM_PREP_MODE,
+        scope_key=resolution.scope_key,
+        section_ids=resolution.ready_section_ids,
+        assessment_scope_id=scope.id,
+    )
+    start = await start_pooled_attempt(
+        factory, student_id=current_user.user_id, quiz_definition_id=definition_id
+    )
+    return await get_attempt(db, current_user=current_user, attempt_id=start.attempt_id)

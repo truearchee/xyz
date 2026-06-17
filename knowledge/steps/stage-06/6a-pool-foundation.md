@@ -8,7 +8,7 @@ created: 2026-06-17
 updated: 2026-06-17
 spec: knowledge/specs/stage-06/6a-pool-foundation.md
 plan: knowledge/plans/stage-06/6a-pool-foundation.md
-commit: ""           # not yet committed (awaiting developer review)
+commit: "19af1d3"    # Stage 6a backend-verified checkpoint on branch stage-6
 ---
 
 # Session 6a — Report — Per-section pool foundation + capacity ADR
@@ -141,4 +141,7 @@ ADR-047 — Per-section question pool: the Stage 6 capacity decision.
 - [ ] open-questions.md updated — n/a (no unresolved questions; the fan-in race is documented in ADR-047)
 
 ## Change history
-- 2026-06-17 — initial completion (uncommitted; awaiting developer review).
+- 2026-06-17 — initial completion; developer accepted 6a against spec v2; landed as backend-verified
+  checkpoint `19af1d3` on `stage-6`. Strengthened the gate write-up to name the REUSE proof explicitly
+  (distinct from the herd lock) and flagged the 6c multi-section event-scope carry-forward. Stage remains
+  OPEN (browser gate at 6d).

@@ -16,10 +16,13 @@ from app.domains.quiz import service
 from app.domains.quiz.schemas import (
     AnswerFeedback,
     AnswerSubmission,
+    ExamPrepScopeSummary,
     QuizAttemptForStudent,
     QuizAttemptResult,
     QuizAttemptsSummary,
     QuizAvailabilityResponse,
+    RecapScopeRequest,
+    ScopeAvailabilityResponse,
 )
 from app.platform.auth.context import CurrentUserContext
 from app.platform.auth.dependencies import get_current_user
@@ -109,3 +112,66 @@ async def get_quiz_attempts_summary(
 ) -> QuizAttemptsSummary:
     response.headers["Cache-Control"] = _NO_STORE
     return await service.attempts_summary(db, current_user=current_user, section_id=section_id)
+
+
+# ── Stage 6b: recap + exam-prep (multi-section, pooled) ───────────────────────────────────────────
+@router.post(
+    "/student/modules/{module_id}/recap-quiz/availability",
+    response_model=ScopeAvailabilityResponse,
+    operation_id="getStudentRecapAvailability",
+)
+async def recap_availability(
+    module_id: UUID,
+    payload: RecapScopeRequest,
+    response: Response,
+    db: DbSession,
+    current_user: CurrentUser,
+) -> ScopeAvailabilityResponse:
+    response.headers["Cache-Control"] = _NO_STORE
+    return await service.recap_availability(
+        db, current_user=current_user, module_id=module_id, payload=payload
+    )
+
+
+@router.post(
+    "/student/modules/{module_id}/recap-quiz/start",
+    response_model=QuizAttemptForStudent,
+    operation_id="startStudentRecapQuiz",
+)
+async def start_recap_quiz(
+    module_id: UUID,
+    payload: RecapScopeRequest,
+    response: Response,
+    db: DbSession,
+    current_user: CurrentUser,
+) -> QuizAttemptForStudent:
+    response.headers["Cache-Control"] = _NO_STORE
+    return await service.start_recap(
+        db, current_user=current_user, module_id=module_id, payload=payload
+    )
+
+
+@router.get(
+    "/student/modules/{module_id}/exam-prep-scopes",
+    response_model=list[ExamPrepScopeSummary],
+    operation_id="listStudentExamPrepScopes",
+)
+async def list_exam_prep_scopes(
+    module_id: UUID, response: Response, db: DbSession, current_user: CurrentUser
+) -> list[ExamPrepScopeSummary]:
+    response.headers["Cache-Control"] = _NO_STORE
+    return await service.list_exam_prep_scopes(
+        db, current_user=current_user, module_id=module_id
+    )
+
+
+@router.post(
+    "/student/assessment-scopes/{scope_id}/exam-prep-quiz/start",
+    response_model=QuizAttemptForStudent,
+    operation_id="startStudentExamPrepQuiz",
+)
+async def start_exam_prep_quiz(
+    scope_id: UUID, response: Response, db: DbSession, current_user: CurrentUser
+) -> QuizAttemptForStudent:
+    response.headers["Cache-Control"] = _NO_STORE
+    return await service.start_exam_prep(db, current_user=current_user, scope_id=scope_id)

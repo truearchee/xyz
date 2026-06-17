@@ -11,7 +11,7 @@ from decimal import Decimal
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.platform.db.models import (
@@ -36,8 +36,11 @@ class VisibleAttempt:
     quiz_definition_id: UUID
     quiz_mode: str
     module_id: UUID
-    module_section_id: UUID
-    section_type: str
+    # Stage 6b: NULL for MULTI-SECTION (recap/exam_prep) attempts; set for single-section (post_class).
+    module_section_id: UUID | None
+    section_type: str | None
+    # The definition's scope (e.g. {"sectionIds": [...]}) — the source of multi-section event metadata (6c).
+    source_scope: dict
     status: str
     attempt_number: int
     total_questions: int | None
@@ -70,21 +73,32 @@ async def get_visible_attempt(
                 QuizAttempt.incorrect_count,
                 QuizAttempt.score_percentage,
                 QuizAttempt.completed_at,
+                QuizDefinition.source_scope,
             )
             .join(QuizDefinition, QuizDefinition.id == QuizAttempt.quiz_definition_id)
-            .join(ModuleSection, ModuleSection.id == QuizDefinition.module_section_id)
-            .join(CourseModule, CourseModule.id == ModuleSection.course_module_id)
+            # Stage 6b: module via the DEFINITION (works when module_section_id IS NULL for multi-section);
+            # the section is a LEFT JOIN so a pooled attempt still resolves.
+            .join(CourseModule, CourseModule.id == QuizDefinition.module_id)
             .join(CourseMembership, CourseMembership.module_id == CourseModule.id)
+            .outerjoin(ModuleSection, ModuleSection.id == QuizDefinition.module_section_id)
             .where(
                 QuizAttempt.id == attempt_id,
                 QuizAttempt.student_id == student_id,
-                ModuleSection.publish_status == "published",
-                ModuleSection.status == "active",
-                ModuleSection.type.in_(QUIZ_SECTION_TYPES),
                 CourseModule.is_active.is_(True),
                 CourseMembership.user_id == student_id,
                 CourseMembership.role == "student",
                 CourseMembership.status == "active",
+                # Single-section (post_class) keeps the S7 published+active+lecture/lab gate; multi-section
+                # (module_section_id IS NULL) is module-membership only — content is snapshot-frozen at
+                # assembly and the sampling-time filter already enforced publish/eligibility per section.
+                or_(
+                    QuizDefinition.module_section_id.is_(None),
+                    and_(
+                        ModuleSection.publish_status == "published",
+                        ModuleSection.status == "active",
+                        ModuleSection.type.in_(QUIZ_SECTION_TYPES),
+                    ),
+                ),
             )
         )
     ).one_or_none()
@@ -105,6 +119,7 @@ async def get_visible_attempt(
         incorrect_count=row[11],
         score_percentage=row[12],
         completed_at=row[13],
+        source_scope=row[14] or {},
     )
 
 
