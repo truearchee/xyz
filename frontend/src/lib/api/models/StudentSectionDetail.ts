@@ -8,6 +8,7 @@ export type StudentSectionDetail = {
     title: string;
     type: string;
     orderIndex: number;
+    dueAt: (string | null);
     lecturerNotes: (string | null);
     assets: Array<StudentAssetMeta>;
 };

@@ -34,7 +34,6 @@ from app.platform.db.models import (
 )
 from app.platform.storage import get_storage_provider
 from app.platform.storage.base import (
-    StorageProviderError,
     StorageUnavailableError,
 )
 from app.main import app

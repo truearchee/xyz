@@ -2,7 +2,7 @@
 type: architecture
 stage: 02
 created: 2026-05-29
-updated: 2026-06-07 11:31
+updated: 2026-06-17
 related-session: knowledge/specs/stage-02/2.1-db-spine.md
 ---
 
@@ -19,6 +19,16 @@ related-session: knowledge/specs/stage-02/2.1-db-spine.md
 - Spec: [[specs/stage-04/4.3.5d-B1-stage3-module-section-auto-generation-repair]]
 - Plan: [[plans/stage-04/4.3.5d-B1-stage3-module-section-auto-generation-repair]]
 - Report: [[archive/stage-04/4.3.5d/4.3.5d-B1-section-generation-repair]]
+- Spec: [[specs/stage-05/5.5-module-schedule-section-metadata]]
+- Report: [[steps/stage-05/5.5a-schedule-generation]]
+- Report: [[steps/stage-05/5.5b-metadata-edit-and-week-resolver]]
+- Report: [[steps/stage-05/5.5c-lab-attachments]]
+- Report: [[steps/stage-05/5.5d-dev-reseed]]
+- Report: [[steps/stage-05/5.5e-ui-browser-gate]]
+- Decision: [[decisions/adr-040-schedule-driven-section-generation]]
+- Decision: [[decisions/adr-041-section-metadata-and-week-resolver]]
+- Decision: [[decisions/adr-042-lab-attachments]]
+- Decision: [[decisions/adr-043-dev-reseed]]
 - Spec: [[specs/stage-04/4.1-transcript-upload]]
 - Plan: [[plans/stage-04/4.1-transcript-upload]]
 - Report: [[steps/stage-04/4.1-transcript-upload]]
@@ -43,10 +53,16 @@ The backend now has a SQLAlchemy declarative model package under `backend/app/pl
 
 ## Tables
 - `app_users` anchors local application users and maps them to Supabase Auth through `auth_provider_id`.
-- `course_modules` stores course offering containers owned by app users.
+- `course_modules` stores course offering containers owned by app users. Stage 5.5a reuses
+  `starts_on`/`ends_on` for course dates and adds nullable schedule provenance:
+  `week_start_day`, `session_pattern`, and `quiz_day`.
 - `course_memberships` connects users to modules and preserves archived enrollment history.
 - `module_sections` stores ordered module content instances and keeps scheduling fields separate.
-- `section_assets` stores private storage keys and file metadata for uploaded section PDFs. Session 3.1 migrated the Stage 2 placeholder from `file_url` to `storage_key`, added `checksum_sha256`, and records `uploaded_by_user_id` for the current stored object.
+- `section_assets` stores private storage keys and file metadata for uploaded section materials.
+  Session 3.1 migrated the Stage 2 placeholder from `file_url` to `storage_key`, added
+  `checksum_sha256`, and records `uploaded_by_user_id` for the current stored object. Stage 5.5c adds
+  `asset_kind` (`processable` or `attachment`) so PDFs stay processable-but-inert and lab attachments
+  are structurally excluded from transcript/AI processing.
 - `transcripts` stores raw transcript upload metadata for lecture/lab sections. Session 4.1 adds the table with full lifecycle status values but only writes `status='uploaded'` and `source_type='manual_upload'`.
 - `transcript_segments` stores immutable parsed VTT/TXT output for transcripts. VTT segments use integer millisecond timestamps; TXT fallback segments have null timestamps.
 - `transcript_chunks` stores normalized, ordered chunk text derived from immutable segments. Chunks carry segment ids, sequence bounds, millisecond time bounds or null TXT bounds, version strings, token counts, nullable `vector(384)` embedding placeholders, and `updated_at` for future embedding writes.
@@ -56,8 +72,10 @@ The backend now has a SQLAlchemy declarative model package under `backend/app/pl
 
 ## Section asset schema notes
 - `section_assets.storage_key` is a private object-storage path and is unique.
-- `section_assets.module_section_id` is indexed for section asset listing, but it is not unique; a section may have multiple PDF assets.
+- `section_assets.module_section_id` is indexed for section asset listing, but it is not unique; a section may have multiple material assets.
 - `section_assets.uploaded_by_user_id` points at `app_users(id)` and is updated on replace.
+- `section_assets.asset_kind` defaults to `processable`; migration `0021` backfills existing rows to
+  `processable` and constrains values to `processable | attachment`.
 - `section_assets.processing_status` is technical file state and remains separate from `module_sections.publish_status`, which controls student visibility in later Stage 3 work.
 - Section asset list responses are read through `platform/query/content_read.py` projection rows; write behavior remains in the content domain service.
 
@@ -67,10 +85,24 @@ The backend now has a SQLAlchemy declarative model package under `backend/app/pl
 - Session 3.2 implements behavior only; no schema change or `published_at` field was added.
 
 ## Module section generation
-- Session 4.3.5d-B1 adds a backend/product section-generation path to admin module creation. `POST /admin/modules` now creates the `course_modules` row, owner membership, and four default `module_sections` in the same route transaction.
-- The temporary MVP default policy creates `Lecture 1`, `Lecture 2`, `Lab 1`, and `Assignment 1` with `order_index` values 1 through 4.
-- Generated sections use existing schema fields only: `publish_status='draft'`, `status='active'`, and `lecturer_notes=NULL`.
-- No section-template table, schedule builder, schema migration, or public admin DTO change was added in 4.3.5d-B1.
+- Session 4.3.5d-B1 originally added a temporary four-section template. Stage 5.5a replaces that
+  product path: `POST /admin/modules` now requires a schedule and creates the `course_modules` row,
+  owner membership, and schedule-generated lecture/lab `module_sections` in the same transaction.
+- The fixed `Lecture 1`, `Lecture 2`, `Lab 1`, `Assignment 1` template is gone from the product path.
+  Assignments remain valid legacy enum values (D12) but are not generated by Stage 5.5.
+- Generated sections set `publish_status='draft'`, `status='active'`, `lecturer_notes=NULL`,
+  `session_date`, and `week_number`. The generator is pure; the admin domain owns writes.
+- Stage 5.5b makes per-section `week_number`, `session_date`, and lab-only `due_at` editable through
+  the content boundary and adds `platform/query/section_week_resolver.py`, a read-only stored-week
+  resolver for Stage 6 scope lookup. The resolver returns lecture/lab section metadata only and does
+  not apply student-facing publish/summary filters.
+- Stage 5.5d adds dev-only reseed tooling. It snapshots existing dev modules, deletes dependent rows,
+  recreates modules with the Stage 5.5 reference schedule, and seeds one published lab fixture. This is
+  replacement of throwaway dev data, not an in-place schema migration or production data path.
+- Stage 5.5e adds browser-facing admin and lecturer by-week read routes over the same stored-week
+  resolver. These routes do not add structure-mutation capability; section add/delete/reorder remains
+  absent from the API/UI. Student-facing section DTOs now include lab `due_at` and material
+  `asset_kind` so the frontend can display deadlines and choose the correct download path.
 
 ## Transcript schema notes
 - `transcripts.module_section_id` points at `module_sections(id)` and has a partial unique index, `uq_active_transcript_per_section`, for `is_active = true`.

@@ -86,4 +86,9 @@ export const panelStyles = {
     fontSize: 14,
     padding: 10,
   },
+  hint: {
+    color: "#64748b",
+    fontSize: 12,
+    margin: 0,
+  },
 } satisfies Record<string, React.CSSProperties>;

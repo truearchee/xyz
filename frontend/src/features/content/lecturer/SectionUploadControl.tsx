@@ -6,9 +6,10 @@ type SectionUploadControlProps = {
   disabled?: boolean;
   errorMessage: string | null;
   isUploading: boolean;
-  onUpload: (file: File) => Promise<void>;
+  onUpload: (file: File, dueAt?: string | null) => Promise<void>;
   sectionKey: string;
   sectionTitle: string;
+  sectionType: string;
 };
 
 export function SectionUploadControl({
@@ -18,18 +19,23 @@ export function SectionUploadControl({
   onUpload,
   sectionKey,
   sectionTitle,
+  sectionType,
 }: SectionUploadControlProps) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [dueAt, setDueAt] = useState("");
   const fileInputId = `section-upload-file-${sectionKey}`;
+  const dueAtInputId = `section-upload-due-at-${sectionKey}`;
+  const isLab = sectionType === "lab";
 
   async function submitUpload() {
     if (!selectedFile) {
       return;
     }
 
-    await onUpload(selectedFile);
+    await onUpload(selectedFile, isLab && dueAt ? new Date(dueAt).toISOString() : null);
     setSelectedFile(null);
+    setDueAt("");
     if (inputRef.current) {
       inputRef.current.value = "";
     }
@@ -43,10 +49,10 @@ export function SectionUploadControl({
     >
       <div style={styles.fields}>
         <label htmlFor={fileInputId} style={styles.label}>
-          PDF file
+          File
         </label>
         <input
-          accept="application/pdf,.pdf"
+          accept={isLab ? "application/pdf,.pdf,.ipynb,application/x-ipynb+json" : "application/pdf,.pdf"}
           disabled={disabled || isUploading}
           id={fileInputId}
           onChange={(event) => {
@@ -56,6 +62,19 @@ export function SectionUploadControl({
           style={styles.input}
           type="file"
         />
+        {isLab ? (
+          <label htmlFor={dueAtInputId} style={styles.label}>
+            Due
+            <input
+              disabled={disabled || isUploading}
+              id={dueAtInputId}
+              onChange={(event) => setDueAt(event.target.value)}
+              style={styles.input}
+              type="datetime-local"
+              value={dueAt}
+            />
+          </label>
+        ) : null}
         <button
           disabled={disabled || isUploading || !selectedFile}
           onClick={() => void submitUpload()}

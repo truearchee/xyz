@@ -3,7 +3,10 @@ from __future__ import annotations
 from datetime import date, datetime
 from uuid import UUID
 
+from typing import Any
+
 from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Text, text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.orm import Mapped, mapped_column
 from uuid6 import uuid7
@@ -33,6 +36,12 @@ class CourseModule(Base):
     )
     starts_on: Mapped[date | None] = mapped_column(Date)
     ends_on: Mapped[date | None] = mapped_column(Date)
+    # Stage 5.5 schedule provenance (D10): creation-time config, displayed/readable
+    # but never edited or regenerated. NULL = no schedule configured (legacy/ORM-direct
+    # rows); the schedule-driven create path always populates all three.
+    week_start_day: Mapped[str | None] = mapped_column(Text)
+    session_pattern: Mapped[list[dict[str, Any]] | None] = mapped_column(JSONB)
+    quiz_day: Mapped[str | None] = mapped_column(Text)
     is_active: Mapped[bool] = mapped_column(
         Boolean,
         nullable=False,

@@ -10,6 +10,7 @@ the generated TS client (rule 3) stays clean.
 
 from __future__ import annotations
 
+from datetime import datetime
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
@@ -59,6 +60,7 @@ class StudentMaterialMeta(CamelModel):
     file_name: str
     mime_type: str
     file_size: int
+    asset_kind: str
 
 
 class StudentSectionRead(CamelModel):
@@ -66,6 +68,7 @@ class StudentSectionRead(CamelModel):
     title: str
     type: str
     order_index: int
+    due_at: datetime | None
     lecturer_notes: str | None
     materials: list[StudentMaterialMeta]
     summaries: StudentSectionSummaryStates

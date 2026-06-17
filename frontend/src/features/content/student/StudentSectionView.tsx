@@ -10,6 +10,16 @@ function formatSectionType(type: string): string {
   return type.replace(/_/g, " ");
 }
 
+function formatDeadline(value: string | null): string {
+  if (!value) {
+    return "No deadline set";
+  }
+  return new Intl.DateTimeFormat("en", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(value));
+}
+
 export function StudentSectionView({
   moduleId,
   section,
@@ -36,6 +46,15 @@ export function StudentSectionView({
           <p style={styles.empty}>No lecturer notes</p>
         )}
       </section>
+
+      {section.type === "lab" ? (
+        <section aria-label={`Deadline for ${section.title}`} style={styles.deadlinePanel}>
+          <h3 style={styles.panelTitle}>Deadline</h3>
+          <p data-testid={`student-section-due-at-${section.id}`} style={styles.notes}>
+            {formatDeadline(section.dueAt)}
+          </p>
+        </section>
+      ) : null}
 
       <section aria-label={`Files for ${section.title}`} style={styles.filesPanel}>
         <h3 style={styles.panelTitle}>Files</h3>
@@ -87,6 +106,14 @@ const styles = {
   notesPanel: {
     background: "#f7faf9",
     border: "1px solid #cfe1da",
+    borderRadius: 6,
+    display: "grid",
+    gap: 8,
+    padding: 12,
+  },
+  deadlinePanel: {
+    background: "#f8fafc",
+    border: "1px solid #d7dde8",
     borderRadius: 6,
     display: "grid",
     gap: 8,

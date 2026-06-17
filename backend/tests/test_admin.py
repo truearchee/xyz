@@ -1,15 +1,44 @@
+from datetime import date
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 from uuid import UUID, uuid4
 
 from httpx import AsyncClient
 import pytest
-from sqlalchemy import select
+from sqlalchemy import func, select, text
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
 from app.domains.admin import service as admin_service
 from app.platform.db.models import AppUser, CourseMembership, CourseModule, ModuleSection
+
+
+# Stage 5.5a reference schedule (test oracle): 11 May–26 Jun 2026, Mon/Tue/Wed=lecture, Thu=lab,
+# Fri=quiz day (generates nothing) → 7 weeks, 21 lectures, 7 labs, 28 total, 0 Friday sections.
+def _schedule_payload(
+    *,
+    course_start_date: str = "2026-05-11",
+    course_end_date: str = "2026-06-26",
+    week_start_day: str = "monday",
+    session_pattern: list[dict[str, str]] | None = None,
+    quiz_day: str | None = "friday",
+) -> dict:
+    if session_pattern is None:
+        session_pattern = [
+            {"weekday": "monday", "sectionType": "lecture"},
+            {"weekday": "tuesday", "sectionType": "lecture"},
+            {"weekday": "wednesday", "sectionType": "lecture"},
+            {"weekday": "thursday", "sectionType": "lab"},
+        ]
+    payload: dict = {
+        "courseStartDate": course_start_date,
+        "courseEndDate": course_end_date,
+        "weekStartDay": week_start_day,
+        "sessionPattern": session_pattern,
+    }
+    if quiz_day is not None:
+        payload["quizDay"] = quiz_day
+    return payload
 
 
 async def _create_user(
@@ -52,6 +81,32 @@ async def _create_module(
     session.add(module)
     await session.flush()
     return module
+
+
+async def _create_section(
+    session: AsyncSession,
+    *,
+    module_id,
+    title: str,
+    section_type: str,
+    order_index: int,
+    week_number: int | None = None,
+    session_date: date | None = None,
+    status: str = "active",
+) -> ModuleSection:
+    section = ModuleSection(
+        course_module_id=module_id,
+        title=title,
+        type=section_type,
+        order_index=order_index,
+        week_number=week_number,
+        session_date=session_date,
+        publish_status="draft",
+        status=status,
+    )
+    session.add(section)
+    await session.flush()
+    return section
 
 
 async def _create_membership(
@@ -119,9 +174,12 @@ def _admin_routes() -> list[tuple[str, str, dict | None]]:
                 "title": "Intro",
                 "ownerId": str(uuid4()),
                 "timezone": "UTC",
+                "schedule": _schedule_payload(),
             },
         ),
         ("GET", "/admin/modules?limit=1&offset=0", None),
+        ("POST", "/admin/modules/preview-sections", _schedule_payload()),
+        ("GET", f"/admin/modules/{module_id}/sections/by-week?includeUnstamped=true", None),
         (
             "POST",
             f"/admin/modules/{module_id}/members",
@@ -317,7 +375,12 @@ async def test_create_module_with_lecturer_owner(
     response = await auth_client.post(
         "/admin/modules",
         headers=headers,
-        json={"title": "Physics", "ownerId": str(lecturer.id), "timezone": "UTC"},
+        json={
+            "title": "Physics",
+            "ownerId": str(lecturer.id),
+            "timezone": "UTC",
+            "schedule": _schedule_payload(),
+        },
     )
 
     assert response.status_code == 201
@@ -325,15 +388,20 @@ async def test_create_module_with_lecturer_owner(
     assert data["title"] == "Physics"
     assert data["ownerId"] == str(lecturer.id)
     assert data["isActive"] is True
+    assert data["weekStartDay"] == "monday"
+    assert data["quizDay"] == "friday"
+    assert data["sessionPattern"] == _schedule_payload()["sessionPattern"]
 
 
 @pytest.mark.anyio
-async def test_create_module_generates_default_sections(
+async def test_create_module_generates_schedule_sections(
     auth_client: AsyncClient,
     db_session: AsyncSession,
     jwt_factory,
     mock_jwks_client,
 ) -> None:
+    # End-to-end through the API: the reference schedule must yield the 28-section oracle with
+    # correct week_number/session_date — no fixed 4-section template, no Friday section.
     headers, _ = await _auth_headers(db_session, jwt_factory, role="admin")
     lecturer = await _create_user(
         db_session,
@@ -344,7 +412,11 @@ async def test_create_module_generates_default_sections(
     response = await auth_client.post(
         "/admin/modules",
         headers=headers,
-        json={"title": "Generated Sections", "ownerId": str(lecturer.id)},
+        json={
+            "title": "Generated Sections",
+            "ownerId": str(lecturer.id),
+            "schedule": _schedule_payload(),
+        },
     )
 
     assert response.status_code == 201
@@ -356,18 +428,225 @@ async def test_create_module_generates_default_sections(
     )
     sections = result.scalars().all()
 
-    assert [
-        (section.order_index, section.title, section.type)
-        for section in sections
-    ] == [
-        (1, "Lecture 1", "lecture"),
-        (2, "Lecture 2", "lecture"),
-        (3, "Lab 1", "lab"),
-        (4, "Assignment 1", "assignment"),
+    assert len(sections) == 28
+    assert sum(1 for section in sections if section.type == "lecture") == 21
+    assert sum(1 for section in sections if section.type == "lab") == 7
+    assert all(section.type in ("lecture", "lab") for section in sections)
+    assert max(section.week_number for section in sections) == 7
+    # No Friday (weekday 4) section exists — the quiz day generates nothing.
+    assert all(section.session_date.weekday() != 4 for section in sections)
+    assert all(section.session_date is not None for section in sections)
+    assert [section.order_index for section in sections] == list(range(1, 29))
+    assert all(section.publish_status == "draft" for section in sections)
+    assert all(section.lecturer_notes is None for section in sections)
+    assert all(section.status == "active" for section in sections)
+
+
+@pytest.mark.anyio
+async def test_admin_preview_sections_uses_reference_generator(
+    auth_client: AsyncClient,
+    db_session: AsyncSession,
+    jwt_factory,
+    mock_jwks_client,
+) -> None:
+    headers, _ = await _auth_headers(db_session, jwt_factory, role="admin")
+
+    response = await auth_client.post(
+        "/admin/modules/preview-sections",
+        headers=headers,
+        json=_schedule_payload(),
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["totalSections"] == 28
+    assert data["weekCount"] == 7
+    assert data["lectureCount"] == 21
+    assert data["labCount"] == 7
+    assert data["fridaySectionCount"] == 0
+    assert len(data["sections"]) == 28
+    assert data["sections"][0] == {
+        "title": "Lecture — Week 1 (Mon 11 May)",
+        "type": "lecture",
+        "orderIndex": 1,
+        "weekNumber": 1,
+        "sessionDate": "2026-05-11",
+    }
+    assert data["sections"][-1] == {
+        "title": "Lab — Week 7 (Thu 25 Jun)",
+        "type": "lab",
+        "orderIndex": 28,
+        "weekNumber": 7,
+        "sessionDate": "2026-06-25",
+    }
+
+
+@pytest.mark.anyio
+async def test_admin_sections_by_week_uses_resolver_modes(
+    auth_client: AsyncClient,
+    db_session: AsyncSession,
+    jwt_factory,
+    mock_jwks_client,
+) -> None:
+    headers, _ = await _auth_headers(db_session, jwt_factory, role="admin")
+    lecturer = await _create_user(db_session, email="admin-by-week-owner@example.com", role="lecturer")
+    module = await _create_module(db_session, owner_id=lecturer.id)
+    week_one = await _create_section(
+        db_session,
+        module_id=module.id,
+        title="Lecture week one",
+        section_type="lecture",
+        order_index=1,
+        week_number=1,
+        session_date=date(2026, 5, 11),
+    )
+    week_two = await _create_section(
+        db_session,
+        module_id=module.id,
+        title="Lab week two",
+        section_type="lab",
+        order_index=2,
+        week_number=2,
+        session_date=date(2026, 5, 21),
+    )
+    unstamped = await _create_section(
+        db_session,
+        module_id=module.id,
+        title="Needs curation",
+        section_type="lecture",
+        order_index=3,
+    )
+    assignment = await _create_section(
+        db_session,
+        module_id=module.id,
+        title="Legacy assignment",
+        section_type="assignment",
+        order_index=4,
+        week_number=1,
+        session_date=date(2026, 5, 12),
+    )
+
+    week_response = await auth_client.get(
+        f"/admin/modules/{module.id}/sections/by-week?coveredWeeks=1",
+        headers=headers,
+    )
+    curation_response = await auth_client.get(
+        f"/admin/modules/{module.id}/sections/by-week?includeUnstamped=true",
+        headers=headers,
+    )
+
+    assert week_response.status_code == 200
+    assert [row["id"] for row in week_response.json()] == [str(week_one.id)]
+    assert curation_response.status_code == 200
+    assert [row["id"] for row in curation_response.json()] == [
+        str(week_one.id),
+        str(week_two.id),
+        str(unstamped.id),
     ]
-    assert [section.publish_status for section in sections] == ["draft"] * 4
-    assert [section.lecturer_notes for section in sections] == [None] * 4
-    assert [section.status for section in sections] == ["active"] * 4
+    assert str(assignment.id) not in curation_response.text
+
+
+@pytest.mark.anyio
+async def test_create_module_without_schedule_returns_422(
+    auth_client: AsyncClient,
+    db_session: AsyncSession,
+    jwt_factory,
+    mock_jwks_client,
+) -> None:
+    # No silent fallback: a creation request without a schedule is rejected (the fixed 4-section
+    # template path is gone).
+    headers, _ = await _auth_headers(db_session, jwt_factory, role="admin")
+    lecturer = await _create_user(
+        db_session,
+        email="no-schedule-owner@example.com",
+        role="lecturer",
+    )
+
+    response = await auth_client.post(
+        "/admin/modules",
+        headers=headers,
+        json={"title": "No Schedule", "ownerId": str(lecturer.id)},
+    )
+
+    assert response.status_code == 422
+
+
+@pytest.mark.anyio
+async def test_create_module_generation_failure_is_atomic(
+    auth_client: AsyncClient,
+    db_session: AsyncSession,
+    migrated_test_database: str,
+    jwt_factory,
+    mock_jwks_client,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # D14: generation runs inside the creation transaction. If it fails mid-way, NOTHING commits —
+    # no partial module, no orphan sections. Verified from a SEPARATE connection (committed state only).
+    headers, _ = await _auth_headers(db_session, jwt_factory, role="admin")
+    lecturer = await _create_user(db_session, email="atomic-owner@example.com", role="lecturer")
+
+    def _boom(*args, **kwargs):
+        raise RuntimeError("forced generation failure")
+
+    monkeypatch.setattr(admin_service, "generate_initial_sections", _boom)
+
+    with pytest.raises(RuntimeError):
+        await auth_client.post(
+            "/admin/modules",
+            headers=headers,
+            json={"title": "Atomic Fail", "ownerId": str(lecturer.id), "schedule": _schedule_payload()},
+        )
+
+    engine = create_async_engine(migrated_test_database)
+    try:
+        async with engine.connect() as conn:
+            modules = await conn.scalar(
+                text("SELECT count(*) FROM course_modules WHERE title = 'Atomic Fail'")
+            )
+            orphan_sections = await conn.scalar(
+                text(
+                    "SELECT count(*) FROM module_sections s "
+                    "JOIN course_modules m ON m.id = s.course_module_id "
+                    "WHERE m.title = 'Atomic Fail'"
+                )
+            )
+    finally:
+        await engine.dispose()
+
+    assert modules == 0
+    assert orphan_sections == 0
+
+
+@pytest.mark.anyio
+async def test_repeated_create_module_does_not_accumulate_sections(
+    auth_client: AsyncClient,
+    db_session: AsyncSession,
+    jwt_factory,
+    mock_jwks_client,
+) -> None:
+    # No double-generation: each creation generates exactly once. Two creations yield two independent
+    # 28-section modules — never one module with doubled sections.
+    headers, _ = await _auth_headers(db_session, jwt_factory, role="admin")
+    lecturer = await _create_user(db_session, email="repeat-owner@example.com", role="lecturer")
+
+    for index in range(2):
+        response = await auth_client.post(
+            "/admin/modules",
+            headers=headers,
+            json={
+                "title": f"Repeat {index}",
+                "ownerId": str(lecturer.id),
+                "schedule": _schedule_payload(),
+            },
+        )
+        assert response.status_code == 201
+        module_id = UUID(response.json()["id"])
+        section_count = await db_session.scalar(
+            select(func.count())
+            .select_from(ModuleSection)
+            .where(ModuleSection.course_module_id == module_id)
+        )
+        assert section_count == 28
 
 
 @pytest.mark.anyio
@@ -383,7 +662,11 @@ async def test_create_module_with_student_owner_returns_400(
     response = await auth_client.post(
         "/admin/modules",
         headers=headers,
-        json={"title": "Biology", "ownerId": str(student.id)},
+        json={
+            "title": "Biology",
+            "ownerId": str(student.id),
+            "schedule": _schedule_payload(),
+        },
     )
 
     assert response.status_code == 400
@@ -406,7 +689,11 @@ async def test_create_module_creates_owner_membership(
     response = await auth_client.post(
         "/admin/modules",
         headers=headers,
-        json={"title": "Chemistry", "ownerId": str(lecturer.id)},
+        json={
+            "title": "Chemistry",
+            "ownerId": str(lecturer.id),
+            "schedule": _schedule_payload(),
+        },
     )
 
     assert response.status_code == 201

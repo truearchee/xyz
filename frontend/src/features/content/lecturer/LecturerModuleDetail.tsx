@@ -8,6 +8,8 @@ import {
   type SectionAssetResponse,
   type SectionDetail,
   type SectionListItem,
+  type SectionMetadataPatchRequest,
+  type SectionWeekRead,
 } from "../../../lib/api";
 import {
   replaceSectionAsset,
@@ -15,6 +17,7 @@ import {
 } from "../../../lib/api/upload";
 import { ForbiddenError, api } from "../../../lib/api/wrapper";
 import { SectionAssetList } from "./SectionAssetList";
+import { SectionMetadataEditor } from "./SectionMetadataEditor";
 import { SectionNotesEditor } from "./SectionNotesEditor";
 import { SectionPublishControl } from "./SectionPublishControl";
 import { SectionTranscriptControl } from "./SectionTranscriptControl";
@@ -87,6 +90,7 @@ function apiErrorMessage(error: ApiError): string {
 export function LecturerModuleDetail({ moduleId }: LecturerModuleDetailProps) {
   const [module, setModule] = useState<ModuleDetail | null>(null);
   const [sections, setSections] = useState<SectionRecord[]>([]);
+  const [weekRows, setWeekRows] = useState<SectionWeekRead[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [isForbidden, setIsForbidden] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -94,7 +98,9 @@ export function LecturerModuleDetail({ moduleId }: LecturerModuleDetailProps) {
   const [uploadingSectionId, setUploadingSectionId] = useState<string | null>(null);
   const [replacingAssetId, setReplacingAssetId] = useState<string | null>(null);
   const [publishingSectionId, setPublishingSectionId] = useState<string | null>(null);
+  const [savingMetadataSectionId, setSavingMetadataSectionId] = useState<string | null>(null);
   const [saveErrors, setSaveErrors] = useState<Record<string, string>>({});
+  const [metadataErrors, setMetadataErrors] = useState<Record<string, string>>({});
   const [uploadErrors, setUploadErrors] = useState<Record<string, string>>({});
   const [replaceErrors, setReplaceErrors] = useState<Record<string, string>>({});
   const [publishErrors, setPublishErrors] = useState<Record<string, string>>({});
@@ -107,6 +113,20 @@ export function LecturerModuleDetail({ moduleId }: LecturerModuleDetailProps) {
     [sections],
   );
 
+  const weekRowsById = useMemo(
+    () => new Map(weekRows.map((row) => [row.id, row])),
+    [weekRows],
+  );
+
+  const groupedWeekRows = useMemo(() => {
+    const groups = new Map<string, SectionWeekRead[]>();
+    for (const row of weekRows) {
+      const key = row.weekNumber === null ? "Unstamped" : `Week ${row.weekNumber}`;
+      groups.set(key, [...(groups.get(key) ?? []), row]);
+    }
+    return Array.from(groups.entries());
+  }, [weekRows]);
+
   const loadModule = useCallback(async () => {
     setError(null);
     setIsForbidden(false);
@@ -116,21 +136,25 @@ export function LecturerModuleDetail({ moduleId }: LecturerModuleDetailProps) {
         api.modules.get(moduleId),
         api.content.listSections(moduleId),
       ]);
-      const details = await Promise.all(
-        sectionList.map(async (section) => {
-          const [detail, assetList] = await Promise.all([
-            api.content.getSection(moduleId, section.id),
-            api.content.listAssets(moduleId, section.id),
-          ]);
-          if (!isLecturerSectionDetail(detail)) {
-            throw new Error("Lecturer section detail was not returned");
-          }
-          return { assets: assetList.assets, detail, listItem: section };
-        }),
-      );
+      const [details, byWeekRows] = await Promise.all([
+        Promise.all(
+          sectionList.map(async (section) => {
+            const [detail, assetList] = await Promise.all([
+              api.content.getSection(moduleId, section.id),
+              api.content.listAssets(moduleId, section.id),
+            ]);
+            if (!isLecturerSectionDetail(detail)) {
+              throw new Error("Lecturer section detail was not returned");
+            }
+            return { assets: assetList.assets, detail, listItem: section };
+          }),
+        ),
+        api.content.listSectionsByWeek(moduleId, null, true),
+      ]);
 
       setModule(moduleDetail);
       setSections(details);
+      setWeekRows(byWeekRows);
     } catch (caught) {
       if (caught instanceof ForbiddenError) {
         setIsForbidden(true);
@@ -169,7 +193,7 @@ export function LecturerModuleDetail({ moduleId }: LecturerModuleDetailProps) {
     }
   }
 
-  async function uploadAsset(sectionId: string, file: File) {
+  async function uploadAsset(sectionId: string, file: File, dueAt?: string | null) {
     setUploadingSectionId(sectionId);
     setUploadErrors((current) => {
       const next = { ...current };
@@ -178,7 +202,7 @@ export function LecturerModuleDetail({ moduleId }: LecturerModuleDetailProps) {
     });
 
     try {
-      await uploadSectionAsset({ file, moduleId, sectionId });
+      await uploadSectionAsset({ dueAt, file, moduleId, sectionId });
       await loadModule();
     } catch (caught) {
       setUploadErrors((current) => ({
@@ -187,6 +211,27 @@ export function LecturerModuleDetail({ moduleId }: LecturerModuleDetailProps) {
       }));
     } finally {
       setUploadingSectionId(null);
+    }
+  }
+
+  async function saveMetadata(sectionId: string, payload: SectionMetadataPatchRequest) {
+    setSavingMetadataSectionId(sectionId);
+    setMetadataErrors((current) => {
+      const next = { ...current };
+      delete next[sectionId];
+      return next;
+    });
+
+    try {
+      await api.content.updateMetadata(moduleId, sectionId, payload);
+      await loadModule();
+    } catch (caught) {
+      setMetadataErrors((current) => ({
+        ...current,
+        [sectionId]: errorMessage(caught),
+      }));
+    } finally {
+      setSavingMetadataSectionId(null);
     }
   }
 
@@ -280,84 +325,127 @@ export function LecturerModuleDetail({ moduleId }: LecturerModuleDetailProps) {
           <h2 style={styles.stateTitle}>No generated sections</h2>
         </section>
       ) : (
-        <section
-          aria-label="Generated sections"
-          data-testid="lecturer-section-list"
-          style={styles.sectionList}
-        >
-          {sortedSections.map(({ assets, detail, listItem }) => {
-            const key = sectionKey(detail, listItem.orderIndex);
-
-            return (
-              <article
-                data-testid={`lecturer-section-row-${key}`}
-                key={detail.id}
-                style={styles.sectionCard}
+        <>
+          <section
+            aria-label="Sections by week"
+            data-testid="lecturer-by-week-view"
+            style={styles.weekList}
+          >
+            {groupedWeekRows.map(([label, rows]) => (
+              <section
+                data-testid={`lecturer-week-group-${slugify(label)}`}
+                key={label}
+                style={styles.weekGroup}
               >
-                <header style={styles.sectionHeader}>
-                  <div>
-                    <p style={styles.sectionMeta}>
-                      Section {listItem.orderIndex} · {formatSectionType(detail.type)}
-                    </p>
-                    <h2 style={styles.sectionTitle}>{detail.title}</h2>
-                  </div>
-                  <SectionPublishControl
-                    errorMessage={publishErrors[detail.id] ?? null}
-                    isSubmitting={publishingSectionId === detail.id}
-                    onToggle={() => togglePublishStatus(detail)}
-                    publishStatus={detail.publishStatus}
-                    sectionKey={key}
-                    sectionTitle={detail.title}
-                  />
-                </header>
-                <SectionNotesEditor
-                  errorMessage={saveErrors[detail.id] ?? null}
-                  initialNotes={detail.lecturerNotes}
-                  isSaving={savingSectionId === detail.id}
-                  onSave={(lecturerNotes) => saveNotes(detail.id, lecturerNotes)}
-                  sectionTitle={detail.title}
-                />
-                {supportsTranscript(detail.type) ? (
-                  <SectionTranscriptControl
+                <h2 style={styles.weekTitle}>{label}</h2>
+                <ul style={styles.weekRows}>
+                  {rows.map((row) => (
+                    <li data-testid={`lecturer-by-week-row-${row.id}`} key={row.id} style={styles.weekRow}>
+                      <span>{row.sessionDate ?? "No date"}</span>
+                      <strong>{row.title}</strong>
+                      <span>{formatSectionType(row.type)}</span>
+                      <span>{row.publishStatus}</span>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            ))}
+          </section>
+          <section
+            aria-label="Generated sections"
+            data-testid="lecturer-section-list"
+            style={styles.sectionList}
+          >
+            {sortedSections.map(({ assets, detail, listItem }) => {
+              const key = sectionKey(detail, listItem.orderIndex);
+              const metadata = weekRowsById.get(detail.id);
+
+              return (
+                <article
+                  data-testid={`lecturer-section-row-${key}`}
+                  key={detail.id}
+                  style={styles.sectionCard}
+                >
+                  <header style={styles.sectionHeader}>
+                    <div>
+                      <p style={styles.sectionMeta}>
+                        Section {listItem.orderIndex} · {formatSectionType(detail.type)}
+                      </p>
+                      <h2 style={styles.sectionTitle}>{detail.title}</h2>
+                    </div>
+                    <SectionPublishControl
+                      errorMessage={publishErrors[detail.id] ?? null}
+                      isSubmitting={publishingSectionId === detail.id}
+                      onToggle={() => togglePublishStatus(detail)}
+                      publishStatus={detail.publishStatus}
+                      sectionKey={key}
+                      sectionTitle={detail.title}
+                    />
+                  </header>
+                  <SectionMetadataEditor
                     disabled={
                       savingSectionId === detail.id ||
                       publishingSectionId === detail.id
                     }
-                    moduleId={moduleId}
-                    sectionId={detail.id}
-                    sectionKey={key}
+                    dueAt={metadata?.dueAt ?? null}
+                    errorMessage={metadataErrors[detail.id] ?? null}
+                    isSaving={savingMetadataSectionId === detail.id}
+                    onSave={(payload) => saveMetadata(detail.id, payload)}
+                    sectionTitle={detail.title}
+                    sectionType={detail.type}
+                    sessionDate={metadata?.sessionDate ?? null}
+                    weekNumber={metadata?.weekNumber ?? null}
+                  />
+                  <SectionNotesEditor
+                    errorMessage={saveErrors[detail.id] ?? null}
+                    initialNotes={detail.lecturerNotes}
+                    isSaving={savingSectionId === detail.id}
+                    onSave={(lecturerNotes) => saveNotes(detail.id, lecturerNotes)}
                     sectionTitle={detail.title}
                   />
-                ) : null}
-                <SectionAssetList
-                  assets={assets}
-                  disabled={
-                    uploadingSectionId === detail.id ||
-                    savingSectionId === detail.id ||
-                    publishingSectionId === detail.id
-                  }
-                  onReplace={(assetId, file) =>
-                    replaceAsset(detail.id, assetId, file)
-                  }
-                  replaceErrors={replaceErrors}
-                  replacingAssetId={replacingAssetId}
-                  sectionTitle={detail.title}
-                />
-                <SectionUploadControl
-                  disabled={
-                    savingSectionId === detail.id ||
-                    publishingSectionId === detail.id
-                  }
-                  errorMessage={uploadErrors[detail.id] ?? null}
-                  isUploading={uploadingSectionId === detail.id}
-                  onUpload={(file) => uploadAsset(detail.id, file)}
-                  sectionKey={key}
-                  sectionTitle={detail.title}
-                />
-              </article>
-            );
-          })}
-        </section>
+                  {supportsTranscript(detail.type) ? (
+                    <SectionTranscriptControl
+                      disabled={
+                        savingSectionId === detail.id ||
+                        publishingSectionId === detail.id
+                      }
+                      moduleId={moduleId}
+                      sectionId={detail.id}
+                      sectionKey={key}
+                      sectionTitle={detail.title}
+                    />
+                  ) : null}
+                  <SectionAssetList
+                    assets={assets}
+                    disabled={
+                      uploadingSectionId === detail.id ||
+                      savingSectionId === detail.id ||
+                      publishingSectionId === detail.id
+                    }
+                    onReplace={(assetId, file) =>
+                      replaceAsset(detail.id, assetId, file)
+                    }
+                    replaceErrors={replaceErrors}
+                    replacingAssetId={replacingAssetId}
+                    sectionTitle={detail.title}
+                  />
+                  <SectionUploadControl
+                    disabled={
+                      savingSectionId === detail.id ||
+                      publishingSectionId === detail.id
+                    }
+                    errorMessage={uploadErrors[detail.id] ?? null}
+                    isUploading={uploadingSectionId === detail.id}
+                    onUpload={(file, dueAt) => uploadAsset(detail.id, file, dueAt)}
+                    sectionKey={key}
+                    sectionTitle={detail.title}
+                    sectionType={detail.type}
+                  />
+                </article>
+              );
+            })}
+          </section>
+        </>
       )}
     </section>
   );
@@ -407,6 +495,36 @@ const styles = {
     background: "#f3f4f6",
     border: "1px solid #d1d5db",
     color: "#4b5563",
+  },
+  weekGroup: {
+    border: "1px solid #d7dde8",
+    borderRadius: 8,
+    display: "grid",
+    gap: 10,
+    padding: 14,
+  },
+  weekList: {
+    display: "grid",
+    gap: 10,
+  },
+  weekRow: {
+    alignItems: "center",
+    display: "grid",
+    gap: 10,
+    gridTemplateColumns: "110px minmax(180px, 1fr) 90px 100px",
+  },
+  weekRows: {
+    display: "grid",
+    gap: 6,
+    listStyle: "none",
+    margin: 0,
+    padding: 0,
+  },
+  weekTitle: {
+    color: "#111827",
+    fontSize: 16,
+    lineHeight: 1.3,
+    margin: 0,
   },
   sectionList: {
     display: "grid",

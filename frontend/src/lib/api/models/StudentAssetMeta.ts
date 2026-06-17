@@ -7,4 +7,5 @@ export type StudentAssetMeta = {
     fileName: string;
     mimeType: string;
     fileSize: number;
+    assetKind: string;
 };

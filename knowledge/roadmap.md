@@ -61,8 +61,8 @@ DONE             — governance stages where no browser gate applies (Stage 0 on
 ✅ Stage 4.7   Student-facing summaries                   FULLY VERIFIED — gate G1–G9 GREEN; full active suite 11/11 ON MAIN (backend 389); restored Stage 3 visibility E2E; review R1–R3 resolved
 Stage 4.8   First hosted deploy (staging)              NOT STARTED  (new in v3)  ← next
 Stage 4.9   Frontend foundation + platform hygiene     NOT STARTED  (new in v3)
-✅ Stage 5   Shared quiz engine + event spine           FULLY VERIFIED (branch spec-5; not yet merged) — 5a schema+event spine (migs 0014–0019), 5b generation+recovery (0020 AIRequestLog decouple), 5c HTTP surface, 5d UI+gates, 5e review fixes. Gate 1 (browser) GREEN (--workers=1, 1 passed); Gate 3 (real-provider smoke) GREEN (rule-11 echo). Backend 442 pytest; frontend tsc green; ADR-040..046; F-5d-1 resolved (max_tokens→16000). ⚠ MERGE: migration block 0014–0020 collides with sibling branches' 0014–0016 — renumber at merge (open-questions #5a)
-Stage 5.5   Module schedule & section metadata         NOT STARTED  (new in v3; parallel-OK with 5; blocks 6)
+✅ Stage 5   Shared quiz engine + event spine           FULLY VERIFIED — merged to main; migrations 0014–0020; gate 1 browser GREEN; gate 3 real-provider smoke GREEN; backend 442 pytest; frontend tsc green; ADR-040..046; F-5d-1 resolved
+✅ Stage 5.5   Module schedule & section metadata       FULLY VERIFIED — gate 5.5e GREEN; reference schedule 28 sections; full active suite 12/12 after reseed; migration chain rebased after Stage 5 main (`0020 -> 0021 -> 0022`)
 Stage 6     Complete quiz modes                        NOT STARTED
 Stage 7     Glossary                                   NOT STARTED
 Stage 8     Assistant                                  NOT STARTED
@@ -467,11 +467,39 @@ Student opens lecture/lab with completed summary → post-class quiz available
 
 ## Stage 5.5 — Module Schedule & Section Metadata — NEW in v3
 
-**Status:** NOT STARTED. **May run in parallel with Stage 5** (admin domain, not quiz domain). **Hard prerequisite for Stage 6**; also feeds Stage 8.6 (time management) and Stage 11 (calendar seeding).
+**Status:** ✅ **FULLY VERIFIED** (2026-06-17, branch `stage-55`). 5.5a fixed-template replacement is
+committed at `76f496f` (schedule required, 0020 schedule provenance, 28-section oracle). 5.5b e2e
+suite rework is committed at `ab017db` (observed 10-red run mapped, fixes applied,
+`playwright --list` clean, quarantine 0), and 5.5b feature work is committed at `5a7fb15`
+(metadata-edit endpoint + D13 recompute guard + `platform/query` stored-week resolver; backend
+**413 passed**, ruff clean). 5.5c is committed at `adbd507` (`section_assets.asset_kind` migration
+`0021`, lab `.ipynb` attachments, backend streaming downloads with `nosniff`, upload-time lab
+`dueAt`, no-pipeline DB assertion; backend **418 passed**, ruff clean, frontend `tsc --noEmit`
+clean). 5.5d is committed at `991e1db`: no per-module dev schedule map exists, so all recreated dev
+modules use the reference schedule; the actual dev run migrated `stage-55` DB to `0021`, replaced
+16 modules, generated 448 stamped sections, removed all legacy template titles, and seeded one
+published lab with processable PDF + attachment notebook assets. 5.5e is committed at `5b00f04`:
+thin admin/lecturer/student UI and browser gate prove schedule preview/create, resolver-backed by-week
+views, metadata edit, lab PDF + `.ipynb` upload with `dueAt`, student deadline display, and
+`assetKind` download routing. Final verification: Stage 5.5 browser gate GREEN; reference schedule
+exactly **28 sections** (21 lectures, 7 labs, 0 Friday, 7 weeks); full active Playwright suite
+**12/12 passed** after reseed; backend **424 passed**; ruff clean; frontend `tsc --noEmit` exit 0;
+fresh DB migration upgrade→base→upgrade round-trip originally passed on the pre-merge branch, and
+5.5g rebased the migration chain after Stage 5 merged: Stage 5 main ends at `0020`, Stage 5.5 schedule
+config is now `0021`, and lab attachment asset kind is now `0022`. The post-rebase Alembic round-trip
+passed and `alembic heads` reports a single `0022 (head)`. ADR-040, ADR-041, ADR-042, ADR-043. See
+[[steps/stage-05/5.5a-schedule-generation]],
+[[steps/stage-05/5.5b-metadata-edit-and-week-resolver]],
+[[steps/stage-05/5.5c-lab-attachments]],
+[[steps/stage-05/5.5d-dev-reseed]],
+[[steps/stage-05/5.5e-ui-browser-gate]], and
+[[steps/stage-05/5.5g-migration-chain-rebase]].
+**May run in parallel with Stage 5** (admin domain, not quiz domain). **Hard prerequisite for Stage 6**;
+also feeds Stage 8.6 (time management) and Stage 11 (calendar seeding).
 
 **Why:** `week_number`, `session_date`, `due_at` exist in the schema but are never populated — module creation emits a fixed 4-section template, not the schedule-driven structure Slice 1 specifies. Recap quizzes (date range), exam-prep quizzes (covered weeks), assistant time-management, and the agent's calendar all resolve scope through exactly these fields. Without this session, Stage 6 stops at a findings note in its first week.
 
-**Backend scope:** module creation accepts schedule parameters (course dates, lecture days, lab days) driving section generation; admin can set/edit `week_number` / `session_date` / `due_at` per section; **backfill path for existing modules** (29 in dev); week→sections resolution query in `platform/query`.
+**Backend scope:** module creation accepts schedule parameters (course dates, lecture days, lab days) driving section generation; admin can set/edit `week_number` / `session_date` / `due_at` per section; **dev reseed replaces existing modules with reference-schedule modules**; week→sections resolution query in `platform/query`.
 
 **Thin UI scope:** admin schedule fields on module creation; per-section metadata editing in the admin UI.
 
@@ -490,7 +518,7 @@ Admin creates module with schedule → sections carry week/date metadata
 
 ## Stage 6 — Complete Quiz Modes
 
-**Status:** NOT STARTED. **Hard prerequisite: Stage 5.5.**
+**Status:** NOT STARTED. **Prerequisite satisfied:** Stage 5.5 is FULLY VERIFIED.
 
 **Backend scope (v2 carried):** `recap_period`, `exam_prep`, `mistakes_bank`; assessment scope by covered weeks (`AssessmentScope`); mistake-review prefix; retake reinforcement (`retakeCorrectCount`; prefix flag flips false after 2 correct retake answers; mistake stays in the bank).
 

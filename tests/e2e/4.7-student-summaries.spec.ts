@@ -114,9 +114,12 @@ function recordMany(runId: string, field: string, values: string[]) {
   for (const value of values) recordManifestValue(runId, field, value);
 }
 
-function sectionByTitle(sections: SectionRow[], title: string): SectionRow {
-  const s = sections.find((c) => c.title === title);
-  if (!s) throw new Error(`Missing generated section ${title}`);
+// Stage 5.5: generated titles are now "Lecture — Week N (...)" / "Lab — Week N (...)". Select by
+// type + ordinal; getSectionsForModule returns rows ordered by order_index, so index 0 = first.
+function nthSectionOfType(sections: SectionRow[], type: 'lecture' | 'lab', index = 0): SectionRow {
+  const matches = sections.filter((c) => c.type === type);
+  const s = matches[index];
+  if (!s) throw new Error(`Missing generated ${type} section #${index} (have ${matches.length})`);
   return s;
 }
 
@@ -129,8 +132,20 @@ async function createModule(runId: string, adminContext: APIRequestContext, titl
     description: `4.7 gate ${runId}`,
     ownerId: owner.id,
     timezone: 'UTC',
-    startsOn: '2026-01-12',
-    endsOn: '2026-05-01',
+    // Stage 5.5a: creation is schedule-driven (startsOn/endsOn replaced). Title-based section
+    // selection below is reworked in 5.5e (full-suite pass after the 5.5d reseed).
+    schedule: {
+      courseStartDate: '2026-01-12',
+      courseEndDate: '2026-05-01',
+      weekStartDay: 'monday',
+      sessionPattern: [
+        { weekday: 'monday', sectionType: 'lecture' },
+        { weekday: 'tuesday', sectionType: 'lecture' },
+        { weekday: 'wednesday', sectionType: 'lecture' },
+        { weekday: 'thursday', sectionType: 'lab' },
+      ],
+      quizDay: 'friday',
+    },
   });
   expect(create.status).toBe(201);
   const moduleId = create.body.id;
@@ -172,10 +187,10 @@ test('4.7 student summaries browser gate', async ({ browser }) => {
     const a = await createModule(runId, apiAdmin, `Stage 4.7 Module A ${runId}`, true);
     const b = await createModule(runId, apiAdmin, `Stage 4.7 Module B ${runId}`, false);
 
-    const a1 = sectionByTitle(a.sections, 'Lecture 1'); // summarized → G1/G2/G3
-    const a3 = sectionByTitle(a.sections, 'Lecture 2'); // published, no transcript → G7 (row 5)
-    const a4 = sectionByTitle(a.sections, 'Lab 1'); // draft → G4
-    const b1 = sectionByTitle(b.sections, 'Lecture 1'); // module B published → G5
+    const a1 = nthSectionOfType(a.sections, 'lecture', 0); // summarized → G1/G2/G3
+    const a3 = nthSectionOfType(a.sections, 'lecture', 1); // published, no transcript → G7 (row 5)
+    const a4 = nthSectionOfType(a.sections, 'lab', 0); // draft → G4
+    const b1 = nthSectionOfType(b.sections, 'lecture', 0); // module B published → G5
 
     const lecturerPage = await lecturerContext.newPage();
     await signIn(lecturerPage, LECTURER_EMAIL, '/lecturer');

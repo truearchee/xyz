@@ -217,6 +217,13 @@ async function createModule(
     label: `${ownerFullName} (${ownerEmail})`,
   });
   await form.getByLabel('Module description').fill(`${title} E2E proof`);
+  // Stage 5.5a: module creation is schedule-driven; the form now requires course start/end dates
+  // (the weekly pattern is a fixed default pending the 5.5e picker). Without these the browser blocks
+  // submit client-side, so creation never reaches the backend.
+  await form.getByLabel('Course starts on').fill('2026-05-11');
+  await form.getByLabel('Course ends on').fill('2026-06-26');
+  await form.getByRole('button', { name: 'Preview sections' }).click();
+  await expect(form.getByTestId('module-schedule-preview')).toContainText('28 total sections');
   await form.getByRole('button', { name: 'Create module' }).click();
   await expect(page.getByTestId(`admin-module-row-${title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}`)).toBeVisible();
 }

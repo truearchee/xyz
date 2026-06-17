@@ -120,10 +120,13 @@ function recordMany(runId: string, field: string, values: string[]) {
   }
 }
 
-function sectionByTitle(sections: SectionRow[], title: string): SectionRow {
-  const section = sections.find((candidate) => candidate.title === title);
+// Stage 5.5: generated titles are now "Lecture — Week N (...)" / "Lab — Week N (...)". Select by
+// type + ordinal; getSectionsForModule returns rows ordered by order_index, so index 0 = first.
+function nthSectionOfType(sections: SectionRow[], type: 'lecture' | 'lab', index = 0): SectionRow {
+  const matches = sections.filter((candidate) => candidate.type === type);
+  const section = matches[index];
   if (!section) {
-    throw new Error(`Missing generated section ${title}`);
+    throw new Error(`Missing generated ${type} section #${index} (have ${matches.length})`);
   }
   return section;
 }
@@ -145,8 +148,20 @@ async function createRunModule(runId: string, adminContext: APIRequestContext) {
     description: `4.5d summary browser gate ${runId}`,
     ownerId: owner.id,
     timezone: 'UTC',
-    startsOn: '2026-01-12',
-    endsOn: '2026-05-01',
+    // Stage 5.5a: creation is schedule-driven (startsOn/endsOn replaced). Title-based section
+    // selection below is reworked in 5.5e (full-suite pass after the 5.5d reseed).
+    schedule: {
+      courseStartDate: '2026-01-12',
+      courseEndDate: '2026-05-01',
+      weekStartDay: 'monday',
+      sessionPattern: [
+        { weekday: 'monday', sectionType: 'lecture' },
+        { weekday: 'tuesday', sectionType: 'lecture' },
+        { weekday: 'wednesday', sectionType: 'lecture' },
+        { weekday: 'thursday', sectionType: 'lab' },
+      ],
+      quizDay: 'friday',
+    },
   });
   expect(moduleCreate.status).toBe(201);
   const moduleId = moduleCreate.body.id;
@@ -162,7 +177,7 @@ async function createRunModule(runId: string, adminContext: APIRequestContext) {
 
   const sections = getSectionsForModule(moduleId) as SectionRow[];
   recordMany(runId, 'sectionIds', sections.map((section) => section.id));
-  return { lab: sectionByTitle(sections, 'Lab 1'), moduleId, moduleTitle, sections };
+  return { lab: nthSectionOfType(sections, 'lab', 0), moduleId, moduleTitle, sections };
 }
 
 async function publishSections(context: APIRequestContext, moduleId: string, sections: SectionRow[]) {

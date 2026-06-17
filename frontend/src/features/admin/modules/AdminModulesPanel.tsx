@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import type { ModuleMemberResponse, ModuleResponse, UserResponse } from "../../../lib/api";
+import type { ModuleMemberResponse, ModuleResponse, SectionWeekRead, UserResponse } from "../../../lib/api";
 import { api } from "../../../lib/api/wrapper";
 import { errorMessage, panelStyles, slugify } from "../shared";
 import { AssignMemberForm } from "./AssignMemberForm";
@@ -12,6 +12,7 @@ export function AdminModulesPanel() {
   const [users, setUsers] = useState<UserResponse[]>([]);
   const [modules, setModules] = useState<ModuleResponse[]>([]);
   const [members, setMembers] = useState<ModuleMemberResponse[]>([]);
+  const [weekRows, setWeekRows] = useState<SectionWeekRead[]>([]);
   const [selectedModuleId, setSelectedModuleId] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -54,6 +55,19 @@ export function AdminModulesPanel() {
     }
   }, []);
 
+  const loadWeekRows = useCallback(async (moduleId: string) => {
+    if (!moduleId) {
+      setWeekRows([]);
+      return;
+    }
+    setError(null);
+    try {
+      setWeekRows(await api.admin.listSectionsByWeek(moduleId, null, true));
+    } catch (caught) {
+      setError(errorMessage(caught));
+    }
+  }, []);
+
   useEffect(() => {
     void loadUsersAndModules();
   }, [loadUsersAndModules]);
@@ -62,11 +76,16 @@ export function AdminModulesPanel() {
     void loadMembers(selectedModuleId);
   }, [loadMembers, selectedModuleId]);
 
+  useEffect(() => {
+    void loadWeekRows(selectedModuleId);
+  }, [loadWeekRows, selectedModuleId]);
+
   async function refreshAfterMutation(moduleId = selectedModuleId) {
     await loadUsersAndModules();
     if (moduleId) {
       setSelectedModuleId(moduleId);
       await loadMembers(moduleId);
+      await loadWeekRows(moduleId);
     }
   }
 
@@ -165,6 +184,33 @@ export function AdminModulesPanel() {
                       {removingUserId === member.userId ? "Removing..." : "Remove membership"}
                     </button>
                   </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+      <section aria-label="Resolver by-week sections" data-testid="admin-by-week-view" style={panelStyles.stack}>
+        <h3>{selectedModule ? `${selectedModule.title} by week` : "Sections by week"}</h3>
+        <div style={{ overflowX: "auto" }}>
+          <table style={panelStyles.table}>
+            <thead>
+              <tr>
+                <th style={panelStyles.th}>Week</th>
+                <th style={panelStyles.th}>Date</th>
+                <th style={panelStyles.th}>Type</th>
+                <th style={panelStyles.th}>Title</th>
+                <th style={panelStyles.th}>Publish</th>
+              </tr>
+            </thead>
+            <tbody>
+              {weekRows.map((section) => (
+                <tr data-testid={`admin-by-week-row-${section.id}`} key={section.id}>
+                  <td style={panelStyles.td}>{section.weekNumber ?? "Unstamped"}</td>
+                  <td style={panelStyles.td}>{section.sessionDate ?? "No date"}</td>
+                  <td style={panelStyles.td}>{section.type}</td>
+                  <td style={panelStyles.td}>{section.title}</td>
+                  <td style={panelStyles.td}>{section.publishStatus}</td>
                 </tr>
               ))}
             </tbody>

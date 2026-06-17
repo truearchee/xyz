@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic.alias_generators import to_camel
 
 
@@ -22,6 +22,7 @@ class SectionAssetResponse(CamelModel):
     mime_type: str
     file_size: int
     checksum_sha256: str
+    asset_kind: str
     processing_status: str
     uploaded_by_user_id: UUID
     created_at: datetime
@@ -46,6 +47,7 @@ class StudentAssetMeta(CamelModel):
     file_name: str
     mime_type: str
     file_size: int
+    asset_kind: str
 
 
 class StudentSectionDetail(CamelModel):
@@ -53,6 +55,7 @@ class StudentSectionDetail(CamelModel):
     title: str
     type: str
     order_index: int
+    due_at: datetime | None
     lecturer_notes: str | None
     assets: list[StudentAssetMeta]
 
@@ -74,3 +77,53 @@ class SectionDetail(CamelModel):
     publish_status: str
     lecturer_notes: str | None
     updated_at: datetime
+
+
+class SectionMetadataPatchRequest(CamelModel):
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        from_attributes=True,
+        populate_by_name=True,
+        extra="forbid",
+    )
+
+    week_number: int | None = Field(default=None, ge=1)
+    session_date: date | None = None
+    due_at: datetime | None = None
+
+    @model_validator(mode="after")
+    def _validate_metadata_patch(self) -> SectionMetadataPatchRequest:
+        fields = self.model_fields_set
+        if not fields:
+            raise ValueError("At least one metadata field is required")
+        if "week_number" in fields and self.week_number is None:
+            raise ValueError("weekNumber must be a positive integer")
+        if "session_date" in fields and self.session_date is None:
+            raise ValueError("sessionDate must be a valid calendar date")
+        return self
+
+
+class SectionMetadataDetail(CamelModel):
+    id: UUID
+    course_module_id: UUID
+    title: str
+    type: str
+    order_index: int
+    publish_status: str
+    lecturer_notes: str | None
+    week_number: int | None
+    session_date: date | None
+    due_at: datetime | None
+    updated_at: datetime
+
+
+class SectionWeekRead(CamelModel):
+    id: UUID
+    course_module_id: UUID
+    title: str
+    type: str
+    order_index: int
+    week_number: int | None
+    session_date: date | None
+    due_at: datetime | None
+    publish_status: str

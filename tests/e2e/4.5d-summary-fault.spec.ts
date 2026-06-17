@@ -1,3 +1,4 @@
+import { execSync } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
@@ -20,11 +21,10 @@ import {
   waitForTranscriptEmbedded,
 } from './fixtures/db.mjs';
 
-// Stage 4.5d Gate 2 — forced-fault browser coverage (deterministic provider, NO key). Each test
-// assumes the ai_worker is running with the MATCHING global LLM_FAULT_INJECTION (global env can't
-// mix faults in one stack), so they are run one at a time via --grep:
-//   LLM_FAULT_INJECTION=invalid_output … docker compose up -d ai_worker ; playwright --grep invalid_output
-//   LLM_FAULT_INJECTION=invalid_input  … docker compose up -d ai_worker ; playwright --grep invalid_input
+// Stage 4.5d Gate 2 — forced-fault browser coverage (deterministic provider, NO key). The
+// LLM-transport fault is a global ai_worker env value, so the spec recreates ai_worker with the
+// matching fault before each test and restores it afterwards. This keeps the full active suite
+// runnable without a manual --grep + worker-recreate preamble.
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:8000';
 const PASSWORD = process.env.E2E_TEST_PASSWORD ?? 'LocalE2EPassword123!';
@@ -36,7 +36,19 @@ const TRANSCRIPT_DIR = resolve('tests/e2e/fixtures/files/transcripts');
 type ApiResponse<T = unknown> = { body: T; status: number };
 type SectionRow = { id: string; title: string; type: string };
 
-test.setTimeout(180_000);
+// Stage 5.5: generated titles are now "Lecture — Week N (...)" / "Lab — Week N (...)". Select by
+// type + ordinal; getSectionsForModule returns rows ordered by order_index, so index 0 = first.
+// (Replaces the old `find(title==='Lab 1')!` which silently produced undefined → TypeError on miss.)
+function nthSectionOfType(sections: SectionRow[], type: 'lecture' | 'lab', index = 0): SectionRow {
+  const matches = sections.filter((candidate) => candidate.type === type);
+  const section = matches[index];
+  if (!section) {
+    throw new Error(`Missing generated ${type} section #${index} (have ${matches.length})`);
+  }
+  return section;
+}
+
+test.setTimeout(600_000);
 
 function requireRunId(): string {
   const runId = process.env.E2E_RUN_ID;
@@ -53,6 +65,26 @@ function record(runId: string, field: string, value: string) {
   const m = JSON.parse(readFileSync(manifestPath(runId), 'utf8'));
   m[field] = [...new Set([...(Array.isArray(m[field]) ? m[field] : []), value])];
   writeFileSync(manifestPath(runId), `${JSON.stringify(m, null, 2)}\n`);
+}
+
+function recreateAiWorker(fault: 'invalid_output' | 'invalid_input' | null) {
+  const env = {
+    ...process.env,
+    LLM_FAULT_INJECTION: fault ?? '',
+    PIPELINE_FAULT_INJECTION_ENABLED: '',
+    PIPELINE_FAULT_INJECTION: '',
+  };
+  const compose = 'docker compose -f docker-compose.yml -f docker-compose.fault.yml';
+  execSync(`${compose} up -d --force-recreate ai_worker`, { env, stdio: 'inherit' });
+  const deadline = Date.now() + 60_000;
+  for (;;) {
+    const logs = execSync(`${compose} logs --tail=40 ai_worker`, { env }).toString();
+    if (logs.includes('Listening on ai')) return;
+    if (Date.now() > deadline) {
+      throw new Error('ai_worker did not become ready within 60s after recreate');
+    }
+    execSync('sleep 1');
+  }
 }
 
 async function signIn(page: Page, email: string, expectedPath: string) {
@@ -95,8 +127,20 @@ async function setupModuleAndUpload(page: Page, adminCtx: APIRequestContext, run
     description: `4.5d fault gate ${label} ${runId}`,
     ownerId: owner.id,
     timezone: 'UTC',
-    startsOn: '2026-01-12',
-    endsOn: '2026-05-01',
+    // Stage 5.5a: creation is schedule-driven (startsOn/endsOn replaced). Title-based section
+    // selection below is reworked in 5.5e (full-suite pass after the 5.5d reseed).
+    schedule: {
+      courseStartDate: '2026-01-12',
+      courseEndDate: '2026-05-01',
+      weekStartDay: 'monday',
+      sessionPattern: [
+        { weekday: 'monday', sectionType: 'lecture' },
+        { weekday: 'tuesday', sectionType: 'lecture' },
+        { weekday: 'wednesday', sectionType: 'lecture' },
+        { weekday: 'thursday', sectionType: 'lab' },
+      ],
+      quizDay: 'friday',
+    },
   });
   expect(created.status).toBe(201);
   const moduleId = created.body.id;
@@ -110,7 +154,7 @@ async function setupModuleAndUpload(page: Page, adminCtx: APIRequestContext, run
   for (const m of getMembershipsForModule(moduleId)) record(runId, 'membershipIds', m.id);
   const sections = getSectionsForModule(moduleId) as SectionRow[];
   for (const s of sections) record(runId, 'sectionIds', s.id);
-  const lab = sections.find((s) => s.title === 'Lab 1')!;
+  const lab = nthSectionOfType(sections, 'lab', 0);
 
   await page.goto(`/lecturer/modules/${moduleId}`);
   const row = rowForSection(page, lab);
@@ -135,6 +179,7 @@ test('4.5d fault gate — invalid_output is rejected, retried, logged; no summar
   const adminCtx = await browser.newContext();
   let api: APIRequestContext | null = null;
   try {
+    recreateAiWorker('invalid_output');
     const adminPage = await adminCtx.newPage();
     await signIn(adminPage, ADMIN_EMAIL, '/admin');
     api = await apiContextFor(adminPage);
@@ -162,6 +207,7 @@ test('4.5d fault gate — invalid_output is rejected, retried, logged; no summar
       { timeout: 95_000 },
     );
   } finally {
+    recreateAiWorker(null);
     await api?.dispose();
     await lecturerCtx.close();
     await adminCtx.close();
@@ -174,6 +220,7 @@ test('4.5d fault gate — invalid_input is terminal, non-retryable; no summary r
   const adminCtx = await browser.newContext();
   let api: APIRequestContext | null = null;
   try {
+    recreateAiWorker('invalid_input');
     const adminPage = await adminCtx.newPage();
     await signIn(adminPage, ADMIN_EMAIL, '/admin');
     api = await apiContextFor(adminPage);
@@ -197,6 +244,7 @@ test('4.5d fault gate — invalid_input is terminal, non-retryable; no summary r
       { timeout: 95_000 },
     );
   } finally {
+    recreateAiWorker(null);
     await api?.dispose();
     await lecturerCtx.close();
     await adminCtx.close();

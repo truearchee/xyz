@@ -15,8 +15,11 @@ from app.domains.admin.schemas import (
     CreateModuleRequest,
     CreateUserRequest,
     ModuleMemberResponse,
+    ModuleScheduleInput,
+    ModuleSchedulePreviewResponse,
+    ModuleSectionPreview,
 )
-from app.domains.admin.section_generation import generate_initial_sections
+from app.domains.admin.section_generation import generate_initial_sections, generate_sections
 from app.platform.auth.context import CurrentUserContext
 from app.platform.db.models import AppUser, CourseMembership, CourseModule
 from app.platform.supabase_client import get_supabase_admin_client
@@ -118,7 +121,7 @@ async def create_user(db: AsyncSession, payload: CreateUserRequest) -> AppUser:
         if "uq_app_users_email" in str(exc):
             raise _http_error(status.HTTP_409_CONFLICT, "Email already exists") from exc
         raise _http_error(status.HTTP_400_BAD_REQUEST, "Could not create user") from exc
-    except Exception as exc:
+    except Exception:
         await db.rollback()
         await _delete_supabase_user(supabase_user_id)
         raise
@@ -181,13 +184,20 @@ async def create_module(
             "Module owner must be a lecturer",
         )
 
+    schedule = payload.schedule
     module = CourseModule(
         title=payload.title,
         description=payload.description,
         owner_id=payload.owner_id,
         timezone=payload.timezone,
-        starts_on=payload.starts_on,
-        ends_on=payload.ends_on,
+        starts_on=schedule.course_start_date,
+        ends_on=schedule.course_end_date,
+        week_start_day=schedule.week_start_day,
+        session_pattern=[
+            {"weekday": entry.weekday, "sectionType": entry.section_type}
+            for entry in schedule.session_pattern
+        ],
+        quiz_day=schedule.quiz_day,
         is_active=True,
     )
     db.add(module)
@@ -214,6 +224,36 @@ async def create_module(
     await db.flush()
     await db.refresh(module)
     return module
+
+
+def preview_module_schedule(schedule: ModuleScheduleInput) -> ModuleSchedulePreviewResponse:
+    drafts = generate_sections(
+        start=schedule.course_start_date,
+        end=schedule.course_end_date,
+        week_start_day=schedule.week_start_day,
+        session_pattern=[
+            {"weekday": entry.weekday, "sectionType": entry.section_type}
+            for entry in schedule.session_pattern
+        ],
+    )
+    weeks = {draft.week_number for draft in drafts}
+    return ModuleSchedulePreviewResponse(
+        total_sections=len(drafts),
+        week_count=len(weeks),
+        lecture_count=sum(1 for draft in drafts if draft.type == "lecture"),
+        lab_count=sum(1 for draft in drafts if draft.type == "lab"),
+        friday_section_count=sum(1 for draft in drafts if draft.session_date.weekday() == 4),
+        sections=[
+            ModuleSectionPreview(
+                title=draft.title,
+                type=draft.type,
+                order_index=draft.order_index,
+                week_number=draft.week_number,
+                session_date=draft.session_date,
+            )
+            for draft in drafts
+        ],
+    )
 
 
 async def get_module(db: AsyncSession, module_id: UUID) -> CourseModule:

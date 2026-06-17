@@ -11,6 +11,8 @@ import {
   type CreateModuleRequest,
   type CreateUserRequest,
   MeService,
+  type ModuleScheduleInput,
+  type ModuleSchedulePreviewResponse,
   ModulesService,
   OpenAPI,
   type QuizAttemptForStudent,
@@ -20,6 +22,9 @@ import {
   QuizService,
   type ResetPasswordRequest,
   type SectionAssetListResponse,
+  type SectionMetadataPatchRequest,
+  type SectionMetadataDetail,
+  type SectionWeekRead,
   type StudentSectionListItem,
   type StudentSectionRead,
   type StudentSectionSummariesRead,
@@ -102,6 +107,82 @@ async function withAuthRecovery<T>(request: () => Promise<T>): Promise<T> {
   }
 }
 
+function encodedContentPath(input: {
+  moduleId: string;
+  sectionId: string;
+  assetId?: string;
+}): string {
+  const base = `/modules/${encodeURIComponent(input.moduleId)}/sections/${encodeURIComponent(
+    input.sectionId,
+  )}/assets`;
+  if (!input.assetId) {
+    return base;
+  }
+  return `${base}/${encodeURIComponent(input.assetId)}`;
+}
+
+function attachmentFileName(disposition: string | null, fallback: string): string {
+  if (!disposition) {
+    return fallback;
+  }
+  const encoded = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1];
+  if (encoded) {
+    try {
+      return decodeURIComponent(encoded);
+    } catch {
+      return fallback;
+    }
+  }
+  return disposition.match(/filename="([^"]+)"/i)?.[1] ?? fallback;
+}
+
+async function downloadAttachmentAsset(
+  moduleId: string,
+  sectionId: string,
+  assetId: string,
+  fallbackFileName: string,
+): Promise<{ blob: Blob; fileName: string }> {
+  const tokenResolver = OpenAPI.TOKEN;
+  const token =
+    typeof tokenResolver === 'function'
+      ? await tokenResolver({ method: 'GET', url: '' })
+      : tokenResolver;
+
+  if (!token) {
+    await redirectToLogin();
+    throw new AuthRequiredError();
+  }
+
+  const response = await fetch(
+    `${OpenAPI.BASE}${encodedContentPath({ assetId, moduleId, sectionId })}/download`,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    },
+  );
+
+  if (response.ok) {
+    return {
+      blob: await response.blob(),
+      fileName: attachmentFileName(
+        response.headers.get('Content-Disposition'),
+        fallbackFileName,
+      ),
+    };
+  }
+
+  if (response.status === 401) {
+    await redirectToLogin();
+    throw new AuthRequiredError(response.statusText || 'Unauthorized');
+  }
+  const body = await response.text();
+  if (response.status === 403) {
+    throw new ForbiddenError(response.statusText || 'Forbidden', body);
+  }
+  throw new Error(body || response.statusText || 'Download failed');
+}
+
 export const api = {
   admin: {
     assignMember: (moduleId: string, requestBody: AssignMemberRequest) =>
@@ -115,6 +196,14 @@ export const api = {
       withAuthRecovery(() =>
         AdminService.createModuleAdminModulesPost(requestBody),
       ),
+    previewModuleSchedule: (
+      requestBody: ModuleScheduleInput,
+    ): Promise<ModuleSchedulePreviewResponse> =>
+      withAuthRecovery(() =>
+        AdminService.previewModuleSectionsAdminModulesPreviewSectionsPost(
+          requestBody,
+        ),
+      ),
     createUser: (requestBody: CreateUserRequest) =>
       withAuthRecovery(() => AdminService.createUserAdminUsersPost(requestBody)),
     deactivateUser: (userId: string) =>
@@ -127,6 +216,18 @@ export const api = {
       ),
     listModules: () =>
       withAuthRecovery(() => AdminService.listModulesAdminModulesGet()),
+    listSectionsByWeek: (
+      moduleId: string,
+      coveredWeeks?: Array<number> | null,
+      includeUnstamped = false,
+    ): Promise<Array<SectionWeekRead>> =>
+      withAuthRecovery(() =>
+        AdminService.listAdminModuleSectionsByWeekAdminModulesModuleIdSectionsByWeekGet(
+          moduleId,
+          coveredWeeks,
+          includeUnstamped,
+        ),
+      ),
     listUsers: () => withAuthRecovery(() => AdminService.listUsersAdminUsersGet()),
     removeMember: (moduleId: string, userId: string) =>
       withAuthRecovery(() =>
@@ -152,6 +253,7 @@ export const api = {
           assetId,
         ),
       ),
+    downloadAttachmentAsset,
     getSection: (moduleId: string, sectionId: string) =>
       withAuthRecovery(() =>
         ContentService.getSectionModulesModuleIdSectionsSectionIdGet(
@@ -172,6 +274,18 @@ export const api = {
     listSections: (moduleId: string) =>
       withAuthRecovery(() =>
         ContentService.listSectionsModulesModuleIdSectionsGet(moduleId),
+      ),
+    listSectionsByWeek: (
+      moduleId: string,
+      coveredWeeks?: Array<number> | null,
+      includeUnstamped = false,
+    ): Promise<Array<SectionWeekRead>> =>
+      withAuthRecovery(() =>
+        ContentService.listSectionsByWeekModulesModuleIdSectionsByWeekGet(
+          moduleId,
+          coveredWeeks,
+          includeUnstamped,
+        ),
       ),
     publishSection: (moduleId: string, sectionId: string) =>
       withAuthRecovery(() =>
@@ -194,6 +308,18 @@ export const api = {
     ) =>
       withAuthRecovery(() =>
         ContentService.updateNotesModulesModuleIdSectionsSectionIdNotesPatch(
+          moduleId,
+          sectionId,
+          requestBody,
+        ),
+      ),
+    updateMetadata: (
+      moduleId: string,
+      sectionId: string,
+      requestBody: SectionMetadataPatchRequest,
+    ): Promise<SectionMetadataDetail> =>
+      withAuthRecovery(() =>
+        ContentService.updateMetadataModulesModuleIdSectionsSectionIdMetadataPatch(
           moduleId,
           sectionId,
           requestBody,

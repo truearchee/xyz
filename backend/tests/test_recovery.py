@@ -47,7 +47,7 @@ from tests.test_transcripts import (  # noqa: F401 — fake_storage re-exported 
     _create_transcript,
     _create_user,
     _headers,
-    fake_storage,
+    fake_storage,  # noqa: F401 — re-exported so pytest resolves it as a fixture here
 )
 
 
@@ -582,7 +582,7 @@ async def test_non_admin_cannot_trigger_maintenance(
 
 @pytest.mark.anyio
 async def test_admin_can_trigger_reconciliation(
-    auth_client, db_session: AsyncSession, jwt_factory, mock_jwks_client, fake_storage
+    auth_client, db_session: AsyncSession, jwt_factory, mock_jwks_client, fake_storage  # noqa: F811
 ) -> None:
     admin = await _create_user(db_session, email=f"admin2-{uuid4()}@example.com", role="admin")
     await db_session.commit()

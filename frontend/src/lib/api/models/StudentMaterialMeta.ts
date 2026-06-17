@@ -10,4 +10,5 @@ export type StudentMaterialMeta = {
     fileName: string;
     mimeType: string;
     fileSize: number;
+    assetKind: string;
 };

@@ -17,7 +17,7 @@ const E2E_ACTOR_DOMAIN = 'xyz-lms-e2e.dev';
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const ASSET_STORAGE_KEY_PATTERN =
-  /^modules\/[0-9a-f-]{36}\/sections\/[0-9a-f-]{36}\/assets\/[0-9a-f-]{36}\/[^/]+\.pdf$/i;
+  /^modules\/[0-9a-f-]{36}\/sections\/[0-9a-f-]{36}\/assets\/[0-9a-f-]{36}\/[^/]+\.(pdf|ipynb)$/i;
 const TRANSCRIPT_STORAGE_KEY_PATTERN =
   /^modules\/[0-9a-f-]{36}\/sections\/[0-9a-f-]{36}\/transcripts\/[0-9a-f-]{36}\/[^/]+$/i;
 
