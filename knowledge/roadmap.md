@@ -467,26 +467,31 @@ Student opens lecture/lab with completed summary → post-class quiz available
 
 ## Stage 5.5 — Module Schedule & Section Metadata — NEW in v3
 
-**Status:** IN PROGRESS. **5.5d (dev reseed) VERIFIED** (2026-06-17, branch
-`stage-55`): 5.5a fixed-template replacement is committed at `76f496f` (schedule required, 0020
-schedule provenance, 28-section oracle). 5.5b e2e suite rework is committed at `ab017db` (observed
-10-red run mapped, fixes applied, `playwright --list` clean, quarantine 0; runtime green still pending
-sole port ownership). 5.5b feature work adds the metadata-edit endpoint + D13 recompute guard and the
-`platform/query` stored-week resolver; backend verified with targeted tests **26 passed**, full backend
-**413 passed**, ruff clean. 5.5c adds `section_assets.asset_kind` (migration `0021`, backfilled
-existing rows to `processable`), lab `.ipynb` attachments, backend streaming downloads with `nosniff`,
-upload-time lab `dueAt`, and a deterministic DB assertion that attachment uploads create no
-transcript/pipeline rows; backend verified with targeted tests **36 passed**, full backend
-**418 passed**, ruff clean, and frontend `tsc --noEmit` clean. 5.5d records that no per-module dev
-schedule map exists, so all recreated dev modules use the reference schedule; actual dev run migrated
-`stage-55` DB to `0021`, replaced 16 modules, generated 448 stamped sections, removed all legacy
-template titles, and seeded one published lab with processable PDF + attachment notebook assets.
-Backend verified with targeted reseed tests **3 passed**, full backend **421 passed**, and ruff clean.
-ADR-040, ADR-041, ADR-042, ADR-043. See
+**Status:** ✅ **FULLY VERIFIED** (2026-06-17, branch `stage-55`). 5.5a fixed-template replacement is
+committed at `76f496f` (schedule required, 0020 schedule provenance, 28-section oracle). 5.5b e2e
+suite rework is committed at `ab017db` (observed 10-red run mapped, fixes applied,
+`playwright --list` clean, quarantine 0), and 5.5b feature work is committed at `5a7fb15`
+(metadata-edit endpoint + D13 recompute guard + `platform/query` stored-week resolver; backend
+**413 passed**, ruff clean). 5.5c is committed at `adbd507` (`section_assets.asset_kind` migration
+`0021`, lab `.ipynb` attachments, backend streaming downloads with `nosniff`, upload-time lab
+`dueAt`, no-pipeline DB assertion; backend **418 passed**, ruff clean, frontend `tsc --noEmit`
+clean). 5.5d is committed at `991e1db`: no per-module dev schedule map exists, so all recreated dev
+modules use the reference schedule; the actual dev run migrated `stage-55` DB to `0021`, replaced
+16 modules, generated 448 stamped sections, removed all legacy template titles, and seeded one
+published lab with processable PDF + attachment notebook assets. 5.5e is committed at `5b00f04`:
+thin admin/lecturer/student UI and browser gate prove schedule preview/create, resolver-backed by-week
+views, metadata edit, lab PDF + `.ipynb` upload with `dueAt`, student deadline display, and
+`assetKind` download routing. Final verification: Stage 5.5 browser gate GREEN; reference schedule
+exactly **28 sections** (21 lectures, 7 labs, 0 Friday, 7 weeks); full active Playwright suite
+**12/12 passed** after reseed; backend **424 passed**; ruff clean; frontend `tsc --noEmit` exit 0;
+fresh DB migration upgrade→base→upgrade round-trip to single `0021 (head)` passed. Migration seam:
+`origin/main` still lacks Stage 5 migrations `0014-0019`, so `0020.down_revision='0013'` remains
+honest until merge-time rebase. ADR-040, ADR-041, ADR-042, ADR-043. See
 [[steps/stage-05/5.5a-schedule-generation]],
 [[steps/stage-05/5.5b-metadata-edit-and-week-resolver]],
-[[steps/stage-05/5.5c-lab-attachments]], and
-[[steps/stage-05/5.5d-dev-reseed]].
+[[steps/stage-05/5.5c-lab-attachments]],
+[[steps/stage-05/5.5d-dev-reseed]], and
+[[steps/stage-05/5.5e-ui-browser-gate]].
 **May run in parallel with Stage 5** (admin domain, not quiz domain). **Hard prerequisite for Stage 6**;
 also feeds Stage 8.6 (time management) and Stage 11 (calendar seeding).
 
@@ -511,7 +516,7 @@ Admin creates module with schedule → sections carry week/date metadata
 
 ## Stage 6 — Complete Quiz Modes
 
-**Status:** NOT STARTED. **Hard prerequisite: Stage 5.5.**
+**Status:** NOT STARTED. **Prerequisite satisfied:** Stage 5.5 is FULLY VERIFIED.
 
 **Backend scope (v2 carried):** `recap_period`, `exam_prep`, `mistakes_bank`; assessment scope by covered weeks (`AssessmentScope`); mistake-review prefix; retake reinforcement (`retakeCorrectCount`; prefix flag flips false after 2 correct retake answers; mistake stays in the bank).
 
