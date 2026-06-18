@@ -234,6 +234,21 @@ async function expectRedirect(bubble: Locator) {
   await expect(bubble.getByTestId('assistant-basis')).toHaveCount(0); // no basis line for a redirect
 }
 
+async function expectNoHorizontalScrollAt375(page: Page) {
+  await page.setViewportSize({ width: 375, height: 812 });
+  await expect
+    .poll(
+      async () =>
+        page.evaluate(() => {
+          const root = document.documentElement;
+          const body = document.body;
+          return Math.max(root.scrollWidth, body?.scrollWidth ?? 0) <= root.clientWidth;
+        }),
+      { timeout: 5_000 },
+    )
+    .toBe(true);
+}
+
 function groundingStatuses(conversationId: string): Array<string | null> {
   const rows = getAssistantMessageGrounding(conversationId) as GroundingRow[];
   return rows.filter((r) => r.role === 'assistant').map((r) => r.groundingStatus);
@@ -309,6 +324,7 @@ test('8.2 assistant grounding browser gate', async ({ browser }) => {
     await expect(labGrounded.getByTestId('assistant-basis-text')).toContainText(lab.title);
     const labConv = (getAssistantConversations(studentId, lab.id) as Array<{ id: string }>)[0];
     expect(groundingStatuses(labConv.id)).toEqual(['lecture_grounded']);
+    await expectNoHorizontalScrollAt375(page);
 
     // ── unassigned student → module B section is 404 (not 403), never grounded ───────────────────
     const unassigned = await apiStudent.get(`/student/sections/${bSection.id}/assistant/availability`);

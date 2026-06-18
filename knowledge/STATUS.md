@@ -1,11 +1,11 @@
 # Status
 
-_Last updated: 2026-06-18 — **Stage 8.2 (context resolver + grounded retrieval) — FULLY VERIFIED.** All
-gates GREEN: backend 558 pytest, tsc, migration 0033 round-trip (single head), 5 security tests + a focused
-/cso pass (0 findings ≥8/10), the 8.2 browser gate, full active Playwright **17/17 (rule 14)**, and the
-**real-provider smoke (rule 11)** — model echo `MBZUAI-IFM/K2-Think-v2` on both turns and the real
-K2-Think-v2 emitted a valid `isStudyRelated` (true study / false off-topic), validating the R-isStudyRelated
-risk on the real model ([[steps/stage-08/8.2-real-provider-smoke]]).
+_Last updated: 2026-06-18 — **Stage 8.2 review follow-up fully re-verified.** Current gates are GREEN:
+backend **560 pytest**, frontend `tsc --noEmit` exit 0, focused 8.2 gate passed, full active Playwright
+**17/17 (rule 14)** with the new 375px no-horizontal-scroll assertions, and strict real-provider smoke
+**PASS**. The strict smoke asserted model echo `MBZUAI-IFM/K2-Think-v2` on both turns and now hard-fails
+`isStudyRelated` true/false drift; real output matched true study / false off-topic. The key was injected
+via env only and is absent from the diff.
 Built: embedder promoted to `platform/embeddings/` + shared `EmbeddingConfig` + `EMBEDDING_PROVIDER`
 deterministic mode (ADR-050); assistant worker now runs resolve→retrieve→one-call→ground→snapshot
 (ADR-051) — exact pgvector cosine scan scoped to the conversation's STORED section through the 4.7
@@ -13,10 +13,11 @@ visibility gate, deterministic threshold (0.35; real-MiniLM in-lecture 0.17–0.
 ONE INTERACTIVE gateway call returning a required `isStudyRelated` flag, backend-derived `groundingStatus`
 via fixed-precedence `decide_grounding`, server-only generation-time `context_snapshot` (migration **0033**)
 → student-safe "Where did this come from?" basis; frontend neutral "Not from this lecture" label + collapsed
-basis disclosure. Verified: migration 0033 round-trip (single head **0033**); backend **558 pytest**
-(embedder promotion byte-identical); `tsc` exit 0; 5 security tests (§13) + a focused **/cso** pass (0
+basis disclosure. Verified: migration 0033 round-trip (single head **0033**); backend **560 pytest**
+(embedder promotion byte-identical + review summary-context regressions); `tsc` exit 0; 5 security tests (§13) + a focused **/cso** pass (0
 findings ≥8/10); **8.2 browser gate** (grounded lecture + LAB, off-lecture labeled general, unrelated
-redirect, unassigned 404, safe basis); **full active Playwright 17/17 (rule 14)**. Two transient full-suite
+redirect, unassigned 404, safe basis); **full active Playwright 17/17 (rule 14)**; strict real-provider
+smoke PASS. Two transient full-suite
 reds were root-caused + fixed (NOT papered over): (1) the shared-`kyiv-backend` image contention re-upped
 `ai_worker` onto non-8.2 code mid-suite → baked my code into the unique `kyiv-backend-e2e-hatyai` image +
 folded the e2e config into the base compose (LOCAL compose edits — REVERT before commit); (2) a test-timing

@@ -213,6 +213,21 @@ async function ask(page: Page, text: string, expectedAnswers: number) {
   await waitForAnswers(page, expectedAnswers);
 }
 
+async function expectNoHorizontalScrollAt375(page: Page) {
+  await page.setViewportSize({ width: 375, height: 812 });
+  await expect
+    .poll(
+      async () =>
+        page.evaluate(() => {
+          const root = document.documentElement;
+          const body = document.body;
+          return Math.max(root.scrollWidth, body?.scrollWidth ?? 0) <= root.clientWidth;
+        }),
+      { timeout: 5_000 },
+    )
+    .toBe(true);
+}
+
 test('8.1 assistant conversation foundation browser gate', async ({ browser }) => {
   const runId = requireRunId();
   const adminContext = await browser.newContext();
@@ -288,6 +303,7 @@ test('8.1 assistant conversation foundation browser gate', async ({ browser }) =
     await startChat(page);
     await expect(page.getByText('Q1: What is this lecture about?')).toBeVisible({ timeout: 30_000 });
     await waitForAnswers(page, 2);
+    await expectNoHorizontalScrollAt375(page);
 
     // ── DB: the conversation carries kind + attached lecture; every assistant turn wrote feature=assistant
     const convs = getAssistantConversations(studentId, a1.id) as Array<{

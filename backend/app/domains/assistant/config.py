@@ -21,8 +21,9 @@ RETRIEVAL_CONFIG_VERSION = "retrieval-v1"
 # 6 keeps the prompt focused and bounded.
 RETRIEVAL_TOP_K = 6
 
-# Per-chunk and total character caps on the retrieved context packed into the prompt (review #7). One
-# large/oversized chunk cannot blow the budget; the total cap bounds the whole retrieved block. Applied
-# BEFORE the gateway's ContextBuilder cap (which is the final safety net).
+# Per-source and total character caps on the grounded context packed into the prompt (review #7). One
+# large/oversized summary or chunk cannot blow the budget; the total cap bounds the whole combined
+# summary+retrieval block. Applied BEFORE the gateway's ContextBuilder cap (which is the final safety net).
+RETRIEVAL_SUMMARY_CHAR_CAP = 2500
 RETRIEVAL_CHUNK_CHAR_CAP = 1500
 RETRIEVAL_CONTEXT_CHAR_CAP = 6000

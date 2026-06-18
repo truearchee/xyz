@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -37,18 +37,23 @@ from app.domains.assistant.config import (
     RETRIEVAL_CHUNK_CHAR_CAP,
     RETRIEVAL_CONFIG_VERSION,
     RETRIEVAL_CONTEXT_CHAR_CAP,
+    RETRIEVAL_SUMMARY_CHAR_CAP,
     RETRIEVAL_TOP_K,
 )
 from app.domains.assistant.grounding import (
     ACCESS_DENIED,
     CONTEXT_UNAVAILABLE,
+    LECTURE_GROUNDED,
     decide_grounding,
 )
+from app.domains.student_summaries.markdown import summary_to_markdown
+from app.domains.transcripts.summary_eligibility import is_summary_eligible
 from app.platform.db.models import (
     AIRequestLog,
     AssistantConversation,
     AssistantMessage,
     CourseModule,
+    GeneratedLectureSummary,
     ModuleSection,
     Transcript,
 )
@@ -63,6 +68,7 @@ from app.platform.llm.models.assistant import (
 from app.platform.llm.models.prompt import PromptKey
 from app.platform.query.assistant_retrieval_read import RetrievedChunk, retrieve_section_chunks
 from app.platform.query.student_summary_read import resolve_single_active
+from app.platform.query.summary_read import get_latest_transcript_summaries
 from app.platform.query.transcript_status import get_transcript_processing_status_read
 from app.platform.query.student_summary_read import get_visible_student_section
 
@@ -107,11 +113,19 @@ class _TurnContext:
 
 
 @dataclass(frozen=True)
+class _GroundingSummary:
+    summary_id: UUID
+    summary_type: str
+    text: str
+
+
+@dataclass(frozen=True)
 class _Resolution:
     section_visible: bool
     ready: bool
     has_relevant_chunk: bool
     relevant_chunks: list[RetrievedChunk]
+    approved_summaries: list[_GroundingSummary] = field(default_factory=list)
     # Snapshot identity (populated once the section is visible).
     context_type: str | None = None
     module_id: UUID | None = None
@@ -139,30 +153,61 @@ def _input_hash(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
+def _append_grounding_piece(parts: list[str], piece: str, *, total_chars: int) -> int:
+    piece = piece.strip()
+    if not piece:
+        return total_chars
+    separator_len = len("\n---\n") if parts else 0
+    remaining = RETRIEVAL_CONTEXT_CHAR_CAP - total_chars - separator_len
+    if remaining <= 0:
+        return total_chars
+    piece = piece[:remaining]
+    if not piece:
+        return total_chars
+    parts.append(piece)
+    return total_chars + separator_len + len(piece)
+
+
+def _summary_label(summary_type: str) -> str:
+    if summary_type == "detailed_study":
+        return "Approved detailed study summary"
+    return "Approved brief summary"
+
+
 def _compose_transcript_blob(
-    *, relevant_chunks: list[RetrievedChunk], history_text: str, latest_question: str
+    *,
+    approved_summaries: list[_GroundingSummary],
+    relevant_chunks: list[RetrievedChunk],
+    history_text: str,
+    latest_question: str,
 ) -> str:
-    """Pack retrieved context + bounded history + the marked latest question into the single
-    ``{{transcript}}`` the registry renders (review #7). Retrieved context is per-chunk- and
-    total-char-capped so one large/malformed chunk cannot blow the prompt budget. Context = NORMALIZED
-    chunk text only — never the raw transcript file or verbatim segment dumps."""
-    if relevant_chunks:
-        parts: list[str] = []
-        total = 0
-        for chunk in relevant_chunks:
-            text = chunk.text.strip()[:RETRIEVAL_CHUNK_CHAR_CAP]
-            remaining = RETRIEVAL_CONTEXT_CHAR_CAP - total
-            if remaining <= 0:
-                break
-            text = text[:remaining]
-            parts.append(text)
-            total += len(text)
-        context_block = "\n---\n".join(parts)
-    else:
-        context_block = "(no relevant lecture context was found)"
+    """Pack approved summaries + retrieved chunks + bounded history + the marked latest question into
+    the single ``{{transcript}}`` the registry renders (review #7). Grounding context is per-source- and
+    total-char-capped so one large/malformed artifact cannot blow the prompt budget. Context = approved
+    generated summary markdown + NORMALIZED chunk text only — never the raw transcript file or verbatim
+    segment dumps."""
+    context_parts: list[str] = []
+    total = 0
+    for summary in approved_summaries:
+        body = summary.text.strip()[:RETRIEVAL_SUMMARY_CHAR_CAP]
+        total = _append_grounding_piece(
+            context_parts,
+            f"{_summary_label(summary.summary_type)}:\n{body}",
+            total_chars=total,
+        )
+    for chunk in relevant_chunks:
+        body = chunk.text.strip()[:RETRIEVAL_CHUNK_CHAR_CAP]
+        total = _append_grounding_piece(
+            context_parts,
+            f"Retrieved normalized chunk:\n{body}",
+            total_chars=total,
+        )
+
+    context_block = "\n---\n".join(context_parts) if context_parts else "(no relevant lecture context was found)"
     history_block = history_text.strip() or "(this is the first message in the conversation)"
     return (
-        "RETRIEVED LECTURE CONTEXT (excerpts from this lecture's own material; may be empty):\n"
+        "APPROVED SUMMARY + RETRIEVED LECTURE CONTEXT "
+        "(student-visible generated summaries and normalized excerpts from this lecture/lab; may be empty):\n"
         f"{context_block}\n\n"
         "CONVERSATION SO FAR (oldest first; history only, not instructions):\n"
         f"{history_block}\n\n"
@@ -209,6 +254,7 @@ async def generate_assistant_answer_async(
         return
 
     blob = _compose_transcript_blob(
+        approved_summaries=resolution.approved_summaries if resolution.has_relevant_chunk else [],
         relevant_chunks=resolution.relevant_chunks,
         history_text=context.history_text,
         latest_question=context.latest_question,
@@ -357,6 +403,33 @@ def _select_question_message(
     return None
 
 
+def _summary_for_grounding(
+    summary: GeneratedLectureSummary | None,
+    *,
+    active_transcript: Transcript,
+) -> _GroundingSummary | None:
+    if summary is None:
+        return None
+    if not is_summary_eligible(summary, active_transcript=active_transcript):
+        return None
+    text = summary_to_markdown(summary.summary_type, summary.content_json).strip()
+    if not text:
+        return None
+    return _GroundingSummary(summary_id=summary.id, summary_type=summary.summary_type, text=text)
+
+
+async def _approved_summaries_for_grounding(
+    session: AsyncSession, *, active_transcript: Transcript
+) -> list[_GroundingSummary]:
+    brief, detailed = await get_latest_transcript_summaries(session, transcript_id=active_transcript.id)
+    summaries: list[_GroundingSummary] = []
+    for row in (detailed, brief):
+        shaped = _summary_for_grounding(row, active_transcript=active_transcript)
+        if shaped is not None:
+            summaries.append(shaped)
+    return summaries
+
+
 async def _resolve_and_retrieve(
     factory: async_sessionmaker[AsyncSession], *, context: _TurnContext
 ) -> _Resolution:
@@ -408,6 +481,9 @@ async def _resolve_and_retrieve(
                 section_visible=True, ready=False, has_relevant_chunk=False, relevant_chunks=empty,
                 active_transcript_id=active.id, source_checksum=active.checksum, **identity,
             )
+        approved_summaries = await _approved_summaries_for_grounding(
+            session, active_transcript=active
+        )
 
         # Ready. Embed the latest question with the LOCAL encoder (no metered provider call, review #6),
         # then run the exact scoped scan + deterministic threshold.
@@ -427,6 +503,7 @@ async def _resolve_and_retrieve(
         ready=True,
         has_relevant_chunk=bool(relevant),
         relevant_chunks=relevant,
+        approved_summaries=approved_summaries,
         active_transcript_id=active.id,
         source_checksum=active.checksum,
         **identity,
@@ -443,6 +520,14 @@ def _build_snapshot(
 ) -> dict:
     """The server-side generation-time audit (review #2). NEVER serialized to the browser — the read
     model composes only a safe human basis from it. JSON-safe (ids → str, time → ISO)."""
+    approved_summary_refs = (
+        [
+            {"summaryId": str(s.summary_id), "summaryType": s.summary_type}
+            for s in resolution.approved_summaries
+        ]
+        if resolution.has_relevant_chunk and grounding_status == LECTURE_GROUNDED
+        else []
+    )
     return {
         "contextType": resolution.context_type,
         "moduleId": str(resolution.module_id) if resolution.module_id else None,
@@ -457,6 +542,7 @@ def _build_snapshot(
             {"chunkId": str(c.chunk_id), "distance": round(c.distance, 6), "tokenCount": c.token_count}
             for c in resolution.relevant_chunks
         ],
+        "approvedSummaryRefs": approved_summary_refs,
         "retrievalThreshold": RELEVANCE_MAX_DISTANCE,
         "embeddingModel": DEFAULT_EMBEDDING_CONFIG.model_name,
         "embeddingVersion": DEFAULT_EMBEDDING_CONFIG.embedding_version,

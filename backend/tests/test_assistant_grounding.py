@@ -43,6 +43,7 @@ from app.platform.db.models import (
     AssistantMessage,
     CourseMembership,
     CourseModule,
+    GeneratedLectureSummary,
     ModuleSection,
     Transcript,
     TranscriptChunk,
@@ -186,6 +187,48 @@ async def _add_chunk(
     return chunk
 
 
+async def _add_summary(
+    db_session: AsyncSession,
+    *,
+    transcript: Transcript,
+    summary_type: str,
+    content_json: dict,
+    checksum: str | None = None,
+) -> GeneratedLectureSummary:
+    feature = "summary_detailed" if summary_type == "detailed_study" else "summary_brief"
+    backend = "nvidia" if summary_type == "detailed_study" else "cerebras"
+    nonce = str(uuid4())
+    log = AIRequestLog(
+        ingestion_job_id=None,
+        feature=feature,
+        model_id="m",
+        prompt_version="v1",
+        prompt_content_hash=f"ph-{nonce}",
+        rendered_prompt_hash=f"rh-{nonce}",
+        input_content_hash=f"ih-{nonce}",
+        status="succeeded",
+    )
+    db_session.add(log)
+    await db_session.flush()
+    summary = GeneratedLectureSummary(
+        transcript_id=transcript.id,
+        module_section_id=transcript.module_section_id,
+        summary_type=summary_type,
+        content_json=content_json,
+        content_schema_version="summary-test-v1",
+        model_id="m",
+        prompt_version="v1",
+        prompt_content_hash=f"ph-{nonce}",
+        backend_used=backend,
+        source_transcript_checksum=checksum or transcript.checksum,
+        input_hash=f"ih-{nonce}",
+        ai_request_log_id=log.id,
+    )
+    db_session.add(summary)
+    await db_session.commit()
+    return summary
+
+
 async def _add_raw_segment_only(
     db_session: AsyncSession, *, transcript: Transcript, sequence_number: int, text: str
 ) -> TranscriptSegment:
@@ -271,6 +314,47 @@ async def test_lab_section_grounds_too(db_session, captured_enqueue):
     assert service._to_message_read(msg).answer_basis == "Based on this lab's context: Chem 200 → Titration Lab"
 
 
+async def test_approved_summary_is_packed_with_relevant_chunks_and_safe_basis(db_session, captured_enqueue):
+    seed = await _seed(db_session, module_title="Biology 101", section_title="Enzymes")
+    chunk_text = "enzymes lower activation energy in biochemical reactions"
+    await _add_chunk(db_session, transcript=seed.transcript, index=0, text=chunk_text)
+    detailed = await _add_summary(
+        db_session,
+        transcript=seed.transcript,
+        summary_type="detailed_study",
+        content_json={
+            "overview": "Approved enzyme overview for this lecture.",
+            "keyConcepts": ["Enzymes speed reactions without being consumed."],
+        },
+    )
+    brief = await _add_summary(
+        db_session,
+        transcript=seed.transcript,
+        summary_type="brief",
+        content_json={"text": "Brief approved summary: enzymes help reactions happen faster."},
+    )
+
+    provider = _RecordingProvider()
+    mid, _c, factory = await _run_turn(db_session, seed, chunk_text, provider=provider)
+    msg = await _get_msg(factory, mid)
+
+    assert msg.grounding_status == LECTURE_GROUNDED
+    assert "APPROVED SUMMARY + RETRIEVED LECTURE CONTEXT" in (provider.last_prompt or "")
+    assert "Approved enzyme overview for this lecture." in (provider.last_prompt or "")
+    assert "Brief approved summary: enzymes help reactions happen faster." in (provider.last_prompt or "")
+    assert chunk_text in (provider.last_prompt or "")
+    assert msg.context_snapshot is not None
+    assert msg.context_snapshot["approvedSummaryRefs"] == [
+        {"summaryId": str(detailed.id), "summaryType": "detailed_study"},
+        {"summaryId": str(brief.id), "summaryType": "brief"},
+    ]
+    read = service._to_message_read(msg)
+    assert read.answer_basis == (
+        "Based on this lecture's approved summary and retrieved context: Biology 101 → Enzymes"
+    )
+    assert "summaryId" not in (read.answer_basis or "") and "checksum" not in (read.answer_basis or "")
+
+
 # ── general (study question, no relevant chunk) ────────────────────────────────────────────────────
 async def test_off_lecture_study_question_is_general(db_session, captured_enqueue):
     seed = await _seed(db_session)
@@ -283,6 +367,29 @@ async def test_off_lecture_study_question_is_general(db_session, captured_enqueu
     assert service._to_message_read(msg).answer_basis == (
         "No relevant lecture context was found — general study knowledge, not from this lecture"
     )
+
+
+async def test_approved_summary_does_not_ground_without_relevant_chunk(db_session, captured_enqueue):
+    seed = await _seed(db_session)
+    await _add_chunk(db_session, transcript=seed.transcript, index=0, text="mitochondria are the powerhouse of the cell")
+    summary_secret = "Approved summary should not widen this unrelated context."
+    await _add_summary(
+        db_session,
+        transcript=seed.transcript,
+        summary_type="brief",
+        content_json={"text": summary_secret},
+    )
+
+    provider = _RecordingProvider()
+    mid, _c, factory = await _run_turn(
+        db_session, seed, "explain the chain rule in calculus", provider=provider
+    )
+    msg = await _get_msg(factory, mid)
+
+    assert msg.grounding_status == GENERAL_NOT_FROM_LECTURE
+    assert msg.context_snapshot["retrievedChunkRefs"] == []
+    assert msg.context_snapshot["approvedSummaryRefs"] == []
+    assert summary_secret not in (provider.last_prompt or "")
 
 
 # ── redirect (off-topic) ────────────────────────────────────────────────────────────────────────
@@ -409,16 +516,22 @@ async def test_other_section_chunk_never_retrieved(db_session, captured_enqueue)
     await db_session.flush()
     secret = "TOP SECRET unpublished answer about quantum entanglement"
     await _add_chunk(db_session, transcript=other_t, index=0, text=secret)
+    await _add_summary(
+        db_session,
+        transcript=other_t,
+        summary_type="brief",
+        content_json={"text": f"Hidden summary says: {secret}"},
+    )
 
     provider = _RecordingProvider()
     # Ask the visible section the SECRET text — if scoping leaked, the other-section chunk (distance 0)
-    # would be retrieved and injected as CONTEXT (and grounding would flip to lecture_grounded).
+    # or summary would be injected as CONTEXT (and grounding would flip to lecture_grounded).
     mid, _c, factory = await _run_turn(db_session, seed, secret, provider=provider)
     msg = await _get_msg(factory, mid)
     # The matching chunk lives in another (unpublished) section → never a candidate → general, not grounded.
     assert msg.grounding_status == GENERAL_NOT_FROM_LECTURE
     assert msg.context_snapshot["retrievedChunkRefs"] == []
-    # The secret never entered the RETRIEVED CONTEXT block (it only appears as the student's own question).
+    # The secret never entered the grounded context block (it only appears as the student's own question).
     retrieved_context_block = provider.last_prompt.split("CONVERSATION SO FAR")[0]
     assert secret not in retrieved_context_block
 

@@ -71,9 +71,14 @@ def _compose_answer_basis(msg: AssistantMessage) -> str | None:
         module_title = snapshot.get("moduleTitle")
         section_title = snapshot.get("sectionTitle")
         noun = "lab" if snapshot.get("contextType") == "lab" else "lecture"
+        basis_source = (
+            "approved summary and retrieved context"
+            if snapshot.get("approvedSummaryRefs")
+            else "context"
+        )
         if module_title and section_title:
-            return f"Based on this {noun}'s context: {module_title} → {section_title}"
-        return f"Based on this {noun}'s context"
+            return f"Based on this {noun}'s {basis_source}: {module_title} → {section_title}"
+        return f"Based on this {noun}'s {basis_source}"
     if status == GENERAL_NOT_FROM_LECTURE:
         return (
             "No relevant lecture context was found — general study knowledge, not from this lecture"

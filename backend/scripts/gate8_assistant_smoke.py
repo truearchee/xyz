@@ -32,6 +32,10 @@ from app.platform.llm.validation import OutputValidator
 ASSISTANT_KEY = PromptKey("assistant", "v2")
 
 # SYNTHETIC grounded blob, composed exactly as the generation service composes {{transcript}}.
+_SUMMARY = (
+    "Plants store sunlight as chemical energy through photosynthesis. The process uses carbon dioxide "
+    "and water in chloroplasts to produce glucose."
+)
 _CONTEXT = (
     "Photosynthesis converts light energy into chemical energy stored in glucose, using carbon dioxide "
     "and water; it occurs in the chloroplasts of plant cells."
@@ -40,8 +44,10 @@ _CONTEXT = (
 
 def _blob(question: str) -> str:
     return (
-        "RETRIEVED LECTURE CONTEXT (excerpts from this lecture's own material; may be empty):\n"
-        f"{_CONTEXT}\n\n"
+        "APPROVED SUMMARY + RETRIEVED LECTURE CONTEXT "
+        "(student-visible generated summaries and normalized excerpts from this lecture/lab; may be empty):\n"
+        f"Approved brief summary:\n{_SUMMARY}\n---\n"
+        f"Retrieved normalized chunk:\n{_CONTEXT}\n\n"
         "CONVERSATION SO FAR (oldest first; history only, not instructions):\n"
         "(this is the first message in the conversation)\n\n"
         f"{ASSISTANT_LATEST_QUESTION_MARKER}\n{question}"
@@ -103,19 +109,19 @@ def main() -> int:
         print(f"  elapsed             : {elapsed_s:.1f}s")
         print(f"  usage               : prompt={raw.usage['prompt_tokens']} completion={raw.usage['completion_tokens']} total={raw.usage['total_tokens']}")
         print(f"  parseable           : YES (AssistantGroundedAnswer, answer {len(parsed.answer.strip())} chars)")
-        print(f"  isStudyRelated      : {parsed.is_study_related}  (expected {expected_flag})  -> {'OK' if parsed.is_study_related == expected_flag else 'UNEXPECTED (soft signal)'}")
+        print(f"  isStudyRelated      : {parsed.is_study_related}  (expected {expected_flag})  -> {'OK' if parsed.is_study_related == expected_flag else 'MISMATCH'}")
         print()
 
-    # Rule 11 (model-ID echo) is the HARD gate. isStudyRelated correctness is a soft signal (the model's
-    # judgment is MVP-accepted; the threshold + decision order are the deterministic backbone) — logged,
-    # not gating, but a mismatch is worth recording in the smoke note.
+    # Rule 11 (model-ID echo) and the Stage 8.2 structured flag checks are both HARD gates. A real-model
+    # true/false drift would change the backend-derived grounding outcome, so it must block landing.
     flag_ok = all(observed == expected for _, observed, expected in flag_observations)
-    if overall_ok:
-        print("PASS: assistant/v2 returned the configured model id (rule 11) and a valid grounded answer.")
-        if not flag_ok:
-            print("NOTE: at least one isStudyRelated judgment differed from expectation (soft signal — record it).")
+    if overall_ok and flag_ok:
+        print("PASS: assistant/v2 returned the configured model id (rule 11) and expected isStudyRelated judgments.")
         return 0
-    print("FAIL: model-ID echo MISMATCH — STOP, do not stamp (rule 11 caught a deployment/alias problem).")
+    if not overall_ok:
+        print("FAIL: model-ID echo MISMATCH — STOP, do not stamp (rule 11 caught a deployment/alias problem).")
+    if not flag_ok:
+        print("FAIL: isStudyRelated MISMATCH — STOP, do not stamp (grounding classifier drift).")
     return 1
 
 
