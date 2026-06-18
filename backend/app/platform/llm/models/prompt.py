@@ -5,11 +5,14 @@ from typing import Literal, TypedDict
 
 Backend = Literal["cerebras", "nvidia"]
 Priority = Literal["interactive", "background"]
-# Widened by addition (Stage 5b → 6a): the gateway serves more than summaries now. The summary members
-# are unchanged; ``post_class_quiz`` (5b) and ``quiz_pool`` (6a, per-section pool generation) are added.
-# ``GatewayFeature`` is the canonical name for new code; ``SummaryFeature`` stays as a back-compatible
-# alias so existing summary call sites are untouched. Mirrors the enumerated ai_request_logs.feature CHECK.
-GatewayFeature = Literal["summary_brief", "summary_detailed", "post_class_quiz", "quiz_pool"]
+# Widened by addition (Stage 5b → 6a → 7): the gateway serves more than summaries now. The summary
+# members are unchanged; ``post_class_quiz`` (5b), ``quiz_pool`` (6a, per-section pool generation), and
+# ``glossary_definition`` (Stage 7) are added. ``GatewayFeature`` is the canonical name for new code;
+# ``SummaryFeature`` stays as a back-compatible alias so existing summary call sites are untouched.
+# Mirrors the enumerated ai_request_logs.feature CHECK.
+GatewayFeature = Literal[
+    "summary_brief", "summary_detailed", "post_class_quiz", "quiz_pool", "glossary_definition"
+]
 SummaryFeature = GatewayFeature
 # Features that MUST carry an ingestion_job_id (transcript-ingestion-bound calls). Enforced at the
 # application layer by the gateway — the DB column is nullable (0020) but the summary contract is not.

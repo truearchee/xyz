@@ -2,5 +2,6 @@
   "brief_summary/v1": "4b5eee3d21e20cd9363ae8762edbca81991e29591ff7a5e2307f3295bf90b19b",
   "detailed_summary/v1": "05d0a4be37a91e00aee35c92e37caf9d61e9d343ba34d1d4214f35c82d3ce8ff",
   "post_class_quiz_generation/v1": "cb11fdee97b4c9ddf79b5c61874c013e3b6abf6db3089e3665c84df918c21b89",
-  "quiz_pool_generation/v1": "b561a7cc9c254a8925d88294f08bea859e96bc6aa87f81e0b437a170a45a101f"
+  "quiz_pool_generation/v1": "b561a7cc9c254a8925d88294f08bea859e96bc6aa87f81e0b437a170a45a101f",
+  "glossary_definition/v1": "546c68baad2a2640e65676e1a7c97d06684eab7f5086c18eb044326a75e569a2"
 }

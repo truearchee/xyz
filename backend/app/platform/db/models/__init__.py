@@ -5,6 +5,13 @@ from app.platform.db.models.base import Base
 from app.platform.db.models.course_membership import CourseMembership
 from app.platform.db.models.course_module import CourseModule
 from app.platform.db.models.generated_lecture_summary import GeneratedLectureSummary
+from app.platform.db.models.glossary_definition_cache import GlossaryDefinitionCache
+from app.platform.db.models.glossary_entry import GlossaryEntry
+from app.platform.db.models.glossary_folder import GlossaryFolder
+from app.platform.db.models.glossary_practice_answer import GlossaryPracticeAnswer
+from app.platform.db.models.glossary_practice_session import GlossaryPracticeSession
+from app.platform.db.models.glossary_review_state import GlossaryReviewState
+from app.platform.db.models.glossary_source_reference import GlossarySourceReference
 from app.platform.db.models.ingestion_job import IngestionJob
 from app.platform.db.models.maintenance_run import MaintenanceRun
 from app.platform.db.models.mistake_record import MistakeRecord
@@ -31,6 +38,13 @@ __all__ = [
     "CourseMembership",
     "CourseModule",
     "GeneratedLectureSummary",
+    "GlossaryDefinitionCache",
+    "GlossaryEntry",
+    "GlossaryFolder",
+    "GlossaryPracticeAnswer",
+    "GlossaryPracticeSession",
+    "GlossaryReviewState",
+    "GlossarySourceReference",
     "IngestionJob",
     "MaintenanceRun",
     "MistakeRecord",

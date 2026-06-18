@@ -1,0 +1,35 @@
+name: glossary_definition
+version: v1
+model: MBZUAI-IFM/K2-Think-v2
+backend: cerebras
+# A glossary definition is short, but K2-Think-v2 reasons inline in `content` before the answer (see
+# brief_summary: 600 clipped the JSON). 1500 leaves room for inline reasoning + a 2-4 sentence answer.
+max_tokens: 1500
+# Same verified IFM deployment as brief_summary (ADR-025 deviation: the intended K2-V2-Instruct is not
+# yet accessible). backend stays 'cerebras' = the REQUESTED route (backend_route_source='requested').
+# reasoning_level intentionally omitted — never faked (D4 / F-4.5-04).
+#
+# Stage 7 / decision D3+B1: the OUTPUT reuses the BriefSummary `{"text": ...}` shape (one markdown
+# definition, KaTeX-capable). The TARGET LANGUAGE, term, and context are baked into the rendered input
+# (the {{transcript}} body) by the TranslationService — there is no {{language}} template slot — so the
+# language is fully captured by rendered_prompt_hash + input_content_hash (provenance, rule 6).
+content: |
+  You are writing a concise glossary definition of a single term or concept for a university student,
+  to help them study. Write the definition ENTIRELY in the target language given in the request below.
+
+  Define the term as it is used in the named course/subject. Keep it to 2-4 sentences of plain prose,
+  and INCLUDE one short example sentence showing how the term is used. You may use inline LaTeX
+  (wrapped in $...$) for any formula. Do not add headings or lists.
+
+  Output contract — follow EXACTLY:
+  - Reply with a single JSON object and NOTHING else.
+  - No preamble, no explanation, no reasoning, no markdown code fences.
+  - The object has exactly one key, "text", whose value is your definition. No other keys.
+
+  Return exactly:
+  {"text": "<your definition>"}
+
+  Entry type: {{section_type}}
+
+  Definition request:
+  {{transcript}}

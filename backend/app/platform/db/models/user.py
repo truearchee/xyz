@@ -20,6 +20,10 @@ class AppUser(Base):
             "role IN ('student', 'lecturer', 'admin')",
             name="ck_app_users_role",
         ),
+        CheckConstraint(
+            "preferred_language IN ('en', 'ar', 'zh', 'es', 'fr')",
+            name="ck_app_users_preferred_language",
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(
@@ -40,6 +44,12 @@ class AppUser(Base):
         Text,
         nullable=False,
         server_default=text("'UTC'"),
+    )
+    # Stage 7: the language a student's glossary definitions are generated in (default English).
+    preferred_language: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        server_default=text("'en'"),
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

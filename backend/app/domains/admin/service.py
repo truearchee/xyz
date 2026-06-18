@@ -381,7 +381,10 @@ async def list_modules(
 ) -> list[CourseModule]:
     result = await db.scalars(
         select(CourseModule)
-        .order_by(CourseModule.created_at, CourseModule.id)
+        # Newest-first so a just-created module appears at the top of page 1.
+        # With ascending order, new modules fell off page 1 once enough modules
+        # accumulated (default limit=50), so admins stopped seeing them.
+        .order_by(CourseModule.created_at.desc(), CourseModule.id.desc())
         .limit(limit)
         .offset(offset)
     )

@@ -9,6 +9,7 @@ export type CurrentUserResponse = {
     fullName: string;
     role: CurrentUserResponse.role;
     timezone: string;
+    preferredLanguage: CurrentUserResponse.preferredLanguage;
     activeModuleMemberships: Array<ActiveModuleMembership>;
 };
 export namespace CurrentUserResponse {
@@ -16,5 +17,12 @@ export namespace CurrentUserResponse {
         ADMIN = 'admin',
         LECTURER = 'lecturer',
         STUDENT = 'student',
+    }
+    export enum preferredLanguage {
+        EN = 'en',
+        AR = 'ar',
+        ZH = 'zh',
+        ES = 'es',
+        FR = 'fr',
     }
 }

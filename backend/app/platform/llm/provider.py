@@ -388,6 +388,18 @@ class DeterministicTestProvider:
                     )
                 }
             )
+        if name == "glossary_definition":
+            if forced_invalid:
+                return json.dumps({"wrong": "shape"})  # missing required `text`
+            return json.dumps(
+                {
+                    "text": (
+                        "A concise, course-specific definition of the highlighted term, written "
+                        "for quick study. For example, it names the core idea introduced in this "
+                        "session and how it is used."
+                    )
+                }
+            )
         if name == "detailed_summary":
             payload = {
                 "overview": "A structured overview of the session's subject matter.",

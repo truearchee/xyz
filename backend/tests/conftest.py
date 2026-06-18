@@ -27,6 +27,13 @@ TEST_JWT_AUDIENCE = "authenticated"
 TEST_JWT_ISSUER = "https://test.supabase.co/auth/v1"
 TRUNCATE_TABLES = """
 TRUNCATE TABLE
+    glossary_practice_answers,
+    glossary_practice_sessions,
+    glossary_review_state,
+    glossary_source_references,
+    glossary_entries,
+    glossary_definition_cache,
+    glossary_folders,
     student_answers,
     mistake_records,
     answer_options,

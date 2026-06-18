@@ -10,6 +10,7 @@ import {
 } from "../../../lib/api";
 import { ForbiddenError, api } from "../../../lib/api/wrapper";
 import { PostClassQuizPanel } from "../../quiz/PostClassQuizPanel";
+import { SaveToGlossary } from "../../glossary/SaveToGlossary";
 import { StudentAssetRow } from "./StudentAssetRow";
 import { SummaryMarkdown } from "./SummaryMarkdown";
 
@@ -211,13 +212,16 @@ function SummariesPanel({ sectionId }: { sectionId: string }) {
 
   return (
     <section aria-label="Summaries" style={styles.block}>
-      <SummarySlot label="Brief summary" testId="student-summary-brief" slot={summaries.summaries.brief} capped={capped} />
-      <SummarySlot
-        label="Detailed study summary"
-        testId="student-summary-detailed"
-        slot={summaries.summaries.detailed}
-        capped={capped}
-      />
+      {/* Stage 7a: highlight any text in a summary and save it to the personal glossary. */}
+      <SaveToGlossary moduleSectionId={sectionId}>
+        <SummarySlot label="Brief summary" testId="student-summary-brief" slot={summaries.summaries.brief} capped={capped} />
+        <SummarySlot
+          label="Detailed study summary"
+          testId="student-summary-detailed"
+          slot={summaries.summaries.detailed}
+          capped={capped}
+        />
+      </SaveToGlossary>
     </section>
   );
 }

@@ -1,224 +1,116 @@
 # Status
 
-_Last updated: 2026-06-18 — **Stage 6 CLOSED — FULLY VERIFIED** (owner-signed-off; on branch `stage-6`).
-F-6e fixed the rule-11 smoke and the roadmap row is flipped. The 6e smoke "hard
-timeout" was re-diagnosed live: the provider is healthy (~73–76 completion-tok/s on both routes), but
-K2-Think-v2 reasons inline and rambles to fill `max_tokens`, so `stream:false` wall-clock ≈
-`max_tokens`/73 → 32000 meant ~440s (over 540 under variance). **Fix:** `quiz_pool_generation/v1`
-`max_tokens` 32000→**20000** + count 24→**16**; validator floor 16→**12**; `POOL_TARGET_SIZE` /
-`_DETERMINISTIC_POOL_SIZE` →16; `LLM_DETAILED_TIMEOUT_SECONDS` 240→**330**, lease TTL 300→**360**; rule-11
-smoke made retry-aware (mirrors `AI_RQ_RETRY_MAX`). **Smoke PASS** on attempt 1: model echo
-`MBZUAI-IFM/K2-Think-v2`, 16 questions valid, **264.5s** (< 330 timeout). Full green set: backend **502
-passed**, drift guard OK, host ruff clean, `tsc` clean, 5d gate **1 passed**, 6d gate **1 passed**, full
-active Playwright **14 passed**. **Deviates from the owner's stated Steps 2/3/7** (max_tokens 20000 not
-4000; route kept nvidia not cerebras; timeout 330 not 240) — all evidence-backed; the roadmap row stays
-**IN PROGRESS** until the owner reviews the smoke timing + these deviations (per the standing "don't flip
-until I've seen the smoke timing"). See [[steps/stage-06/6d-real-provider-smoke]] (2026-06-18 section) and
-ADR-047's F-6e amendment. Below are prior Stage 6 summaries._
+_Last updated: 2026-06-18 — **Stage 7 core (7a–7c: glossary foundation + flashcards + multiple-choice) remains implemented.** Session 7e review fixes are committed; the full active E2E suite is now green (14/14) after fixing the real root cause of the two inherited reds — an admin module-list ordering bug (newly created modules fell off page 1 once >50 modules accumulated). Branch `stage-7` rebased onto current `origin/main` `fb4c932` (after Stage 6 + design-files merged); migrations re-chained linearly `0025 → 0030 → 0031` (0030 down_revision 0022→0025) and the shared `ck_ai_request_logs_feature` CHECK + `GatewayFeature`/CHECKSUMS unioned to include both Stage 6 `quiz_pool` and Stage 7 `glossary_definition` (test_shared_check_union guards it). 7d quiz-highlight remains as the next unblocked sub-stage now that Stage 6 is closed._
 
-_Prior (6b): **Stage 6b recap + exam-prep + authorization BACKEND VERIFIED + COMMITTED** (`024ae91`).
-Migration **0025** adds `assessment_scopes` and multi-section `quiz_definitions` (`module_section_id`
-nullable + `scope_key` + `assessment_scope_id` + dedup index). Recap/exam-prep resolve eligible scopes to
-SHARED definitions on the 6a engine; authorization pins 404-not-403, lecturer-on-module, published-only
-student sampling, unified multi-section visibility, D1 pre-warm, and D3 all-or-wait. 6b also pulled forward
-scope-aware event metadata and section/pool-aware mistake creation. Verified: 6b suite 7 passed; full
-backend 497 passed; ruff clean; tsc exit 0. See [[steps/stage-06/6b-recap-examprep-authorization]]._
+Stage 7a delivers the personal glossary foundation: save terms (highlight-from-summary + manual add),
+**async AI definitions in the student's preferred language through the EXISTING `platform/llm` gateway**
+(no new AI infra), server-side dedup, a shared definition cache with cross-student collapse, folders
+(+ "Unsorted"), archive-style delete, personal-scoping 404, `glossary_term_saved` events, KaTeX, RTL,
+and the language-preference setting.
 
-_Prior (6a): **Stage 6a per-section pool foundation BACKEND VERIFIED + COMMITTED** (`19af1d3`). 6a builds
-the Stage 6 question ENGINE — no
-mode UI, no recap/exam_prep/mistakes_bank endpoints, no AssessmentScope, no post-class retrofit (those are
-6b–6d). Migrations **0023** (`section_question_pools` + `pool_questions` + `quiz_questions.
-source_pool_question_id` + the `ai_request_logs.feature` `'quiz_pool'` CHECK) and **0024**
-(`mistake_records.source_pool_question_id` + the partial-unique pooled-upsert identity). New engine:
-`pool_service` (one-call generation from the detailed summary, ready/generating partial-unique herd lock,
-`content_json`-hash staleness atomic-swap → superseded, failure contract + explicit retry, pool-completion
-fan-in), `sampling` (pure, seedable, recency bias + even cross-section spread + exhaustion-recycle),
-`assembly_service` (scheduler-free two-level wait, snapshot-at-assembly immunity), `mistakes`
-(ON-CONFLICT pooled upsert), `config` (named defaults). Additive `platform/llm`: `GeneratedQuizPool` +
-`_validate_quiz_pool` + `GatewayFeature += quiz_pool` + a new `quiz_pool_generation/v1` prompt (the
-post_class exactly-10 path untouched) — coordinated with Stage 7 in [[steps/findings-6-shared-infra]].
-Reaper extended (prior-session 4.6c): pooled-attempt liveness (no false-reap while a pool generates) +
-stuck-pool self-heal. Verified in the rebuilt `kyiv-backend` image against the `db` service: Alembic
-`upgrade head → downgrade base → upgrade head` clean; `alembic heads` = `0024 (head)`; prompt drift guard
-OK; 6a hard gate **14 tests** (6 sampler + 8 engine); full backend **490 passed, 137 warnings**; `ruff`
-clean. Owner decisions D1–D4 locked (all spec-recommended); D4 sequences the post-class retrofit LAST,
-superseding spec v2. ADR-047. See [[steps/stage-06/6a-pool-foundation]]._
+## Confirmed decisions (this session)
+- **D1** migrations start at `0030` (use `0030`+`0031`); `0029` left to Stage 6; merge migration expected.
+- **D2** proceed with the minimal additive shared-infra edits + full mitigation set (source-of-truth
+  enum tuples, union-aware CHECK migrations, CI union test, findings note).
+- **D3** reuse the `BriefSummary` markdown shape for definitions; structured columns reserved for 7.x.
 
-_Prior: 2026-06-17 — **Stage 5.5 FULLY VERIFIED and migration-chain ready for merge.** Branch `stage-55`
-rebased onto `origin/main`; Stage 5.5 migrations follow main linearly `0020 → 0021 → 0022`; dev reseed
-expected Alembic `0022` (bumped to `0024` by Stage 6a). Browser gate GREEN; reference oracle exactly 28
-sections; full active Playwright suite 12/12; backend 424 passed. See
-[[steps/stage-05/5.5g-migration-chain-rebase]]._
-
-_Prior: 2026-06-12 — **Stage 4.7 (student-facing summaries) FULLY VERIFIED — LANDED ON MAIN** (head
-`0e0654f`): backend 389 passed; full active Playwright suite 11/11; ADR-034..039._
-
-## Current state
-
-**Stage 6 — Complete Quiz Modes — ✅ FULLY VERIFIED (2026-06-18, after 6e corrective + F-6e smoke fix)** (overview spec [[specs/stage-06/6-complete-quiz-modes]];
-sub-sessions 6a→6d, each gated before the next). Migration block **0023–0029** (6a used 0023–0024;
-0025–0029 reserved; Stage 7 owns 0030–0031 — updated 2026-06-17 per the Stage 7 lock). The capacity
-decision (per-section pool + per-attempt sampling, ADR-047) is the spine. **Stage 7 coordination (locked):**
-event-type + AIRequestLog feature names go through Stage 7's single shared registry (union-aware CHECK +
-CI union test) — Stage 6 registers its names there, never a second copy; 6a's hard-coded `quiz_pool`
-feature is a tracked reconcile-at-integration item (not a 6a reopen). See [[steps/findings-6-shared-infra]].
-
-- **6a — pool foundation — BACKEND VERIFIED + COMMITTED** (`19af1d3`). The engine + sampling/assembly/
-  mistake-identity primitives, gate-proven.
-- **6b — recap + exam_prep + authorization — BACKEND VERIFIED + COMMITTED** (`024ae91`). Migration 0025
-  (`assessment_scopes` + multi-section `quiz_definitions`: nullable section + `scope_key` +
-  `assessment_scope_id` + dedup index). AssessmentScope lecturer CRUD (lecturer-on-module 403);
-  recap/exam-prep scope resolution → canonical-key SHARED definition → 6a `start_pooled_attempt`;
-  section-eligibility read (assignment/supplementary + unpublished excluded silently); unified
-  `get_visible_attempt` (multi-section module-level; post_class S7 gate preserved); D1 pre-warm; D3
-  all-or-wait; 404-not-403 for unassigned. Pulled forward from 6c (forced by multi-section completion):
-  scope-aware event metadata + section/pool-aware `answer()` mistake creation. OpenAPI client regenerated;
-  `tsc` green. **Verified:** single head **0025**; 6b suite **7 passed**; full backend **497 passed**; ruff
-  clean; tsc exit 0. See [[steps/stage-06/6b-recap-examprep-authorization]].
-- **6c — retake reinforcement + mistakes-bank — BACKEND VERIFIED + COMMITTED** (`5e32206`). Retake prefix snapshots
-  active current-student mistakes first, then draws a fresh pool sample excluding prefixed pool questions.
-  Correct source-quiz prefix answers advance `retake_correct_count` and clear `show_in_retake_prefix` at 2;
-  duplicate answers do not count; mistakes-bank practice does not advance the source-quiz counter. The
-  bank is per module (`course_modules`), paginated, own-student-only, and assembled synchronously from
-  snapshots with no AI/pool generation. **Verified:** 6c+6b+6a focused gate **19 passed**; full backend
-  **501 passed**; changed-file ruff clean; single head **0025**; client regenerated; tsc exit 0. See
-  [[steps/stage-06/6c-retake-mistakes-bank]].
-- **6d — HISTORICAL GREEN, NOT SUFFICIENT FOR CLOSURE.** Student module quiz modes UI
-  (2x2 selector, recap/exam-prep modals, generating state, retake-prefix banner, mistakes-bank entry) and
-  lecturer AssessmentScope create/list UI are built against shipped source components/patterns. Post-class
-  now starts through the Stage 6 pooled path, with the old Stage 5 generation functions retained as the
-  revert path. The 6d Playwright spec captures desktop/mobile screenshots and DB-backed assertions for
-  retake+bank, cross-mode mistakes-bank aggregation, exam-prep scope correctness, pool reuse, and the
-  404/403 authorization set. **Verified:** focused backend **61 passed**; full backend **501 passed**; ruff
-  clean; frontend `type-check` clean; 5d preservation gate **1 passed**; 6d browser gate **1 passed**; full
-  active E2E **14 passed**; screenshot set captured; **rule-11 real-provider quiz-pool smoke PASS** (HTTP
-  200, model echo `MBZUAI-IFM/K2-Think-v2`, `GeneratedQuizPool` validated). Later review found the gate
-  skipped core obligations, so Stage 6 is reopened until 6e adds the missing browser proof and retry path.
-  See [[steps/stage-06/6d-ui-browser-gate-postclass-retrofit]], [[steps/stage-06/6d-real-provider-smoke]],
-  and [[specs/stage-06/6e-corrective-closure]].
-- **6e — corrective implementation complete; closure BLOCKED on rule-11 smoke.** Failed-pool retry is now
-  wired through an attempt-level student endpoint and `QuizAttemptPanel` retry button; ORM CHECK metadata
-  matches migration 0023; the browser gate proves retake prefix drop + bank persistence, forced failed-pool
-  retry to completion, exam-prep events, and retake no-new-generation. **Verified:** focused quiz backend
-  **35 passed**; full backend **502 passed**; host ruff clean; frontend `tsc` clean; strengthened 6d browser
-  gate **1 passed**; 5d preservation gate **1 passed**; full active Playwright **14 passed**. **Not green:**
-  rule-11 real-provider smoke timed out at 540s; diagnostic reruns show pre-header provider timeouts for
-  the 24-question / 32k-token pool-generation request. See [[steps/stage-06/6e-corrective-closure]] and
-  [[steps/stage-06/6d-real-provider-smoke]].
-
-## Verification (6d so far)
-
+## Verification (Stage 7a–7c)
 ```bash
-docker compose build backend
-# Image kyiv-backend Built
+docker compose run --rm -v "$PWD/backend:/app" -T backend pytest -q
+# 498 passed, 138 warnings   (Stage 5 baseline 442; +56 glossary/practice/me/union tests)
 
-docker compose run --rm --no-deps backend pytest -q tests/test_quiz_endpoints.py tests/test_quiz_pool.py tests/test_quiz_mistakes_bank.py tests/test_quiz_recap_examprep.py
-# 34 passed, 15 warnings in 9.29s
-
-docker compose run --rm --no-deps backend pytest -q
-# 501 passed, 137 warnings in 73.63s (0:01:13)
-
-ruff check backend/app/domains/quiz/generation_service.py backend/app/domains/quiz/service.py backend/app/domains/quiz/schemas.py backend/app/domains/recovery/reaper.py backend/app/platform/query/quiz_read.py backend/tests/test_quiz_endpoints.py
-# All checks passed!
-
-docker compose run --rm --no-deps backend alembic heads
-# 0025 (head)
-
-docker compose run --rm --no-deps backend alembic current
-# 0025 (head)
+# migration round-trip (base→head→base→head): test_db_spine::test_migration_round_trip — passed
+# dev DB xyz_lms migrated to head 0031; dev-reseed pin = 0031
 
 cd frontend && npx tsc --noEmit
 # exit 0
 
-RUN_ID=$(cat .context/6d-run-id.txt); E2E_RUN_ID="$RUN_ID" PLAYWRIGHT_BASE_URL=http://localhost:3001 NEXT_PUBLIC_API_BASE_URL=http://localhost:8001 npx playwright test tests/e2e/5d-post-class-quiz.spec.ts --workers=1
-# 1 passed (16.3s)
+docker compose run --rm -e LLM_PROVIDER=k2think -e LLM_PROVIDER_BASE_URL=https://api.k2think.ai \
+  -v "$PWD/backend:/app" -T backend python scripts/gate7_glossary_smoke.py
+# PASS: response model echo MBZUAI-IFM/K2-Think-v2 == expected MBZUAI-IFM/K2-Think-v2;
+# status_code 200; parseable BriefSummary definition; arabic-script present; finish_reason='length'
 
-RUN_ID=$(cat .context/6d-run-id.txt); E2E_RUN_ID="$RUN_ID" PLAYWRIGHT_BASE_URL=http://localhost:3001 NEXT_PUBLIC_API_BASE_URL=http://localhost:8001 npx playwright test tests/e2e/6d-quiz-modes-browser-gate.spec.ts --workers=1
-# 1 passed (27.7s)
+PLAYWRIGHT_BASE_URL=http://localhost:3001 E2E_RUN_ID=e2e-1781717252-stage7 \
+  npx playwright test tests/e2e/7-glossary.spec.ts --workers=1
+# 1 passed (19.3s)
 
-npx playwright test --list
-# Total: 14 tests in 12 files
+PLAYWRIGHT_BASE_URL=http://localhost:3001 E2E_RUN_ID=e2e-1781717291-full \
+  npx playwright test --workers=1
+# 14 passed (3.2m)
+```
 
-RUN_ID=$(cat .context/6d-full-run-id.txt); E2E_RUN_ID="$RUN_ID" PLAYWRIGHT_BASE_URL=http://localhost:3001 NEXT_PUBLIC_API_BASE_URL=http://localhost:8001 npx playwright test --workers=1
+## Verification (Session 7e review fixes)
+```bash
+docker compose run --rm -v "$PWD/backend:/app" -T backend pytest -q \
+  tests/test_glossary_save.py tests/test_glossary_practice.py tests/test_glossary_unit.py
+# 20 passed in 3.37s
+
+docker compose run --rm -v "$PWD/backend:/app" -T backend pytest -q
+# 500 passed, 138 warnings in 62.31s
+
+PLAYWRIGHT_BASE_URL=http://localhost:3001 E2E_RUN_ID=e2e-1781766005-stage7e5 \
+  npx playwright test --workers=1
+# 12 passed, 2 failed (4.3.5c admin module row refresh; 5.5e admin module row refresh)
+```
+
+## Verification (admin module-list ordering bugfix — #7e-adminfix, 2026-06-18)
+Root cause of the two 7e reds: `service.list_modules` ordered `created_at, id` ASC with default
+`limit=50` and no pagination UI, so a just-created module fell off page 1 once >50 `course_modules`
+accumulated (86 in dev `xyz_lms`, mostly E2E residue from interrupted runs). Fix: order newest-first
+(`created_at DESC, id DESC`). No data was cleaned to pass. Backend image rebuilt + container recreated
+(the live :8000 stack runs a baked image with no source mount).
+```bash
+docker compose run --rm -v "$PWD/backend:/app" -T backend pytest -q
+# 500 passed
+
+# isolated rerun of the two previously-failing specs (seeded manifest, same E2E_RUN_ID):
+PLAYWRIGHT_BASE_URL=http://localhost:3001 \
+  npx playwright test tests/e2e/4.3.5c-stage2-admin.spec.ts tests/e2e/5.5e-ui-browser-gate.spec.ts --workers=1
+# 2 passed
+
+# full active suite (rule 14):
+PLAYWRIGHT_BASE_URL=http://localhost:3001 E2E_RUN_ID=e2e-orderfix-full \
+  npx playwright test --workers=1
 # 14 passed (2.8m)
-
-docker compose build frontend
-# Image albuquerque-frontend Built
-
-docker compose run --rm --no-deps backend python scripts/gate3_quiz_pool_smoke.py
-# FAIL: LLM_PROVIDER must be 'k2think' (export it before running Gate 3).
-
-docker compose run --rm --no-deps -e LLM_PROVIDER=k2think -e LLM_API_KEY= backend python scripts/gate3_quiz_pool_smoke.py
-# FAIL: LLM_API_KEY is not set in this environment (rotate + export the key).
-
-docker compose run --rm --no-deps -e LLM_PROVIDER=k2think backend python scripts/gate3_quiz_pool_smoke.py
-# FAIL: provider auth error (401/403) — key not rotated/valid? Body redacted.
 ```
+Follow-ups logged in `open-questions.md` (#7e-adminfix): admin pagination-envelope debt
+(owner developer; trigger Stage 12 hardening or before any deploy where module count can exceed one
+page), sibling `list_users` sharing the ASC+fixed-limit pattern (flagged, not fixed), and E2E
+teardown/reset hardening so interrupted runs stop leaving residue. Rule-14 full-suite green is now
+satisfied (14/14).
 
-Real-provider quiz-pool smoke (rule 11) — **GREEN** with the valid key in the gitignored `.env`:
+## NOT done — remaining for Stage 7
+- **7d** quiz-highlight. It is no longer blocked on Stage 6 coordination; Stage 6 is closed, so this is
+  the next unblocked sub-stage.
+- Low-priority follow-up: the real-provider glossary smoke returned `finish_reason='length'`; raise the
+  glossary definition prompt `max_tokens` so real definitions do not truncate mid-sentence.
 
-```bash
-docker compose run --rm --no-deps \
-  -e LLM_PROVIDER=k2think -e LLM_CONTEXT_FALLBACK_ENABLED=false \
-  -e LLM_DETAILED_TIMEOUT_SECONDS=540 \
-  -v "$PWD/backend:/app" -w /app \
-  backend python scripts/gate3_quiz_pool_smoke.py
-# response model echo : MBZUAI-IFM/K2-Think-v2  (expected MBZUAI-IFM/K2-Think-v2)  -> OK
-# finish_reason 'stop'; elapsed 322.4s; status_code 200; GeneratedQuizPool 24 questions; one-correct-per-q OK
-# PASS: quiz pool route returned the configured model id (rule 11) and a parseable pool.
-```
+## Merge coordination
+- Stage 7 still carries the CHECK-union guard (`test_shared_check_union.py`) for any integration with
+  adjacent stage branches. `ingestion_jobs` is untouched by Stage 7.
 
-(240s default reasoning timeout was insufficient — the real call took 322s, so 540s was used; recorded as a
-production watch-item in [[steps/stage-06/6d-real-provider-smoke]].)
+## Stage 7 documents
+- Stage spec: [[specs/stage-07/7-glossary]]
+- 7e review-fixes spec/plan/report: [[specs/stage-07/7e-review-fixes]], [[plans/stage-07/7e-review-fixes]], [[steps/stage-07/7e-review-fixes]]
+- 7a report: [[steps/stage-07/7a-glossary-foundation]]
+- 7b/7c report: [[steps/stage-07/7bc-glossary-practice]]
+- Findings: [[steps/findings-stage-07]]
+- Decisions: [[decisions/adr-047-glossary-subject-folder-separation]], [[decisions/adr-048-glossary-definition-cache-collapse]]
 
-## Prior verification (6a)
-
-```bash
-# rebuilt kyiv-backend image; db service up (backend host :8000 held by a sibling stack → ran via `run`)
-docker compose run --rm --no-deps backend sh -c "alembic upgrade head && alembic downgrade base && alembic upgrade head && alembic heads"
-# … single head: 0024 (head)
-docker compose run --rm --no-deps backend python -m tests.ci.prompt_drift_guard
-# PROMPT DRIFT GUARD: OK
-docker compose run --rm --no-deps backend pytest -q tests/test_quiz_sampling.py tests/test_quiz_pool.py
-# 14 passed
-docker compose run --rm --no-deps backend pytest -q
-# 490 passed, 137 warnings in 68.95s
-ruff check <changed files>
-# All checks passed!
-```
-
-## Stage 6 documents
-- Overview spec: [[specs/stage-06/6-complete-quiz-modes]]
-- 6a spec: [[specs/stage-06/6a-pool-foundation]]
-- 6a plan: [[plans/stage-06/6a-pool-foundation]]
-- 6a report: [[steps/stage-06/6a-pool-foundation]]
-- 6b spec: [[specs/stage-06/6b-recap-examprep-authorization]]
-- 6b plan: [[plans/stage-06/6b-recap-examprep-authorization]]
-- 6b report: [[steps/stage-06/6b-recap-examprep-authorization]]
-- 6c spec: [[specs/stage-06/6c-retake-mistakes-bank]]
-- 6c plan: [[plans/stage-06/6c-retake-mistakes-bank]]
-- 6c report: [[steps/stage-06/6c-retake-mistakes-bank]]
-- 6d spec: [[specs/stage-06/6d-ui-browser-gate-postclass-retrofit]]
-- 6d plan: [[plans/stage-06/6d-ui-browser-gate-postclass-retrofit]]
-- 6d report: [[steps/stage-06/6d-ui-browser-gate-postclass-retrofit]]
-- 6d real-provider smoke: [[steps/stage-06/6d-real-provider-smoke]]
-- 6e spec: [[specs/stage-06/6e-corrective-closure]]
-- 6e plan: [[plans/stage-06/6e-corrective-closure]]
-- 6e report: [[steps/stage-06/6e-corrective-closure]]
-- ADR: [[decisions/adr-047-section-question-pool-capacity]]
-- Shared-infra coordination (Stage 7): [[steps/findings-6-shared-infra]]
+## Prior
+- 2026-06-17 — **Stage 5.5 FULLY VERIFIED**, migration chain rebased (`0021`→`0022`), dev reseed expected
+  Alembic `0022` (now bumped to `0030` by Stage 7a). See git history + per-stage trios.
+- 2026-06-12 — **Stage 4.7** student summaries FULLY VERIFIED on main (`0e0654f`).
+- **Stage 5** FULLY VERIFIED (quiz engine + event spine; ADRs 040–046).
 
 ## Open risks
-- **Scheduler-free fan-in race (documented, ADR-047):** in the rare case a pool finishes before its
-  waiting attempt commits (only realistic under a near-instant deterministic adapter; production pool
-  generation is slow), the reaper backstops the attempt to `failed` → a clean Start Over re-assembles. No
-  RQ scheduler is introduced (reserved for Stage 11.1).
-- **`platform/llm` union/enum growth** is an additive textual merge point with Stage 7 — see the findings
-  note; no behavioral coupling.
-- **httpx ASGI-shortcut deprecations** (137 warnings) remain carried debt for Stage 4.9.
+- **7d** still needs its own implementation/gate.
+- **Glossary definition truncation follow-up** — smoke passed, but `finish_reason='length'` means the
+  prompt budget is tight for the current provider behavior.
+- **Shared CHECK/migration reconciliation** if adjacent stage branches are integrated (mitigations above).
 
 ## Environment note
-No source volume mount in `docker-compose.yml` (the `kyiv-backend` image bakes the code), so the backend
-image must be **rebuilt** (`docker compose build backend`) before migrations/tests see new code. The
-backend host port `:8000` is held by a sibling workspace stack, so migrations/tests run via
-`docker compose run --rm --no-deps backend …` (no port binding) against the shared `db`/`redis` services.
+Local stack: db/redis internal-only; `backend` host `:8000`,
+`frontend` host `:3001`. Tests run via `docker compose run --rm -v "$PWD/backend:/app" backend pytest`
+(live code mounted over the editable install; no published port). Frontend `tsc`/codegen run on the host
+(`frontend/node_modules` installed; `LLM_PROVIDER=deterministic`).
