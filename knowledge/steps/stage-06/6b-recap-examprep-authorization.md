@@ -117,3 +117,6 @@ OR-predicate are documented in the plan + this report; promote to an ADR only if
 - 2026-06-17 16:56 — [Session 6d] exposed pooled attempt count metadata through
   `backend/app/platform/query/quiz_read.py` and `backend/app/domains/quiz/schemas.py` so recap/exam-prep
   attempts can render browser retake-prefix state; 6b backend gates still pass in the 6d focused suite.
+- 2026-06-17 22:38 — [Session 6e] added a student-visible failed-attempt retry endpoint through
+  `backend/app/api/routers/quiz.py` and `backend/app/domains/quiz/service.py`; recap/exam-prep behavior is
+  now covered by the strengthened 6d browser gate, including exam-prep completion events.

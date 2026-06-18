@@ -77,6 +77,18 @@ async def get_quiz_attempt(
 
 
 @router.post(
+    "/student/quiz/attempts/{attempt_id}/retry",
+    response_model=QuizAttemptForStudent,
+    operation_id="retryStudentQuizAttempt",
+)
+async def retry_quiz_attempt(
+    attempt_id: UUID, response: Response, db: DbSession, current_user: CurrentUser
+) -> QuizAttemptForStudent:
+    response.headers["Cache-Control"] = _NO_STORE
+    return await service.retry_attempt(db, current_user=current_user, attempt_id=attempt_id)
+
+
+@router.post(
     "/student/quiz/attempts/{attempt_id}/answer",
     response_model=AnswerFeedback,
     operation_id="answerStudentQuizQuestion",

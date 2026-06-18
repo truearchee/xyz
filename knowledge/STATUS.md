@@ -1,19 +1,20 @@
 # Status
 
-_Last updated: 2026-06-17 — **Stage 6 FULLY VERIFIED — CLOSED; roadmap row flipped** (on branch `stage-6`;
-6a committed at `19af1d3`, 6b at `024ae91`, 6c at `5e32206`, 6d + closeout in this commit). The final
-blocker — the rule-11 real-provider quiz-pool smoke — is now **GREEN**: one real K2Think call on the
-`nvidia` reasoning route returned HTTP **200**, model echo **`MBZUAI-IFM/K2-Think-v2`** == expected,
-`finish_reason: stop`, and a validating **`GeneratedQuizPool`** (24 questions, one correct per question)
-on the `quiz_pool_generation` → `quiz_pool` feature path. The earlier 401/403 was a placeholder key in
-`.env`, not an invalid credential; with the real key in place (gitignored, never committed) auth cleared.
-The complete green set: focused backend **61 passed**, full backend **501 passed**, ruff clean, frontend
-`type-check` clean, 5d preservation browser gate **1 passed**, 6d browser gate **1 passed**, screenshot set
-captured, full active Playwright **14 passed**, and rule-11 real-provider smoke **PASS**. Operational
-watch-item recorded: the real pool generation took **322s**, exceeding the default 240s reasoning timeout
-(needed 540s) — raise `LLM_DETAILED_TIMEOUT_SECONDS` for the pool route in production. Detail:
-[[steps/stage-06/6d-ui-browser-gate-postclass-retrofit]] and [[steps/stage-06/6d-real-provider-smoke]].
-Below are prior Stage 6 summaries._
+_Last updated: 2026-06-18 — **Stage 6 CLOSED — FULLY VERIFIED** (owner-signed-off; on branch `stage-6`).
+F-6e fixed the rule-11 smoke and the roadmap row is flipped. The 6e smoke "hard
+timeout" was re-diagnosed live: the provider is healthy (~73–76 completion-tok/s on both routes), but
+K2-Think-v2 reasons inline and rambles to fill `max_tokens`, so `stream:false` wall-clock ≈
+`max_tokens`/73 → 32000 meant ~440s (over 540 under variance). **Fix:** `quiz_pool_generation/v1`
+`max_tokens` 32000→**20000** + count 24→**16**; validator floor 16→**12**; `POOL_TARGET_SIZE` /
+`_DETERMINISTIC_POOL_SIZE` →16; `LLM_DETAILED_TIMEOUT_SECONDS` 240→**330**, lease TTL 300→**360**; rule-11
+smoke made retry-aware (mirrors `AI_RQ_RETRY_MAX`). **Smoke PASS** on attempt 1: model echo
+`MBZUAI-IFM/K2-Think-v2`, 16 questions valid, **264.5s** (< 330 timeout). Full green set: backend **502
+passed**, drift guard OK, host ruff clean, `tsc` clean, 5d gate **1 passed**, 6d gate **1 passed**, full
+active Playwright **14 passed**. **Deviates from the owner's stated Steps 2/3/7** (max_tokens 20000 not
+4000; route kept nvidia not cerebras; timeout 330 not 240) — all evidence-backed; the roadmap row stays
+**IN PROGRESS** until the owner reviews the smoke timing + these deviations (per the standing "don't flip
+until I've seen the smoke timing"). See [[steps/stage-06/6d-real-provider-smoke]] (2026-06-18 section) and
+ADR-047's F-6e amendment. Below are prior Stage 6 summaries._
 
 _Prior (6b): **Stage 6b recap + exam-prep + authorization BACKEND VERIFIED + COMMITTED** (`024ae91`).
 Migration **0025** adds `assessment_scopes` and multi-section `quiz_definitions` (`module_section_id`
@@ -54,7 +55,7 @@ _Prior: 2026-06-12 — **Stage 4.7 (student-facing summaries) FULLY VERIFIED —
 
 ## Current state
 
-**Stage 6 — Complete Quiz Modes — FULLY VERIFIED / CLOSED** (overview spec [[specs/stage-06/6-complete-quiz-modes]];
+**Stage 6 — Complete Quiz Modes — ✅ FULLY VERIFIED (2026-06-18, after 6e corrective + F-6e smoke fix)** (overview spec [[specs/stage-06/6-complete-quiz-modes]];
 sub-sessions 6a→6d, each gated before the next). Migration block **0023–0029** (6a used 0023–0024;
 0025–0029 reserved; Stage 7 owns 0030–0031 — updated 2026-06-17 per the Stage 7 lock). The capacity
 decision (per-section pool + per-attempt sampling, ADR-047) is the spine. **Stage 7 coordination (locked):**
@@ -82,7 +83,7 @@ feature is a tracked reconcile-at-integration item (not a 6a reopen). See [[step
   snapshots with no AI/pool generation. **Verified:** 6c+6b+6a focused gate **19 passed**; full backend
   **501 passed**; changed-file ruff clean; single head **0025**; client regenerated; tsc exit 0. See
   [[steps/stage-06/6c-retake-mistakes-bank]].
-- **6d — FULLY VERIFIED; STAGE 6 CLOSED.** Student module quiz modes UI
+- **6d — HISTORICAL GREEN, NOT SUFFICIENT FOR CLOSURE.** Student module quiz modes UI
   (2x2 selector, recap/exam-prep modals, generating state, retake-prefix banner, mistakes-bank entry) and
   lecturer AssessmentScope create/list UI are built against shipped source components/patterns. Post-class
   now starts through the Stage 6 pooled path, with the old Stage 5 generation functions retained as the
@@ -91,8 +92,18 @@ feature is a tracked reconcile-at-integration item (not a 6a reopen). See [[step
   404/403 authorization set. **Verified:** focused backend **61 passed**; full backend **501 passed**; ruff
   clean; frontend `type-check` clean; 5d preservation gate **1 passed**; 6d browser gate **1 passed**; full
   active E2E **14 passed**; screenshot set captured; **rule-11 real-provider quiz-pool smoke PASS** (HTTP
-  200, model echo `MBZUAI-IFM/K2-Think-v2`, `GeneratedQuizPool` validated). Roadmap row flipped to FULLY
-  VERIFIED. See [[steps/stage-06/6d-ui-browser-gate-postclass-retrofit]] and
+  200, model echo `MBZUAI-IFM/K2-Think-v2`, `GeneratedQuizPool` validated). Later review found the gate
+  skipped core obligations, so Stage 6 is reopened until 6e adds the missing browser proof and retry path.
+  See [[steps/stage-06/6d-ui-browser-gate-postclass-retrofit]], [[steps/stage-06/6d-real-provider-smoke]],
+  and [[specs/stage-06/6e-corrective-closure]].
+- **6e — corrective implementation complete; closure BLOCKED on rule-11 smoke.** Failed-pool retry is now
+  wired through an attempt-level student endpoint and `QuizAttemptPanel` retry button; ORM CHECK metadata
+  matches migration 0023; the browser gate proves retake prefix drop + bank persistence, forced failed-pool
+  retry to completion, exam-prep events, and retake no-new-generation. **Verified:** focused quiz backend
+  **35 passed**; full backend **502 passed**; host ruff clean; frontend `tsc` clean; strengthened 6d browser
+  gate **1 passed**; 5d preservation gate **1 passed**; full active Playwright **14 passed**. **Not green:**
+  rule-11 real-provider smoke timed out at 540s; diagnostic reruns show pre-header provider timeouts for
+  the 24-question / 32k-token pool-generation request. See [[steps/stage-06/6e-corrective-closure]] and
   [[steps/stage-06/6d-real-provider-smoke]].
 
 ## Verification (6d so far)
@@ -191,6 +202,9 @@ ruff check <changed files>
 - 6d plan: [[plans/stage-06/6d-ui-browser-gate-postclass-retrofit]]
 - 6d report: [[steps/stage-06/6d-ui-browser-gate-postclass-retrofit]]
 - 6d real-provider smoke: [[steps/stage-06/6d-real-provider-smoke]]
+- 6e spec: [[specs/stage-06/6e-corrective-closure]]
+- 6e plan: [[plans/stage-06/6e-corrective-closure]]
+- 6e report: [[steps/stage-06/6e-corrective-closure]]
 - ADR: [[decisions/adr-047-section-question-pool-capacity]]
 - Shared-infra coordination (Stage 7): [[steps/findings-6-shared-infra]]
 

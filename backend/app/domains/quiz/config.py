@@ -15,10 +15,12 @@ RECAP_EXAM_QUESTIONS_PER_SECTION = 5  # recap & exam_prep: per in-scope eligible
 
 # ── Pool sizing ──────────────────────────────────────────────────────────────────────────────────
 # The pool is generated ONCE per section and shared across every mode, so it is sized against the LARGEST
-# per-section draw (post_class = 10) with headroom for fresh retake combinations (~2.4×). Mirrors the
-# count requested by prompts/quiz_pool_generation/v1.yaml and the deterministic provider fixture size; the
-# validator accepts a band around it so a reasoning model over/undershooting the target still succeeds.
-POOL_TARGET_SIZE = 24
+# per-section draw (post_class = 10) with headroom for fresh retake combinations (1.6×). Mirrors the count
+# requested by prompts/quiz_pool_generation/v1.yaml and the deterministic provider fixture size; the
+# validator accepts a band around it (floor 12) so a reasoning model over/undershooting the target still
+# succeeds. Trimmed 24→16 (F-6e): K2-Think-v2 reasons ~73 tok/s and the 16-q answer completes at ~13.4k
+# completion tokens, so 16 questions keeps live pool generation (≈274s) under the timeout — see the prompt.
+POOL_TARGET_SIZE = 16
 
 # ── Cross-section sampling spread (multi-section recap / exam_prep) ───────────────────────────────
 # Roughly even coverage per in-scope section — never all from one lecture. The only supported value at MVP.

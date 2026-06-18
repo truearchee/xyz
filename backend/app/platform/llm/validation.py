@@ -35,7 +35,10 @@ QUIZ_MAX_EXPLANATION_CHARS = 2000
 # MORE than one quiz needs; the count is a RANGE, not exactly-N, so a reasoning model over/undershooting
 # the requested target does not fail the whole generation. The per-question rules (4 options, one correct,
 # length/dup caps) are identical to post_class. Larger payload cap because there are more questions.
-QUIZ_POOL_MIN_COUNT = 16
+# Floor lowered 16→12 (F-6e): the prompt's requested count was trimmed 24→16 to bound live wall-clock, so
+# the floor must sit BELOW the target to keep the over/undershoot tolerance — 12 still exceeds the largest
+# single draw (post_class = 10), preserving "the pool holds more than one quiz needs".
+QUIZ_POOL_MIN_COUNT = 12
 QUIZ_POOL_MAX_COUNT = 40
 QUIZ_POOL_MAX_PAYLOAD_BYTES = 262144
 _REFUSAL_MARKERS = (

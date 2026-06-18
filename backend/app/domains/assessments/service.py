@@ -133,7 +133,14 @@ async def update_scope(
 
 async def _prewarm(db: AsyncSession, scope: AssessmentScope) -> None:
     """D1 pre-warm — generate the scope's in-scope eligible section pools now (lecturer view: no student
-    publish/assignment filter), background priority, idempotent."""
+    publish/assignment filter), background priority, idempotent.
+
+    LOAD-BEARING (F-6e): this is what keeps a *known* exam off the ~264s pool-generation first-wait —
+    pools are warm by the time students open exam-prep. Live K2-Think-v2 pool generation is inherently
+    multi-minute (~max_tokens/73 tok/s; see ADR-047 F-6e amendment + the 6d real-provider-smoke report),
+    and reasoning_effort=low is NOT a safe shortcut yet (it halves output validity). Do NOT remove or
+    weaken this pre-warm on AssessmentScope create/update without an equivalent mitigation: a regression
+    here silently reintroduces the multi-minute wait on exams."""
     resolution = await resolve_exam_prep_scope(db, scope=scope, student_id=None)
     if not resolution.ready_section_ids:
         return

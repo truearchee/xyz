@@ -48,7 +48,8 @@ VALID_FAULTS = (
 # Size of the deterministic section-pool fixture (Stage 6a). Within the validator's
 # [QUIZ_POOL_MIN_COUNT, QUIZ_POOL_MAX_COUNT] band and mirrors the domain POOL_TARGET so a gate samples a
 # realistic pool. Platform must not import domains (rule 8), so it is a local constant kept in sync.
-_DETERMINISTIC_POOL_SIZE = 24
+# Trimmed 24→16 alongside POOL_TARGET_SIZE / the prompt's requested count (F-6e live-latency fix).
+_DETERMINISTIC_POOL_SIZE = 16
 
 # ── Per-request fault injection (Stage 5b / D-C) ─────────────────────────────────────────────────
 # A FIFO sequence the DeterministicTestProvider consults once per ``send()`` (before its constructor

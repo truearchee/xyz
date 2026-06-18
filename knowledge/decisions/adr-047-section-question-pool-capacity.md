@@ -3,7 +3,7 @@ type: adr
 stage: "6"
 status: accepted
 created: 2026-06-17
-updated: 2026-06-17
+updated: 2026-06-18
 related-session: knowledge/specs/stage-06/6a-pool-foundation.md
 ---
 
@@ -82,3 +82,29 @@ granularity; recency bias + even spread + exhaustion-recycle; snapshot immunity 
 reaper's pooled-attempt liveness + stuck-pool self-heal; the mistake upsert identity. **Deferred by design
 (D4):** the post_class retrofit onto this model lands LAST (6d), behind a clean revert path, so a shipped
 FULLY VERIFIED surface is the last thing touched — until then two generation paths coexist intentionally.
+
+## Amendment (2026-06-18, F-6e) — pool request sizing, route, and reasoning-route timeout
+
+The capacity decision (pool-once, sample-per-attempt) is unchanged. What changed is the **per-call
+sizing**, after live K2Think probing revealed how K2-Think-v2 actually behaves on this prompt:
+
+- **Throughput is ~73–76 completion-tok/s on BOTH routes**; the model reasons inline and tends to ramble
+  to fill `max_tokens` (`finish_reason='length'`), so **wall-clock ≈ `max_tokens` / 73**. The original
+  `max_tokens: 32000` therefore meant ~440s, which crossed the 540s smoke timeout under variance — the
+  root cause of the 6e smoke regression. It was NOT a provider hang and NOT the route.
+- **Request trimmed to the real need:** pool count **24 → 16** (largest single draw is post_class's 10;
+  16 keeps retake-variation headroom), `max_tokens` **32000 → 20000** (covers the ~13.4k-token answer
+  with margin, caps wall-clock ~274s). Validator floor **16 → 12** so the model over/undershooting the
+  16 target still validates while still exceeding the 10 draw. `POOL_TARGET_SIZE` /
+  `_DETERMINISTIC_POOL_SIZE` kept in sync at 16.
+- **Route stays nvidia.** cerebras is the same model at the same speed and its 32768 window cannot hold a
+  ~20k completion; `metadata.use_nvidia` is performance-inert (`backend_route_source='requested'`,
+  ADR-025). No routing split was added.
+- **Reasoning-route timeout 240 → 330, lease TTL 300 → 360.** The trimmed pool still needs ~274s, so 240
+  is insufficient even after the work cut; 330 ≈ 1.2× the reduced worst case, well under the 540 owner
+  ceiling. This resolves the carried "reasoning-route timeout" debt: root cause = oversized `max_tokens`
+  driving a ramble-to-cap generation, not a tight timeout per se.
+- **Non-determinism is absorbed by retry.** At temp 0 the provider still varies run-to-run (occasional
+  truncation → `invalid_output`); the existing bounded RQ retry (`AI_RQ_RETRY_MAX=3`) recovers it, and
+  the rule-11 smoke now mirrors that retry policy. Evidence + the green smoke:
+  [[steps/stage-06/6d-real-provider-smoke]] (2026-06-18 section).

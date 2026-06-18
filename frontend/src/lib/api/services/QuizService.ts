@@ -92,6 +92,31 @@ export class QuizService {
         });
     }
     /**
+     * Retry Quiz Attempt
+     * @param attemptId
+     * @param authorization
+     * @returns QuizAttemptForStudent Successful Response
+     * @throws ApiError
+     */
+    public static retryStudentQuizAttempt(
+        attemptId: string,
+        authorization?: (string | null),
+    ): CancelablePromise<QuizAttemptForStudent> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/student/quiz/attempts/{attempt_id}/retry',
+            path: {
+                'attempt_id': attemptId,
+            },
+            headers: {
+                'Authorization': authorization,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * Answer Quiz Question
      * @param attemptId
      * @param requestBody

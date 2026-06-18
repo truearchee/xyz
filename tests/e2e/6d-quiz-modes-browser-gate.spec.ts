@@ -36,6 +36,8 @@ const SCREENSHOT_DIR = resolve('knowledge/steps/stage-06/screenshots');
 type ApiResponse<T = unknown> = { body: T; status: number };
 type OptionRow = { questionId: string; optionId: string; isCorrect: boolean };
 type SeededSection = { id: string; title: string; type: string; weekNumber: number; publishStatus: string };
+type MistakeState = { id: string; retakeCorrectCount: number; showInRetakePrefix: boolean };
+type EventRow = { eventType: string; metadata: Record<string, unknown> };
 type SeededModule = {
   moduleId: string;
   studentAId: string;
@@ -402,6 +404,39 @@ SELECT to_json(count(*)::int)::text
 FROM mistake_records
 WHERE student_id = ${sqlLiteral(studentId)}::uuid
   AND module_id = ${sqlLiteral(moduleId)}::uuid;
+	`) as unknown as number;
+}
+
+function mistakeForSourceQuestion(questionId: string): MistakeState {
+  return runPsqlJson(`
+SELECT json_build_object(
+  'id', id,
+  'retakeCorrectCount', retake_correct_count,
+  'showInRetakePrefix', show_in_retake_prefix
+)::text
+FROM mistake_records
+WHERE source_question_id = ${sqlLiteral(questionId)}::uuid;
+`) as unknown as MistakeState;
+}
+
+function retakePrefixQuestionId(attemptId: string, mistakeId: string): string {
+  return runPsqlJson(`
+SELECT to_json(id)::text
+FROM quiz_questions
+WHERE quiz_attempt_id = ${sqlLiteral(attemptId)}::uuid
+  AND source_mistake_record_id = ${sqlLiteral(mistakeId)}::uuid
+  AND source_type = 'mistake_review'
+ORDER BY display_order ASC
+LIMIT 1;
+`) as unknown as string;
+}
+
+function prefixMistakeCount(attemptId: string): number {
+  return runPsqlJson(`
+SELECT to_json(count(*)::int)::text
+FROM quiz_questions
+WHERE quiz_attempt_id = ${sqlLiteral(attemptId)}::uuid
+  AND source_type = 'mistake_review';
 `) as unknown as number;
 }
 
@@ -413,7 +448,48 @@ JOIN section_question_pools sqp ON sqp.ai_request_log_id = arl.id
 JOIN module_sections ms ON ms.id = sqp.module_section_id
 WHERE arl.feature = 'quiz_pool'
   AND ms.course_module_id = ${sqlLiteral(moduleId)}::uuid;
-`) as unknown as number;
+	`) as unknown as number;
+}
+
+function forceFailedPoolForSection(runId: string, sectionId: string): string {
+  const poolId = runPsqlJson(`
+WITH existing_key AS (
+  SELECT model, prompt_version
+  FROM section_question_pools
+  ORDER BY created_at DESC
+  LIMIT 1
+),
+summary AS (
+  SELECT id
+  FROM generated_lecture_summaries
+  WHERE module_section_id = ${sqlLiteral(sectionId)}::uuid
+    AND summary_type = 'detailed_study'
+  ORDER BY created_at DESC
+  LIMIT 1
+),
+inserted AS (
+  INSERT INTO section_question_pools (
+    id, module_section_id, model, prompt_version, source_summary_id,
+    source_summary_content_hash, status, failure_category, failure_message_sanitized
+  )
+  SELECT gen_random_uuid(), ${sqlLiteral(sectionId)}::uuid, existing_key.model, existing_key.prompt_version,
+         summary.id, ${sqlLiteral(`forced-failure:${runId}:${sectionId}`)}, 'failed', 'provider_error',
+         'forced browser-gate failure'
+  FROM existing_key, summary
+  RETURNING id
+)
+SELECT to_json(id)::text FROM inserted;
+`) as unknown as string;
+  recordManifestValue(runId, 'sectionQuestionPoolIds', poolId);
+  return poolId;
+}
+
+function eventRowsForAttempt(attemptId: string): EventRow[] {
+  return runPsqlJson(`
+SELECT coalesce(json_agg(json_build_object('eventType', event_type, 'metadata', metadata) ORDER BY event_type), '[]'::json)::text
+FROM student_activity_events
+WHERE source_id = ${sqlLiteral(attemptId)}::uuid;
+`) as unknown as EventRow[];
 }
 
 function recordPoolLogIds(runId: string, moduleId: string) {
@@ -440,6 +516,15 @@ async function answerAll(page: Page, attemptId: string, wantCorrect: boolean, sk
   await expect(page.getByTestId('quiz-feedback').first()).toBeVisible();
 }
 
+async function answerQuestion(page: Page, attemptId: string, questionId: string, wantCorrect: boolean) {
+  const pick = optionsForAttempt(attemptId)
+    .filter((option) => option.questionId === questionId)
+    .find((option) => option.isCorrect === wantCorrect);
+  if (!pick) throw new Error(`Attempt ${attemptId} has no ${wantCorrect ? 'correct' : 'wrong'} option for question ${questionId}`);
+  await page.getByTestId(`quiz-option-${pick.optionId}`).click();
+  await expect(page.getByTestId('quiz-feedback').first()).toHaveAttribute('data-correct', String(wantCorrect));
+}
+
 async function answerOneWrong(page: Page, attemptId: string): Promise<string> {
   const wrong = optionsForAttempt(attemptId).find((option) => !option.isCorrect);
   if (!wrong) throw new Error(`Attempt ${attemptId} has no wrong option`);
@@ -462,14 +547,14 @@ async function captureSurface(page: Page, name: string) {
   await page.setViewportSize({ width: 1280, height: 900 });
 }
 
-async function startRecapFromModal(page: Page, moduleId: string) {
+async function startRecapFromModal(page: Page, moduleId: string, weeks = '1') {
   await page.goto(`/student/modules/${moduleId}`);
   await expect(page.getByTestId('quiz-mode-selector')).toBeVisible();
   await page.getByTestId('quiz-mode-recap').getByRole('button', { name: 'Choose scope' }).click();
   await expect(page.getByTestId('quiz-recap-scope-modal')).toBeVisible();
-  await page.getByLabel('Weeks').fill('1');
+  await page.getByLabel('Weeks').fill(weeks);
   await page.getByRole('button', { name: 'Check' }).click();
-  await expect(page.getByText(/Ready: 2/)).toBeVisible();
+  await expect(page.getByText(/Ready: [1-9]/)).toBeVisible();
   await page.getByRole('button', { name: 'Start recap' }).click();
 }
 
@@ -526,21 +611,63 @@ test('6d quiz modes browser gate', async ({ browser }) => {
     );
     recordPoolLogIds(runId, seeded.moduleId);
 
-    // Cross-mode bank coverage: create a recap-origin mistake, then prove it is in the module bank.
+    // Cross-mode bank coverage starts with a recap-origin mistake.
     const wrongQuestionId = await answerOneWrong(studentPage, recapAttempt);
     await answerAll(studentPage, recapAttempt, true, new Set([wrongQuestionId]));
     await studentPage.getByTestId('quiz-complete').click();
     await expect(studentPage.getByTestId('quiz-result')).toBeVisible({ timeout: 30_000 });
     await expect.poll(() => mistakeBankCount(seeded.studentAId, seeded.moduleId)).toBe(1);
+    const mistake = mistakeForSourceQuestion(wrongQuestionId);
+    expect(mistake.showInRetakePrefix).toBe(true);
+    expect(mistake.retakeCorrectCount).toBe(0);
 
-    // Retake prefix uses the existing attempt count field.
+    // Full retake obligation: prefix appears, two correct source-quiz retakes clear it, and no pool log is
+    // created by retake sampling.
+    const logsBeforeRetakes = quizPoolLogCount(seeded.moduleId);
     await studentPage.getByTestId('quiz-start-over').click();
     await expect(studentPage.getByTestId('quiz-retake-prefix-banner')).toContainText('1 missed question', {
       timeout: 90_000,
     });
     await captureSurface(studentPage, 'retake-prefix-banner');
+    const firstRetakeAttempt = latestAttemptId(seeded.studentAId);
+    recordManifestValue(runId, 'quizAttemptIds', firstRetakeAttempt);
+    expect(prefixMistakeCount(firstRetakeAttempt)).toBe(1);
+    const firstPrefixQuestion = retakePrefixQuestionId(firstRetakeAttempt, mistake.id);
+    await answerQuestion(studentPage, firstRetakeAttempt, firstPrefixQuestion, true);
+    await answerAll(studentPage, firstRetakeAttempt, true, new Set([firstPrefixQuestion]));
+    await studentPage.getByTestId('quiz-complete').click();
+    await expect(studentPage.getByTestId('quiz-result')).toBeVisible({ timeout: 30_000 });
+    expect(mistakeForSourceQuestion(wrongQuestionId)).toMatchObject({
+      retakeCorrectCount: 1,
+      showInRetakePrefix: true,
+    });
 
-    // Mistakes bank list, persistence, and start.
+    await studentPage.getByTestId('quiz-start-over').click();
+    await expect(studentPage.getByTestId('quiz-retake-prefix-banner')).toContainText('1 missed question', {
+      timeout: 90_000,
+    });
+    const secondRetakeAttempt = latestAttemptId(seeded.studentAId);
+    recordManifestValue(runId, 'quizAttemptIds', secondRetakeAttempt);
+    expect(prefixMistakeCount(secondRetakeAttempt)).toBe(1);
+    const secondPrefixQuestion = retakePrefixQuestionId(secondRetakeAttempt, mistake.id);
+    await answerQuestion(studentPage, secondRetakeAttempt, secondPrefixQuestion, true);
+    await answerAll(studentPage, secondRetakeAttempt, true, new Set([secondPrefixQuestion]));
+    await studentPage.getByTestId('quiz-complete').click();
+    await expect(studentPage.getByTestId('quiz-result')).toBeVisible({ timeout: 30_000 });
+    expect(mistakeForSourceQuestion(wrongQuestionId)).toMatchObject({
+      retakeCorrectCount: 2,
+      showInRetakePrefix: false,
+    });
+
+    await studentPage.getByTestId('quiz-start-over').click();
+    await expect(studentPage.getByTestId('quiz-question-card').first()).toBeVisible({ timeout: 90_000 });
+    await expect(studentPage.getByTestId('quiz-retake-prefix-banner')).toHaveCount(0);
+    const noPrefixRetakeAttempt = latestAttemptId(seeded.studentAId);
+    recordManifestValue(runId, 'quizAttemptIds', noPrefixRetakeAttempt);
+    expect(prefixMistakeCount(noPrefixRetakeAttempt)).toBe(0);
+    expect(quizPoolLogCount(seeded.moduleId)).toBe(logsBeforeRetakes);
+
+    // Mistakes bank list, persistence after prefix drop, and start.
     await studentPage.goto(`/student/modules/${seeded.moduleId}`);
     await studentPage.getByTestId('quiz-mode-bank').getByRole('button', { name: 'Open bank' }).click();
     await expect(studentPage.getByTestId('quiz-mistakes-bank-modal')).toBeVisible();
@@ -567,6 +694,32 @@ test('6d quiz modes browser gate', async ({ browser }) => {
       [seeded.lectureW1.id, seeded.labW1.id],
       [seeded.hiddenW1.id, seeded.lectureW2.id],
     );
+    await answerAll(studentPage, examAttempt, true);
+    await studentPage.getByTestId('quiz-complete').click();
+    await expect(studentPage.getByTestId('quiz-result')).toBeVisible({ timeout: 30_000 });
+    const examEvents = eventRowsForAttempt(examAttempt);
+    expect(examEvents.map((event) => event.eventType).sort()).toEqual(['completed_quiz', 'perfect_quiz_score']);
+    for (const event of examEvents) {
+      expect(event.metadata).toMatchObject({
+        quizMode: 'exam_prep',
+        assessmentScopeId: expect.any(String),
+        moduleSectionIds: expect.arrayContaining([seeded.lectureW1.id, seeded.labW1.id]),
+      });
+    }
+
+    // Failure + retry proof: force a section pool into terminal failure, retry from the failed browser state,
+    // then complete the recovered attempt.
+    forceFailedPoolForSection(runId, seeded.lectureW2.id);
+    await startRecapFromModal(studentPage, seeded.moduleId, '2');
+    await expect(studentPage.getByTestId('quiz-retry-failed')).toBeVisible({ timeout: 90_000 });
+    await studentPage.getByTestId('quiz-retry-failed').click();
+    await expect(studentPage.getByTestId('quiz-question-card').first()).toBeVisible({ timeout: 120_000 });
+    const retriedAttempt = latestAttemptId(seeded.studentAId);
+    recordManifestValue(runId, 'quizAttemptIds', retriedAttempt);
+    expectOnlyInScope(questionSourceSectionIds(retriedAttempt), [seeded.lectureW2.id], [seeded.lectureW1.id, seeded.labW1.id, seeded.hiddenW1.id]);
+    await answerAll(studentPage, retriedAttempt, true);
+    await studentPage.getByTestId('quiz-complete').click();
+    await expect(studentPage.getByTestId('quiz-result')).toBeVisible({ timeout: 30_000 });
 
     // In-browser pool reuse: second assigned student starts same recap; ready questions, no new pool log.
     const logsBeforeB = quizPoolLogCount(seeded.moduleId);

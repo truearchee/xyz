@@ -269,8 +269,15 @@ class Settings:
         """HTTP transport timeout for the DETAILED (Nvidia route) call. K2-Think-v2 reasons inline then
         emits the full structured DetailedSummary, which needs materially more wall-clock than brief —
         60s timed it out repeatably (F-4.5-49). The provider selects this per-route (detailed > brief).
-        Kept >= the lease TTL so a legitimate long call is not reclaimed mid-flight."""
-        return self._int("LLM_DETAILED_TIMEOUT_SECONDS", "240", minimum=1)
+        Kept <= the lease TTL so a legitimate long call is not reclaimed mid-flight.
+
+        Raised 240→330 (F-6e): the reasoning route also serves quiz-POOL generation, which runs ~73 tok/s
+        and (after trimming the pool to 16 questions / max_tokens 20000) needs ~274s worst-case. 240
+        timed it out even after the work reduction; 330 gives ~1.2× margin and stays well under the
+        owner-set 540 ceiling. Detailed summaries (~110s) and post_class quiz (~219s) are unaffected —
+        they finish well inside it. This is NOT a longer timeout papering over a 9-minute call: the work
+        per call was cut ~40% first; the timeout only matches the genuinely-reduced reasoning workload."""
+        return self._int("LLM_DETAILED_TIMEOUT_SECONDS", "330", minimum=1)
 
     @property
     def LLM_CONTEXT_FALLBACK_ENABLED(self) -> bool:
@@ -362,8 +369,9 @@ class Settings:
         """Concurrency-lease TTL; a crashed worker's slot is reclaimable after this. Must stay >= the
         longest request timeout (LLM_DETAILED_TIMEOUT_SECONDS) so a legitimate long detailed/reasoning
         call is not reclaimed mid-flight in the gateway path (F-4.5-49). Raised 120→300 with the
-        detailed timeout; the smoke calls the provider directly and does not use the lease."""
-        return self._int("LLM_LEASE_TTL_SECONDS", "300", minimum=1)
+        detailed timeout, then 300→360 (F-6e) to stay above the 330 reasoning/pool timeout; the smoke
+        calls the provider directly and does not use the lease."""
+        return self._int("LLM_LEASE_TTL_SECONDS", "360", minimum=1)
 
     def _bool(self, name: str, *, default: bool) -> bool:
         raw_value = os.environ.get(name)

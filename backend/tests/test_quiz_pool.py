@@ -22,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 import app.domains.quiz.assembly_service as assembly_service
 import app.domains.quiz.pool_service as pool_service
+from app.domains.quiz import service as quiz_service
 from app.domains.quiz.assembly_service import (
     start_pooled_attempt,
     try_assemble_attempt_async,
@@ -32,6 +33,7 @@ from app.domains.quiz.pool_service import (
     generate_section_pool_async,
     retry_section_pool,
 )
+from app.platform.auth.context import CurrentUserContext
 from app.domains.recovery.reaper import run_stuck_row_reaper
 from app.platform.db.models import (
     AIRequestLog,
@@ -113,6 +115,18 @@ async def _seed_base(db_session: AsyncSession) -> SimpleNamespace:
     )
     await db_session.flush()
     return SimpleNamespace(student=student, owner=owner, module=module)
+
+
+def _current_student(base: SimpleNamespace) -> CurrentUserContext:
+    return CurrentUserContext(
+        user_id=base.student.id,
+        auth_provider_id=base.student.auth_provider_id,
+        email=base.student.email,
+        full_name=base.student.full_name,
+        role="student",
+        is_active=True,
+        timezone="UTC",
+    )
 
 
 async def _seed_section(db_session, base, *, title: str, order: int, overview: str = "An overview.") -> SimpleNamespace:
@@ -207,7 +221,7 @@ async def test_pool_generate_then_reuse_no_new_generation(db_session, captured):
             )
         )
     assert pool.status == "ready"
-    assert nq == 24  # the deterministic pool fixture size
+    assert nq == 16  # the deterministic pool fixture size (_DETERMINISTIC_POOL_SIZE)
     assert pool.ai_request_log_id is not None
     assert await _count(factory, AIRequestLog, feature="quiz_pool") == 1
 
@@ -239,6 +253,43 @@ async def test_pool_failure_then_explicit_retry(db_session, captured):
     await generate_section_pool_async(ensured.pool_id, gateway=_gateway(factory), session_factory=factory)
     async with factory() as session:
         assert (await session.get(SectionQuestionPool, ensured.pool_id)).status == "ready"
+
+
+async def test_failed_attempt_retry_service_reenqueues_pool_and_assembles_same_attempt(db_session, captured):
+    base = await _seed_base(db_session)
+    sec = await _seed_section(db_session, base, title="L1", order=0)
+    factory = _factory(db_session)
+    definition = await _make_pooled_definition(factory, base, [sec])
+
+    ensured = await ensure_section_pool(factory, section_id=sec.section.id)
+    with pytest.raises(Exception):
+        await generate_section_pool_async(
+            ensured.pool_id, gateway=_gateway(factory, fault="invalid_output"), session_factory=factory
+        )
+
+    start = await start_pooled_attempt(
+        factory, student_id=base.student.id, quiz_definition_id=definition.id
+    )
+    await try_assemble_attempt_async(start.attempt_id, session_factory=factory)
+    async with factory() as session:
+        failed = await session.get(QuizAttempt, start.attempt_id)
+        assert failed.status == "failed"
+
+    retry = await quiz_service.retry_attempt(
+        db_session, current_user=_current_student(base), attempt_id=start.attempt_id
+    )
+    assert retry.id == start.attempt_id
+    assert retry.status == "generating"
+    assert captured.pools.count(ensured.pool_id) == 2  # initial generation + explicit retry
+
+    await generate_section_pool_async(ensured.pool_id, gateway=_gateway(factory), session_factory=factory)
+    await try_assemble_attempt_async(start.attempt_id, session_factory=factory)
+    recovered = await quiz_service.get_attempt(
+        db_session, current_user=_current_student(base), attempt_id=start.attempt_id
+    )
+    assert recovered.id == start.attempt_id
+    assert recovered.status == "in_progress"
+    assert recovered.questions
 
 
 # ── (3) MistakeRecord pooled-upsert identity ─────────────────────────────────────────────────────

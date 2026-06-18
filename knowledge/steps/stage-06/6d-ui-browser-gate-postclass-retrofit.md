@@ -194,3 +194,7 @@ Captured by the green 6d browser gate in `knowledge/steps/stage-06/screenshots/`
 - 2026-06-17 — Updated after standing up the alternate local runtime, capturing screenshots, passing 5d
   preservation, passing the 6d browser gate, and passing the full active E2E suite. Stage 6 remains open
   only on the real-provider smoke auth failure.
+- 2026-06-17 22:38 — [Session 6e] reopened Stage 6 after review found this green gate skipped core
+  assertions. The strengthened gate now proves retake prefix drop + bank persistence, failed-pool retry,
+  exam-prep events, and retake no-new-generation reuse; Stage 6 remains open only because the rule-11 smoke
+  timed out twice.

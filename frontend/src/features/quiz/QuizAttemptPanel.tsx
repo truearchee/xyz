@@ -124,6 +124,20 @@ export function QuizAttemptPanel({
     }
   }, [onStartOver, applyAttempt]);
 
+  const retryFailed = useCallback(async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const next = await api.quiz.retryAttempt(attempt.id);
+      applyAttempt(next);
+      setCapped(false);
+    } catch {
+      setError("Could not retry this quiz - try again.");
+    } finally {
+      setBusy(false);
+    }
+  }, [attempt.id, applyAttempt]);
+
   const onAnswer = useCallback(
     async (questionId: string, optionId: string) => {
       if (answers[questionId]) return;
@@ -179,8 +193,15 @@ export function QuizAttemptPanel({
       <section aria-label={label} data-testid="quiz-attempt-panel" style={styles.block}>
         <h2 style={styles.blockHeading}>{label}</h2>
         <p role="alert" style={styles.muted}>We could not prepare this quiz.</p>
-        <button type="button" disabled={busy} onClick={() => void startOver()} style={styles.primaryButton}>
-          {busy ? "Starting..." : "Try again"}
+        {error ? <p role="alert" style={styles.muted}>{error}</p> : null}
+        <button
+          type="button"
+          data-testid="quiz-retry-failed"
+          disabled={busy}
+          onClick={() => void retryFailed()}
+          style={styles.primaryButton}
+        >
+          {busy ? "Retrying..." : "Try again"}
         </button>
       </section>
     );

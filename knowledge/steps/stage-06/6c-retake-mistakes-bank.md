@@ -137,3 +137,6 @@ course-above-module quiz/authz concept in this codebase.
 - 2026-06-17 16:56 — [Session 6d] surfaced the existing `mistake_review_question_count` and
   `new_question_count` attempt fields through the student DTO/client and rendered the retake-prefix banner
   from those fields in the browser UI; 6c backend gates still pass in the 6d focused suite.
+- 2026-06-17 22:38 — [Session 6e] strengthened `tests/e2e/6d-quiz-modes-browser-gate.spec.ts` so the browser
+  proves two correct source-quiz retakes clear the prefix while the mistake remains playable in the module
+  mistakes bank.

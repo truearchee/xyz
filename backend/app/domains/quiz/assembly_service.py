@@ -32,6 +32,7 @@ from app.domains.quiz.pool_service import (
     POOL_GENERATING,
     POOL_READY,
     ensure_section_pool,
+    retry_section_pool,
     _pool_model,
     _pool_prompt_version,
 )
@@ -173,6 +174,82 @@ async def start_pooled_attempt(
             )
             return PooledStartResult(attempt_id, "failed", created=True)
     return PooledStartResult(attempt_id, "generating", created=True)
+
+
+async def retry_failed_pooled_attempt(
+    factory: async_sessionmaker[AsyncSession] | None,
+    *,
+    student_id: UUID,
+    attempt_id: UUID,
+    enqueue: bool = True,
+) -> PooledStartResult:
+    """Explicit failed-attempt retry.
+
+    This is the product path for a terminal pool failure: retry failed section pools under their existing
+    one-active lock, then move the same failed attempt back to ``generating`` and enqueue assembly. Keeping
+    the attempt id stable lets the browser's failed-state retry recover instead of minting another failed
+    attempt against the same sticky failed pool.
+    """
+    f = factory or async_session
+    if f is None:
+        raise RuntimeError("DATABASE_URL environment variable is required")
+    model = _pool_model()
+    prompt_version = _pool_prompt_version()
+
+    failed_pool_ids: list[UUID] = []
+    async with f() as session:
+        attempt = await session.get(QuizAttempt, attempt_id)
+        if attempt is None or attempt.student_id != student_id:
+            raise PooledQuizUnavailableError(str(attempt_id))
+        if attempt.status != "failed":
+            return PooledStartResult(attempt.id, attempt.status, created=False)
+
+        definition = await session.get(QuizDefinition, attempt.quiz_definition_id)
+        if definition is None:
+            raise PooledQuizUnavailableError(str(attempt_id))
+        section_ids = _scope_section_ids(definition)
+        if not section_ids:
+            raise PooledQuizUnavailableError(str(attempt_id))
+
+        for section_id in section_ids:
+            pool = await _latest_pool(
+                session, section_id=section_id, model=model, prompt_version=prompt_version
+            )
+            if pool is None:
+                raise PooledQuizUnavailableError(str(section_id))
+            if pool.status == POOL_FAILED:
+                failed_pool_ids.append(pool.id)
+
+    for pool_id in failed_pool_ids:
+        await retry_section_pool(f, pool_id=pool_id)
+
+    async with f() as session:
+        async with session.begin():
+            attempt = (
+                await session.execute(
+                    select(QuizAttempt).where(QuizAttempt.id == attempt_id).with_for_update()
+                )
+            ).scalar_one_or_none()
+            if attempt is None or attempt.student_id != student_id:
+                raise PooledQuizUnavailableError(str(attempt_id))
+            existing = await _non_terminal_attempt(
+                session, student_id=student_id, definition_id=attempt.quiz_definition_id
+            )
+            if existing is not None:
+                return PooledStartResult(existing.id, existing.status, created=False)
+            if attempt.status != "failed":
+                return PooledStartResult(attempt.id, attempt.status, created=False)
+            now = _now()
+            attempt.status = "generating"
+            attempt.failure_category = None
+            attempt.failure_message_sanitized = None
+            attempt.generation_started_at = now
+            attempt.generation_completed_at = None
+            attempt.updated_at = now
+
+    if enqueue:
+        enqueue_try_assemble_attempt(attempt_id)
+    return PooledStartResult(attempt_id, "generating", created=False)
 
 
 # ── assembly job (claim → check pools → sample + snapshot + flip | wait | fail naming section) ─────

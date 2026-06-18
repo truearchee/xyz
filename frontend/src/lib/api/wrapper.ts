@@ -376,6 +376,8 @@ export const api = {
       withAuthRecovery(() => QuizService.startStudentQuiz(sectionId)),
     getAttempt: (attemptId: string): Promise<QuizAttemptForStudent> =>
       withAuthRecovery(() => QuizService.getStudentQuizAttempt(attemptId)),
+    retryAttempt: (attemptId: string): Promise<QuizAttemptForStudent> =>
+      withAuthRecovery(() => QuizService.retryStudentQuizAttempt(attemptId)),
     answer: (
       attemptId: string,
       requestBody: AnswerSubmission,

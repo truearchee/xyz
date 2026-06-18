@@ -153,3 +153,7 @@ ADR-047 — Per-section question pool: the Stage 6 capacity decision.
   verified, with browser proof blocked in 6d by runtime environment.
 - 2026-06-17 18:59 — [Session 6d] updated `backend/app/workers/queues.py` and related recovery/test
   references to use dash-only RQ job IDs (`quiz-generate-*`, `quiz-pool-*`) because RQ rejects colons.
+- 2026-06-17 22:38 — [Session 6e] wired failed pooled-attempt retry through
+  `backend/app/domains/quiz/assembly_service.py`, added the public-path regression in
+  `backend/tests/test_quiz_pool.py`, and aligned `backend/app/platform/db/models/ai_request_log.py` with
+  migration 0023's `quiz_pool` feature CHECK.

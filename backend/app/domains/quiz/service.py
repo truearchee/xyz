@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.domains.quiz.assembly_service import (
     PooledQuizUnavailableError,
+    retry_failed_pooled_attempt,
     start_mistakes_bank_attempt,
     start_pooled_attempt,
 )
@@ -163,6 +164,28 @@ async def get_attempt(
     if visible is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=ATTEMPT_NOT_FOUND)
     return await _build_attempt_detail(db, visible)
+
+
+async def retry_attempt(
+    db: AsyncSession, *, current_user: CurrentUserContext, attempt_id: UUID
+) -> QuizAttemptForStudent:
+    _require_student(current_user.role)
+    visible = await get_visible_attempt(db, student_id=current_user.user_id, attempt_id=attempt_id)
+    if visible is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=ATTEMPT_NOT_FOUND)
+    if visible.status != "failed":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail={"code": "not_failed"})
+
+    factory = _scope_factory(db)
+    try:
+        result = await retry_failed_pooled_attempt(
+            factory, student_id=current_user.user_id, attempt_id=attempt_id
+        )
+    except PooledQuizUnavailableError:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail={"code": "retry_unavailable"}
+        ) from None
+    return await get_attempt(db, current_user=current_user, attempt_id=result.attempt_id)
 
 
 async def _build_attempt_detail(db: AsyncSession, visible: VisibleAttempt) -> QuizAttemptForStudent:

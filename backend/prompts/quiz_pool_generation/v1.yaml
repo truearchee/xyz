@@ -5,12 +5,17 @@ backend: nvidia
 # Reasoning route (Stage 6a / capacity ADR): the per-section POOL is generated ONCE per
 # (section, model, promptVersion) and reused for every student / mode / attempt that touches the section
 # (rule 15 — one call per generation, never per question/attempt). A reasoning model thinks inline in
-# `content` before emitting JSON, and the pool is larger than a single quiz, so the budget must cover BOTH
-# the reasoning and a ~24-question structured answer — set well above the post_class 16000.
-max_tokens: 32000
+# `content` before emitting JSON, and (F-6e: confirmed live, ~73-76 completion-tok/s on BOTH routes) it
+# tends to keep generating until it hits this cap (finish_reason='length'), so wall-clock ≈ max_tokens/73.
+# 32000 → ~440s = the >540s smoke timeouts. A 16-question answer COMPLETES at ~13.4k completion tokens
+# (measured), so 20000 is the budget that (a) reliably clears the answer incl. denser summaries and
+# (b) caps wall-clock at ~274s (fits LLM_DETAILED_TIMEOUT_SECONDS=330). The tolerant-extract validator
+# selects the last complete JSON object, so trailing ramble before the cap is harmless. Do NOT cut toward
+# ~4000: the model is still mid-reasoning there (finish_reason='length', no JSON yet — F-6e probe).
+max_tokens: 20000
 # {{transcript}} is the SOURCE TEXT: for quiz generation the gateway renders it with the active
 # detailed-summary text (NEVER a raw transcript — Stage 6 exclusion). {{section_type}} is the lecture/lab
-# kind. The requested count (24) mirrors the domain POOL_TARGET; keep them in sync if either changes.
+# kind. The requested count (16) mirrors the domain POOL_TARGET and validator floor; keep them in sync.
 content: |
   You are building a REUSABLE bank of self-check questions to help university students confirm they
   understood a single {{section_type}} session. These questions will be reused across many students and
@@ -23,7 +28,7 @@ content: |
   Output contract — follow EXACTLY:
   - Reply with a single JSON object and NOTHING else: no preamble, no reasoning, no markdown fences,
     no extra keys.
-  - Produce 24 multiple-choice questions covering the material as broadly as possible, with NO duplicate
+  - Produce 16 multiple-choice questions covering the material as broadly as possible, with NO duplicate
     or near-duplicate questions.
   - Each question has EXACTLY 4 options; EXACTLY ONE option is correct.
   - Vary the phrasing and the position of the correct option across questions.
