@@ -1,6 +1,6 @@
 # Status
 
-_Last updated: 2026-06-18 — **Stage 7 core (7a–7c: glossary foundation + flashcards + multiple-choice) remains implemented.** Session 7e review fixes are applied locally and backend tests are green, but the required full active E2E rerun is not green yet because two inherited admin module-row refresh assertions fail. Branch `stage-7` (off main `a8cea6e`; migrations `0030`+`0031`). 7d quiz-highlight remains as the next unblocked sub-stage now that Stage 6 is closed._
+_Last updated: 2026-06-18 — **Stage 7 core (7a–7c: glossary foundation + flashcards + multiple-choice) remains implemented.** Session 7e review fixes are committed; the full active E2E suite is now green (14/14) after fixing the real root cause of the two inherited reds — an admin module-list ordering bug (newly created modules fell off page 1 once >50 modules accumulated). Branch `stage-7` (off main `a8cea6e`; migrations `0030`+`0031`). 7d quiz-highlight remains as the next unblocked sub-stage now that Stage 6 is closed._
 
 Stage 7a delivers the personal glossary foundation: save terms (highlight-from-summary + manual add),
 **async AI definitions in the student's preferred language through the EXISTING `platform/llm` gateway**
@@ -53,8 +53,31 @@ PLAYWRIGHT_BASE_URL=http://localhost:3001 E2E_RUN_ID=e2e-1781766005-stage7e5 \
 # 12 passed, 2 failed (4.3.5c admin module row refresh; 5.5e admin module row refresh)
 ```
 
-Session 7e is **not stamped accepted** because rule-14 full-suite green is still blocked. The Stage 5
-quiz and Stage 7 glossary browser specs passed in the latest full-suite attempts.
+## Verification (admin module-list ordering bugfix — #7e-adminfix, 2026-06-18)
+Root cause of the two 7e reds: `service.list_modules` ordered `created_at, id` ASC with default
+`limit=50` and no pagination UI, so a just-created module fell off page 1 once >50 `course_modules`
+accumulated (86 in dev `xyz_lms`, mostly E2E residue from interrupted runs). Fix: order newest-first
+(`created_at DESC, id DESC`). No data was cleaned to pass. Backend image rebuilt + container recreated
+(the live :8000 stack runs a baked image with no source mount).
+```bash
+docker compose run --rm -v "$PWD/backend:/app" -T backend pytest -q
+# 500 passed
+
+# isolated rerun of the two previously-failing specs (seeded manifest, same E2E_RUN_ID):
+PLAYWRIGHT_BASE_URL=http://localhost:3001 \
+  npx playwright test tests/e2e/4.3.5c-stage2-admin.spec.ts tests/e2e/5.5e-ui-browser-gate.spec.ts --workers=1
+# 2 passed
+
+# full active suite (rule 14):
+PLAYWRIGHT_BASE_URL=http://localhost:3001 E2E_RUN_ID=e2e-orderfix-full \
+  npx playwright test --workers=1
+# 14 passed (2.8m)
+```
+Follow-ups logged in `open-questions.md` (#7e-adminfix): admin pagination-envelope debt
+(owner developer; trigger Stage 12 hardening or before any deploy where module count can exceed one
+page), sibling `list_users` sharing the ASC+fixed-limit pattern (flagged, not fixed), and E2E
+teardown/reset hardening so interrupted runs stop leaving residue. Rule-14 full-suite green is now
+satisfied (14/14).
 
 ## NOT done — remaining for Stage 7
 - **7d** quiz-highlight. It is no longer blocked on Stage 6 coordination; Stage 6 is closed, so this is
