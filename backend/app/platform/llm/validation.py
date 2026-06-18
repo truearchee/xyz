@@ -14,11 +14,18 @@ import json
 from pydantic import ValidationError
 
 from app.platform.llm.errors import InvalidOutput
+from app.platform.llm.models.assistant import AssistantAnswer
 from app.platform.llm.models.quiz import GeneratedQuizPool, PostClassQuiz
 from app.platform.llm.models.summary import BriefSummary, DetailedSummary
 
 BRIEF_MIN_CHARS = 20
 BRIEF_MAX_CHARS = 2000
+
+# Assistant chat answer bounds (Stage 8.1). Lower floor than brief: a legitimate
+# ``educational_redirect`` ("Let's focus on the lecture — what would you like to review?") is short.
+# NO refusal-marker rejection here — a polite redirect is valid output, not a refusal to reject.
+ASSISTANT_MIN_CHARS = 1
+ASSISTANT_MAX_CHARS = 12000
 
 # Quiz structure + size limits (Stage 5b §5). The validator is the AUTHORITY regardless of the
 # generation mechanism. "No HTML" = ESCAPE-ON-DISPLAY, not reject-on-angle-bracket: legitimate
@@ -152,9 +159,10 @@ class OutputValidator:
         output_schema: type[BriefSummary]
         | type[DetailedSummary]
         | type[PostClassQuiz]
-        | type[GeneratedQuizPool],
+        | type[GeneratedQuizPool]
+        | type[AssistantAnswer],
         section_type: str,
-    ) -> BriefSummary | DetailedSummary | PostClassQuiz | GeneratedQuizPool:
+    ) -> BriefSummary | DetailedSummary | PostClassQuiz | GeneratedQuizPool | AssistantAnswer:
         if output_schema is BriefSummary:
             return self._validate_brief(raw_text)
         if output_schema is DetailedSummary:
@@ -163,6 +171,8 @@ class OutputValidator:
             return self._validate_quiz(raw_text)
         if output_schema is GeneratedQuizPool:
             return self._validate_quiz_pool(raw_text)
+        if output_schema is AssistantAnswer:
+            return self._validate_assistant(raw_text)
         raise InvalidOutput(
             f"unsupported output schema: {getattr(output_schema, '__name__', output_schema)!r}",
             error_code="unsupported_schema",
@@ -190,6 +200,28 @@ class OutputValidator:
         if any(marker in lowered for marker in _REFUSAL_MARKERS):
             raise InvalidOutput("brief summary looks like a refusal", error_code="refusal")
         return brief
+
+    # ── assistant chat (Stage 8.1) ───────────────────────────────────────────────────────────────
+    def _validate_assistant(self, raw_text: str) -> AssistantAnswer:
+        # Same tolerant extract + last-valid selection as summaries (K2-Think may think inline and put
+        # its real JSON last). Schema-match filters; "last" tiebreaks.
+        return _select_last_valid(_candidate_objects(raw_text), self._validate_assistant_object)
+
+    def _validate_assistant_object(self, data: dict) -> AssistantAnswer:
+        try:
+            message = AssistantAnswer.model_validate(data)
+        except ValidationError as exc:
+            raise InvalidOutput(
+                f"assistant answer failed schema validation: {exc.error_count()} error(s)",
+                error_code="schema",
+            ) from exc
+        answer = message.answer.strip()
+        if len(answer) < ASSISTANT_MIN_CHARS:
+            raise InvalidOutput("assistant answer is empty", error_code="too_short")
+        if len(answer) > ASSISTANT_MAX_CHARS:
+            raise InvalidOutput("assistant answer is too long", error_code="too_long")
+        # NB: NO refusal-marker check — a polite educational_redirect is legitimate assistant output.
+        return message
 
     def _validate_detailed(self, raw_text: str, *, section_type: str) -> DetailedSummary:
         # Detailed runs on the reasoning-lineage K2-Think-v2; same last-valid-object selection (§4/§7).

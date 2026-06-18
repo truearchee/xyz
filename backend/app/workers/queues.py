@@ -144,6 +144,28 @@ def enqueue_generate_glossary_definition(cache_row_id: UUID) -> str:
     return job_id
 
 
+def assistant_answer_job_id(message_id: UUID) -> str:
+    return f"assistant-answer-{message_id}"
+
+
+def enqueue_generate_assistant_answer(message_id: UUID) -> str:
+    """Enqueue a Stage 8.1 interactive assistant turn. ``at_front=True`` so a chat answer is not stuck
+    behind a long-running background summary/pool job (a ~264s reasoning generation); combined with the
+    limiter's reserved interactive headroom (rule 15), interactive traffic keeps priority. Bounded RQ
+    retry for transient / invalid_output only (rule 15)."""
+    from app.domains.assistant.jobs import generate_assistant_answer
+
+    job_id = assistant_answer_job_id(message_id)
+    get_ai_queue().enqueue(
+        generate_assistant_answer,
+        str(message_id),
+        job_id=job_id,
+        at_front=True,
+        retry=Retry(max=AI_RQ_RETRY_MAX, interval=AI_RQ_RETRY_INTERVALS),
+    )
+    return job_id
+
+
 def enqueue_summary_job(job_type: str, ingestion_job_id: UUID) -> None:
     if job_type == "generate_brief_summary":
         enqueue_generate_brief_summary(ingestion_job_id)

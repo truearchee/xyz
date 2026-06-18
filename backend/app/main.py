@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routers.admin import router as admin_router
 from app.api.routers.assessments import router as assessments_router
+from app.api.routers.assistant import router as assistant_router
 from app.api.routers.content import router as content_router
 from app.api.routers.glossary import router as glossary_router
 from app.api.routers.health import router as health_router
@@ -33,6 +34,7 @@ def create_app() -> FastAPI:
     app.include_router(quiz_router)
     app.include_router(assessments_router)
     app.include_router(glossary_router)
+    app.include_router(assistant_router)
     return app
 
 

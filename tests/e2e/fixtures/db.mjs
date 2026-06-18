@@ -475,6 +475,61 @@ WHERE transcript_id = ${sqlLiteral(transcriptId)} AND job_type = 'generate_detai
 `);
 }
 
+// --- Stage 8.1: assistant conversations + messages ------------------------------------------------
+export function getAssistantConversations(studentId, sectionId) {
+  assertUuid(studentId, 'studentId');
+  assertUuid(sectionId, 'sectionId');
+  return runPsqlJson(`
+SELECT coalesce(json_agg(json_build_object(
+  'id', id,
+  'conversationKind', conversation_kind,
+  'attachedSectionId', attached_section_id
+) ORDER BY created_at), '[]'::json)::text
+FROM assistant_conversations
+WHERE student_id = ${sqlLiteral(studentId)}::uuid
+  AND attached_section_id = ${sqlLiteral(sectionId)}::uuid;
+`);
+}
+
+export function countAssistantConversations(studentId, sectionId) {
+  assertUuid(studentId, 'studentId');
+  assertUuid(sectionId, 'sectionId');
+  const rows = runPsqlRows(`
+SELECT count(*)::int
+FROM assistant_conversations
+WHERE student_id = ${sqlLiteral(studentId)}::uuid
+  AND attached_section_id = ${sqlLiteral(sectionId)}::uuid
+  AND conversation_kind = 'lecture_default';
+`);
+  return Number(rows.at(-1) ?? 0);
+}
+
+export function getAssistantMessages(conversationId) {
+  assertUuid(conversationId, 'conversationId');
+  return runPsqlJson(`
+SELECT coalesce(json_agg(json_build_object(
+  'id', id,
+  'role', role,
+  'status', status,
+  'aiRequestLogId', ai_request_log_id
+) ORDER BY created_at, id), '[]'::json)::text
+FROM assistant_messages
+WHERE conversation_id = ${sqlLiteral(conversationId)}::uuid;
+`);
+}
+
+// The AIRequestLog feature values for a conversation's completed assistant turns — proves each answer
+// ran through the gateway with feature='assistant' (Stage 8.1 gate).
+export function getAssistantRequestLogFeatures(conversationId) {
+  assertUuid(conversationId, 'conversationId');
+  return runPsqlJson(`
+SELECT coalesce(json_agg(arl.feature ORDER BY arl.created_at), '[]'::json)::text
+FROM assistant_messages am
+JOIN ai_request_logs arl ON arl.id = am.ai_request_log_id
+WHERE am.conversation_id = ${sqlLiteral(conversationId)}::uuid;
+`);
+}
+
 // Stage 4.7 R1 — canary validity: how many of a transcript's SEGMENTS (raw transcript text) contain a
 // needle. Proves the G3 sentinel actually rode the transcript that backs the student's summary (not an
 // orphan), so its absence from the student surface is a live guarantee, not a vacuous one.

@@ -9,6 +9,7 @@ import {
   type StudentSummarySlot,
 } from "../../../lib/api";
 import { ForbiddenError, api } from "../../../lib/api/wrapper";
+import { AssistantPanel } from "../../assistant/AssistantPanel";
 import { PostClassQuizPanel } from "../../quiz/PostClassQuizPanel";
 import { SaveToGlossary } from "../../glossary/SaveToGlossary";
 import { StudentAssetRow } from "./StudentAssetRow";
@@ -130,6 +131,8 @@ export function StudentSectionDetail({ moduleId, sectionId }: { moduleId: string
       <SummariesPanel sectionId={sectionId} />
 
       <PostClassQuizPanel sectionId={sectionId} />
+
+      <AssistantPanel sectionId={sectionId} />
     </section>
   );
 }

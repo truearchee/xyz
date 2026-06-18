@@ -1,6 +1,46 @@
 # Status
 
-_Last updated: 2026-06-18 — **Stage 7 core (7a–7c: glossary foundation + flashcards + multiple-choice) remains implemented.** Session 7e review fixes are committed; the full active E2E suite is now green (14/14) after fixing the real root cause of the two inherited reds — an admin module-list ordering bug (newly created modules fell off page 1 once >50 modules accumulated). Branch `stage-7` rebased onto current `origin/main` `fb4c932` (after Stage 6 + design-files merged); migrations re-chained linearly `0025 → 0030 → 0031` (0030 down_revision 0022→0025) and the shared `ck_ai_request_logs_feature` CHECK + `GatewayFeature`/CHECKSUMS unioned to include both Stage 6 `quiz_pool` and Stage 7 `glossary_definition` (test_shared_check_union guards it). 7d quiz-highlight remains as the next unblocked sub-stage now that Stage 6 is closed._
+_Last updated: 2026-06-18 — **Stage 8.1 FULLY VERIFIED** (branch `stage-81-83`, rebased onto Stage 7).
+8.1 conversation foundation built: new `assistant` domain (conversations + messages), gateway `assistant`
+feature (AssistantAnswer schema + validator branch, no refusal-rejection; deterministic provider branch;
+`prompts/assistant/v1.yaml`), lecture entry point + thin chat panel in the **existing inline idiom**
+(monochrome design system is NOT in code — see [[steps/stage-08/findings-design-doc-reality-gap]]),
+create-then-poll interactive turn via the `ai` queue at interactive priority (ADR-048), 8.4-ready
+conversation-list data shape with a `lecture_default` partial-unique index (ADR-049), migration **0032**
+(block 0032–0037). Verified: backend **514 pytest** (incl. 14 new assistant tests; 2 prior failures fixed
+= prompt-drift + dev_reseed EXPECTED_ALEMBIC_VERSION 0025→0032), `tsc --noEmit` exit 0, OpenAPI client
+regenerated. **Rebased onto Stage 7** (single head **0032**, `0025→0030→0031→0032`, round-trip clean;
+merged backend **537 pytest** incl. the shared-CHECK union guard; fixed a rebase bug where 0032 dropped
+`glossary_definition` from the feature CHECK). **All live gates GREEN:** 8.1 browser gate; **full active
+Playwright 16/16 (rule 14)**; **real-provider smoke (rule 11)** model echo `MBZUAI-IFM/K2-Think-v2`.
+**Stage 8.1 FULLY VERIFIED.** Two env workarounds (recorded, NOT committed): local Supabase `edge_runtime`
+502 (disabled to start it) and shared `kyiv-backend` image-tag contention with the **active sibling
+`tokyo`** workspace (pinned my compose to a unique tag so Conductor's mid-suite recreates use my image) —
+[[steps/stage-08/findings-8.1-gate-run-blocked]]. **Env hazard for the owner:** the `kyiv-backend` tag is
+shared across all running workspaces; give each a unique tag / source mount. Next: 8.2 (grounding). See
+[[steps/stage-08/8.1-conversation-foundation]]. Below: prior Stage 7 + Stage 6._
+
+_Prior — 2026-06-18 — **Stage 7 core (7a–7c: glossary foundation + flashcards + multiple-choice).** Full active
+E2E suite green (14/14) after fixing an admin module-list ordering bug; branch `stage-7` rebased onto main;
+migrations re-chained `0025 → 0030 → 0031`; shared `ck_ai_request_logs_feature` + `GatewayFeature`/CHECKSUMS
+unioned (Stage 6 `quiz_pool` + Stage 7 `glossary_definition`, `test_shared_check_union` guards). Stage 8.1
+re-unioned the same shared infra to add `assistant`._
+
+_Prior — 2026-06-18 — **Stage 6 CLOSED — FULLY VERIFIED** (owner-signed-off; on branch `stage-6`).
+F-6e fixed the rule-11 smoke and the roadmap row is flipped. The 6e smoke "hard
+timeout" was re-diagnosed live: the provider is healthy (~73–76 completion-tok/s on both routes), but
+K2-Think-v2 reasons inline and rambles to fill `max_tokens`, so `stream:false` wall-clock ≈
+`max_tokens`/73 → 32000 meant ~440s (over 540 under variance). **Fix:** `quiz_pool_generation/v1`
+`max_tokens` 32000→**20000** + count 24→**16**; validator floor 16→**12**; `POOL_TARGET_SIZE` /
+`_DETERMINISTIC_POOL_SIZE` →16; `LLM_DETAILED_TIMEOUT_SECONDS` 240→**330**, lease TTL 300→**360**; rule-11
+smoke made retry-aware (mirrors `AI_RQ_RETRY_MAX`). **Smoke PASS** on attempt 1: model echo
+`MBZUAI-IFM/K2-Think-v2`, 16 questions valid, **264.5s** (< 330 timeout). Full green set: backend **502
+passed**, drift guard OK, host ruff clean, `tsc` clean, 5d gate **1 passed**, 6d gate **1 passed**, full
+active Playwright **14 passed**. **Deviates from the owner's stated Steps 2/3/7** (max_tokens 20000 not
+4000; route kept nvidia not cerebras; timeout 330 not 240) — all evidence-backed; the roadmap row stays
+**IN PROGRESS** until the owner reviews the smoke timing + these deviations (per the standing "don't flip
+until I've seen the smoke timing"). See [[steps/stage-06/6d-real-provider-smoke]] (2026-06-18 section) and
+ADR-047's F-6e amendment. Below are prior Stage 6 summaries._
 
 Stage 7a delivers the personal glossary foundation: save terms (highlight-from-summary + manual add),
 **async AI definitions in the student's preferred language through the EXISTING `platform/llm` gateway**

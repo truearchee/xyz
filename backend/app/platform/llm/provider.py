@@ -415,6 +415,17 @@ class DeterministicTestProvider:
             if forced_invalid:
                 payload.pop("examples")  # drop a required section
             return json.dumps(payload)
+        if name == "assistant":
+            if forced_invalid:
+                return json.dumps({"wrong": "shape"})  # missing required `answer`
+            return json.dumps(
+                {
+                    "answer": (
+                        "Here is a concise study-assistant answer. It walks through the idea in "
+                        "clear prose so the conversation reads naturally and is easy to follow."
+                    )
+                }
+            )
         raise ValueError(f"deterministic provider has no canned output for prompt {name!r}")
 
     @staticmethod
