@@ -187,6 +187,21 @@ budget vs ~99%. The one valid `low` sample was good quality, but the reliability
 net loss today. **Decision: keep full reasoning** (`max_tokens=20000`, no `reasoning_effort` param). The
 264s only ever lands on an *ad-hoc first recap* (D1 pre-warm covers known exams at scope-creation;
 reuse means only the first student per ad-hoc section waits). `reasoning_effort=low` is recorded as a
-**future optimization** that would need a reliability fix first (e.g. confirmed JSON mode, or a stricter
-contract + a larger retry budget) and threading a `reasoning_effort` field through the prompt schema +
-`build_payload`.
+**future optimization** that would need a reliability fix first and threading a `reasoning_effort` field
+through the prompt schema + `build_payload`.
+
+**2026-06-18 follow-up — `json_object` precondition DISPROVEN.** The hypothesis "force structured output
+to fix `low`'s malformed JSON" was tested live: nvidia + `reasoning_effort=low` + `response_format:
+{type: json_object}`, `max_tokens=6000` (nvidia output cap), **7 runs → 1/7 (14%) first-try valid /
+~46% within the 4-attempt budget — WORSE than both `low` alone (33%) and full reasoning (75%).** It's the
+worst config tested. Failure mode: 4/7 runs returned a ~128-token valid-JSON response in ~2s that failed
+`wrong_question_count` (≈1 question) — **`json_object` guarantees well-formed JSON, not correct content**,
+and `low` reasoning does the minimum to satisfy the format and skips the 16-question work (one run still
+rambled to the cap, `not_json`). So the deep inline reasoning is **load-bearing for output completeness**,
+not incidental overhead; `json_object` is NOT a viable reliability lever for the `low` path. The one
+genuinely-remaining lever is a true writing-class model — but per the provider docs that route
+(cerebras / `Instruct`) supports **neither** `json_object` **nor** `reasoning_effort`, making it a
+separate, larger investigation rather than a quick switch. Adapter note: `reasoning_effort` is not
+plumbed at all, and `response_format` is gated only by the **global** `LLM_PROVIDER_JSON_MODE` (which
+would wrongly also hit the cerebras brief route), so any real switch needs **per-prompt, nvidia-guarded**
+plumbing of both params.

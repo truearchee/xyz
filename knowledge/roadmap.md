@@ -97,9 +97,17 @@ Signed URLs remain valid until TTL after unpublish                          → 
 can_publish derived from role rather than membership                        → reviewed in Stage 12 authz pass
 No custom exception handlers (raw default 500 bodies)                       → Stage 12
 No roadmap file in repo (F001)                                              → fixed by this document + repo rule above
-Quiz-pool ad-hoc first-recap ~264s first-wait (F-6e). reasoning_effort=low
-cuts it to ~38s BUT drops first-try validity ~75%→~33% (malformed JSON);
-needs confirmed JSON mode OR stricter contract + larger retry budget first  → Stage 4.8 hosted-config pass / later quiz-perf tune
+Quiz-pool ad-hoc first-recap ~264s first-wait (F-6e). OPEN, but the two quick
+levers are now CLOSED as tested-not-viable: (a) reasoning_effort=low alone →
+~38s but first-try validity ~75%→~33%; (b) reasoning_effort=low + json_object
+on nvidia tested 2026-06-18 (7-run probe): REFUTED — 14% first-try / ~46%
+within retry, worse than full-reasoning's 75% (low reasoning satisfies the
+JSON format with minimal content, ~1 question — json_object guarantees
+well-formed JSON, not correct content, so it is NOT a viable reliability lever
+for the low path; deep reasoning is load-bearing for output completeness).
+Genuinely-remaining lever = a true writing-class model, but per provider docs
+that route (cerebras/Instruct) supports NEITHER json_object NOR reasoning_effort
+— a separate, larger investigation, not a quick switch.                      → Stage 4.8 hosted-config pass / later quiz-perf tune
 ```
 
 **Load-bearing invariant (F-6e):** exam-prep UX acceptability **depends on D1 pre-warm firing** at
