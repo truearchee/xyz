@@ -1,3 +1,11 @@
+"""Embedding encoders (Stage 8.2 — promoted verbatim from ``domains/transcripts/embedding_encoder``).
+
+Behavior is byte-identical to the prior module (extraction, not redesign — ADR). The only addition is
+``get_encoder()``, the process-wide factory that honors ``EMBEDDING_PROVIDER`` so chunk embedding AND
+assistant query embedding share one encoder. The query embedding is LOCAL/in-process (sentence-
+transformers or deterministic) — NEVER a metered provider/gateway call (review #6).
+"""
+
 from __future__ import annotations
 
 import hashlib
@@ -6,11 +14,7 @@ from pathlib import Path
 import threading
 from typing import Any, Callable, Protocol
 
-
-EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
-EMBEDDING_DIMENSION = 384
-EMBEDDING_NORMALIZATION = "l2"
-EMBEDDING_VERSION = "embedding-v1"
+from app.platform.embeddings.config import EMBEDDING_DIMENSION
 
 _MODEL_CACHE_LOCK = threading.Lock()
 _MODEL_CACHE: dict[tuple[str, str, str], Any] = {}
@@ -55,6 +59,22 @@ class SentenceTransformersEmbeddingEncoder:
 class DeterministicEmbeddingEncoder:
     def encode(self, texts: list[str]) -> list[list[float]]:
         return [_deterministic_vector(text) for text in texts]
+
+
+def get_encoder() -> EmbeddingEncoder:
+    """Process-wide encoder selected by ``EMBEDDING_PROVIDER`` (``sentence_transformers`` in prod,
+    ``deterministic`` in CI/E2E). Both transcript chunk embedding and assistant retrieval call this so
+    the query and the chunks are produced by the SAME encoder — that is what makes the deterministic
+    identical-text→distance-0 retrieval contract hold end-to-end (review #9)."""
+    from app.platform.config import settings  # local import avoids a config↔embeddings import cycle
+
+    if settings.EMBEDDING_PROVIDER == "deterministic":
+        return DeterministicEmbeddingEncoder()
+    return SentenceTransformersEmbeddingEncoder(
+        model_path=settings.EMBEDDING_MODEL_PATH,
+        expected_revision=settings.EMBEDDING_MODEL_REVISION,
+        device=settings.EMBEDDING_DEVICE,
+    )
 
 
 def validate_model_snapshot(

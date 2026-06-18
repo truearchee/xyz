@@ -24,7 +24,7 @@ from app.domains.transcripts.activation import (
     attempt_pending_activation,
     try_activate_pending_transcript,
 )
-from app.domains.transcripts.embedding_encoder import DeterministicEmbeddingEncoder
+from app.platform.embeddings import DeterministicEmbeddingEncoder
 from app.domains.transcripts.embedding_service import embed_transcript_async
 from app.domains.transcripts.summary_eligibility import (
     get_activation_ready_summaries,

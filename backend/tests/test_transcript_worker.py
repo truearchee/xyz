@@ -19,7 +19,7 @@ from app.domains.transcripts import jobs as transcript_jobs
 from app.domains.transcripts import service as transcript_service
 from app.domains.transcripts import parse_service
 from app.domains.transcripts.chunker import ChunkDraft, ChunkingResult
-from app.domains.transcripts.embedding_encoder import DeterministicEmbeddingEncoder
+from app.platform.embeddings import DeterministicEmbeddingEncoder
 from app.domains.transcripts.parse_service import ParseClaim, parse_transcript_async
 from app.domains.transcripts.parsers.types import ParsedSegment, TranscriptParseError
 from app.platform.config import settings

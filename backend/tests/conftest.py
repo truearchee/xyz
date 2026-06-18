@@ -63,6 +63,22 @@ def anyio_backend() -> str:
     return "asyncio"
 
 
+@pytest.fixture(scope="session", autouse=True)
+def _deterministic_embeddings_for_tests() -> "AsyncIterator[None]":
+    """CI/test determinism (Stage 8.2, review #9): the assistant query embedding (and any in-process
+    chunk embedding via get_encoder) use the hash-based DeterministicEmbeddingEncoder — identical text →
+    cosine distance 0, different text → ≈1 — so retrieval + grounding are exercisable without loading
+    MiniLM. The 4.4 embed tests inject their encoder explicitly and are unaffected. Mirrors the
+    LLM_PROVIDER=deterministic test default."""
+    previous = os.environ.get("EMBEDDING_PROVIDER")
+    os.environ["EMBEDDING_PROVIDER"] = "deterministic"
+    yield
+    if previous is None:
+        os.environ.pop("EMBEDDING_PROVIDER", None)
+    else:
+        os.environ["EMBEDDING_PROVIDER"] = previous
+
+
 def _test_database_url() -> str:
     test_database_url = os.environ.get("TEST_DATABASE_URL")
     if not test_database_url:

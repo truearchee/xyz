@@ -157,3 +157,5 @@ ADR-047 — Per-section question pool: the Stage 6 capacity decision.
   `backend/app/domains/quiz/assembly_service.py`, added the public-path regression in
   `backend/tests/test_quiz_pool.py`, and aligned `backend/app/platform/db/models/ai_request_log.py` with
   migration 0023's `quiz_pool` feature CHECK.
+- 2026-06-18 — [Session 8.2] added the `assistant/v2` prompt checksum to `backend/prompts/CHECKSUMS.json`;
+  quiz pool prompts and behavior were unchanged.

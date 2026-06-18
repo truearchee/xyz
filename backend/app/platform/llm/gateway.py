@@ -37,6 +37,7 @@ from app.platform.llm.models.prompt import (
     PromptKey,
     Usage,
 )
+from app.platform.llm.models.assistant import AssistantAnswer, AssistantGroundedAnswer
 from app.platform.llm.models.quiz import GeneratedQuizPool, PostClassQuiz
 from app.platform.llm.models.summary import BriefSummary, DetailedSummary
 from app.platform.llm.provider import LLMProvider, get_provider
@@ -59,7 +60,14 @@ class ContextRefs:
 
 
 class CompletionResult(TypedDict):
-    parsed: BriefSummary | DetailedSummary | PostClassQuiz | GeneratedQuizPool
+    parsed: (
+        BriefSummary
+        | DetailedSummary
+        | PostClassQuiz
+        | GeneratedQuizPool
+        | AssistantAnswer
+        | AssistantGroundedAnswer
+    )
     model_id_echoed: str
     usage: Usage
     backend_used: Backend
@@ -123,7 +131,9 @@ class LLMGateway:
         output_schema: type[BriefSummary]
         | type[DetailedSummary]
         | type[PostClassQuiz]
-        | type[GeneratedQuizPool],
+        | type[GeneratedQuizPool]
+        | type[AssistantAnswer]
+        | type[AssistantGroundedAnswer],
         context_refs: ContextRefs,
         priority: Priority,
         feature: GatewayFeature,

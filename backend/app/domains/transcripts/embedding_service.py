@@ -13,14 +13,14 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from uuid6 import uuid7
 
-from app.domains.transcripts.embedding_encoder import (
+from app.platform.embeddings import (
     EMBEDDING_DIMENSION,
     EMBEDDING_MODEL,
     EMBEDDING_NORMALIZATION,
     EMBEDDING_VERSION,
     EmbeddingConfigurationError,
     EmbeddingEncoder,
-    SentenceTransformersEmbeddingEncoder,
+    get_encoder,
 )
 from app.domains.transcripts.activation import attempt_pending_activation
 from app.domains.transcripts.fencing import can_commit_step
@@ -137,11 +137,10 @@ async def embed_transcript_async(
         raise RuntimeError("DATABASE_URL environment variable is required")
 
     revision = model_revision or settings.EMBEDDING_MODEL_REVISION
-    active_encoder = encoder or SentenceTransformersEmbeddingEncoder(
-        model_path=settings.EMBEDDING_MODEL_PATH,
-        expected_revision=revision,
-        device=settings.EMBEDDING_DEVICE,
-    )
+    # The real worker passes no encoder → get_encoder() honors EMBEDDING_PROVIDER (sentence_transformers
+    # in prod, deterministic in CI/E2E). Tests inject an explicit encoder. Provenance is stamped from
+    # the EmbeddingConfig constants below regardless of which encoder ran (review #9).
+    active_encoder = encoder or get_encoder()
     size = batch_size or settings.EMBEDDING_BATCH_SIZE
 
     try:

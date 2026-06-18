@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from app.domains.transcripts.embedding_encoder import (
+from app.platform.embeddings import (
     EMBEDDING_DIMENSION,
     DeterministicEmbeddingEncoder,
     EmbeddingConfigurationError,

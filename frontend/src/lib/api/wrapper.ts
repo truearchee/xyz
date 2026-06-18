@@ -9,6 +9,13 @@ import {
   AssessmentsService,
   type AssessmentScopeResponse,
   type AssignMemberRequest,
+  type AssistantAvailabilityResponse,
+  AssistantService,
+  type ConversationRead,
+  type MessageRead,
+  type PaginatedResponse_MessageRead_,
+  type SendMessageRequest,
+  type SendMessageResponse,
   ContentService,
   type CreateAssessmentScopeRequest,
   type CreateModuleRequest,
@@ -502,6 +509,35 @@ export const api = {
       ),
     startMistakesBank: (moduleId: string): Promise<QuizAttemptForStudent> =>
       withAuthRecovery(() => QuizService.startStudentMistakesBank(moduleId)),
+  },
+  assistant: {
+    getAvailability: (sectionId: string): Promise<AssistantAvailabilityResponse> =>
+      withAuthRecovery(() =>
+        AssistantService.getStudentAssistantAvailability(sectionId),
+      ),
+    openConversation: (sectionId: string): Promise<ConversationRead> =>
+      withAuthRecovery(() =>
+        AssistantService.openStudentAssistantConversation(sectionId),
+      ),
+    listMessages: (
+      conversationId: string,
+      limit = 50,
+      offset = 0,
+    ): Promise<PaginatedResponse_MessageRead_> =>
+      withAuthRecovery(() =>
+        AssistantService.listStudentAssistantMessages(conversationId, limit, offset),
+      ),
+    send: (
+      conversationId: string,
+      requestBody: SendMessageRequest,
+    ): Promise<SendMessageResponse> =>
+      withAuthRecovery(() =>
+        AssistantService.sendStudentAssistantMessage(conversationId, requestBody),
+      ),
+    retry: (messageId: string): Promise<MessageRead> =>
+      withAuthRecovery(() =>
+        AssistantService.retryStudentAssistantMessage(messageId),
+      ),
   },
   studentSummaries: {
     listSections: (moduleId: string): Promise<Array<StudentSectionListItem>> =>
