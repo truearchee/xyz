@@ -117,3 +117,5 @@ E2E suite passed 14/14. See [[steps/stage-07/7bc-glossary-practice]] and [[findi
   thin UI built + `tsc` green; client regenerated. Live browser gate + real-provider smoke pending.
 - 2026-06-17 21:40 — Stage 7 core closure evidence added in the 7b/7c report and findings; 7a is now
   fully verified as part of the 7a–7c browser gate.
+- 2026-06-18 11:05 — [Session 7e] added enqueue-failure compensation + duplicate-save retry recovery
+  for glossary definitions, and rejected `entry_type` updates to preserve cache-key/provenance consistency.

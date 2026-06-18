@@ -4,6 +4,25 @@ Running notes for the parallel-with-Stage-6 build. Newest first.
 
 ---
 
+## F-7-6 — post-review follow-up disposition (PARTIAL FIX + LOGGED DEFERRALS)
+
+2026-06-18 Stage 7 review follow-up disposition:
+
+- **Fix now:** enqueue-after-commit failure must compensate glossary definition cache rows and matching
+  entries to `failed`, then duplicate-save retry must re-enqueue and allow generation to complete.
+- **Fix now:** `entry_type` updates are rejected. Entry type participates in the definition cache key, and
+  reclassification is not a Stage 7 feature.
+- **Spec correction:** `vocabulary` is not a product type; `term` covers vocabulary words. The locked spec
+  entry-type enumeration is corrected to `term | formula | concept`.
+- **Accepted, not drift:** the prompt-echo-specific hard rejection is intentionally not implemented under
+  D3 because Stage 7 reuses the `BriefSummary` markdown shape and validator. Rich structured glossary
+  validation remains a 7.x concern.
+- **Deferred:** detail-sheet tabs flattened to an aside is logged for the Stage 12 design pass.
+- **Deferred:** missing per-sub-session Stage 7 knowledge trios are logged as docs-cleanup follow-up.
+- **Deferred:** browser gate additions for `<4 terms` fallback and MCQ wrong-pick assertions are logged as
+  low-priority Playwright follow-up that can fold into the 7d gate run.
+- **Already tracked:** 7d quiz-highlight remains the next Stage 7 sub-stage; no action here.
+
 ## F-7-1 — `platform/llm` "no-touch" rule is not literally satisfiable; minimal additive extension taken (DECIDED, D2)
 
 The spec's coordination rule 1 ("consume the shared AI pipeline; never modify it") cannot hold for a

@@ -104,7 +104,7 @@ This is the foundational decision the whole stage keys off. Slice 6 treated “s
                         AI-generated "canonical English" form — see normalization note below.
 - normalizedTerm       (lowercase, trimmed, internal-whitespace-collapsed — server-side only;
                         the dedup-key component)
-- entryType: term | formula | vocabulary | concept
+- entryType: term | formula | concept
 - language             (the language the stored definition was generated in — one of the five;
                         pairs with the cache key; needed for correct display incl. Arabic RTL)
 - shortDefinition
@@ -184,6 +184,12 @@ Carried from Roadmap v3.1 Stage 7 / Slice 6, with the platform rules made explic
 - Each generation job carries an **idempotency key** and a **one-active partial-unique index** for in-flight jobs of that type (extend the migration-0007 pattern used by summaries). Per the concurrent-miss note above, **the one-active index is keyed on the cache key**, so a double-click *and* two students racing the same term cannot both produce a generation.
 - Every definition generation writes an **`AIRequestLog`** row with a clear `feature` label (`glossary_definition`) so "tokens by feature by day" stays one query.
 - A light **OutputValidator** check: the definition is **non-empty** and **is not an echo of the prompt** (these are hard rejections → retry). A **language check is a logged soft signal, not a hard reject** — short bilingual technical definitions (e.g. a Chinese definition full of Latin-script terms and formulae) trip naive language detectors and would cause spurious retries (rule-15 waste) and stuck “generating” states. Log a mismatch warning; do not reject on it. (No rich section structure is required, unlike the detailed-summary validator.)
+
+  **Accepted validation note (D3):** Stage 7 intentionally reuses the existing `BriefSummary` markdown
+  output shape and validator instead of adding a glossary-specific structured validator. In the built
+  implementation, hard rejection is limited to the shared `BriefSummary` validation behavior plus the
+  cheap non-empty/refusal checks; the original prompt-echo-specific hard rejection is accepted as not
+  implemented for this stage, with richer structured glossary validation reserved for a later 7.x pass.
 
 **Authorization (personal scoping):** the glossary is **personal per student**. Every glossary endpoint is scoped to the authenticated student; a request for another student's entry returns **404, not 403** (matching the roadmap's student-resource pattern). One student must never be able to read or practise another's glossary. This must be covered by a test (see the security note under Suggested skills).
 
@@ -371,7 +377,7 @@ As Roadmap v3.1 Stage 7, plus the decisions above:
 4. **Default destination for highlight-saved terms — CONFIRMED:** the **"Unsorted" inbox** folder, movable later.
 5. **Quiz-highlight timing — default in place (changeable):** allow it **when reviewing answers after an attempt**, not mid-attempt (avoids distraction/peeking). Affects 7d.
 6. **Delete semantics — DECIDED (tech lead):** "delete" is a **soft archive** (status → archived; hidden everywhere; row + events preserved). UI may still say "delete."
-7. **OutputValidator language check — DECIDED (tech lead):** **logged soft signal, not a hard reject.** Hard rejections are limited to empty output and prompt-echo.
+7. **OutputValidator language check — DECIDED (tech lead):** **logged soft signal, not a hard reject.** Per D3, Stage 7 reuses the `BriefSummary` markdown validator; the prompt-echo-specific hard rejection from the original validation note is intentionally not implemented in this stage.
 
 ---
 

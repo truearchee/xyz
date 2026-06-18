@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domains.glossary.policy import (
     ENTRY_NOT_FOUND,
+    ENTRY_TYPE_IMMUTABLE,
     FOLDER_NAME_EXISTS,
     FOLDER_NOT_FOUND,
     FOLDER_SYSTEM_IMMUTABLE,
@@ -24,6 +25,7 @@ from app.domains.glossary.policy import (
     conflict,
     not_found,
     require_student,
+    validation_error,
 )
 from app.domains.glossary.save_service import ensure_unsorted_folder, save_term
 from app.domains.glossary.schemas import (
@@ -180,7 +182,7 @@ async def update_entry(
             raise not_found(FOLDER_NOT_FOUND)
         entry.folder_id = payload.folder_id
     if payload.entry_type is not None:
-        entry.entry_type = payload.entry_type
+        raise validation_error(ENTRY_TYPE_IMMUTABLE)
     entry.updated_at = _now()
     await db.commit()
     return GlossaryEntryRead.model_validate(entry)

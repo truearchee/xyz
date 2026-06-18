@@ -18,6 +18,7 @@ SECTION_NOT_FOUND = "GLOSSARY_SECTION_NOT_FOUND"
 
 FOLDER_NAME_EXISTS = "GLOSSARY_FOLDER_NAME_EXISTS"
 FOLDER_SYSTEM_IMMUTABLE = "GLOSSARY_FOLDER_SYSTEM_IMMUTABLE"
+ENTRY_TYPE_IMMUTABLE = "GLOSSARY_ENTRY_TYPE_IMMUTABLE"
 
 
 def require_student(role: str) -> None:
@@ -31,3 +32,7 @@ def not_found(code: str) -> HTTPException:
 
 def conflict(code: str) -> HTTPException:
     return HTTPException(status_code=status.HTTP_409_CONFLICT, detail={"code": code})
+
+
+def validation_error(code: str) -> HTTPException:
+    return HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail={"code": code})

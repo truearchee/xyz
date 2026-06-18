@@ -16,8 +16,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 import app.domains.glossary.save_service as save_service
 from app.domains.glossary.definition_service import generate_glossary_definition_async
-from app.domains.glossary.schemas import ManualEntryRequest, SaveHighlightRequest
-from app.domains.glossary.service import get_entry, save_from_highlight, save_manual
+from app.domains.glossary.schemas import ManualEntryRequest, SaveHighlightRequest, UpdateEntryRequest
+from app.domains.glossary.service import get_entry, save_from_highlight, save_manual, update_entry
 from app.platform.auth.context import CurrentUserContext
 from app.platform.db.models import (
     AIRequestLog,
@@ -200,6 +200,51 @@ async def test_definition_job_generates_and_stamps_provenance(
         assert log.status == "succeeded"
 
 
+async def test_enqueue_failure_marks_failed_and_duplicate_retry_reenqueues_to_completion(
+    db_session: AsyncSession, monkeypatch, _capture_enqueue: list
+):
+    seed = await _seed(db_session)
+    ctx = _ctx(seed.students[0])
+    payload = SaveHighlightRequest(module_section_id=seed.section.id, term="Ribosome")
+
+    def _boom(_cache_row_id):
+        raise RuntimeError("redis down")
+
+    monkeypatch.setattr(save_service, "enqueue_generate_glossary_definition", _boom)
+    failed = await save_from_highlight(db_session, current_user=ctx, payload=payload)
+    assert failed.duplicate is False
+    assert failed.entry.definition_status == "failed"
+    assert _capture_enqueue == []
+
+    cache = (
+        await db_session.execute(select(GlossaryDefinitionCache))
+    ).scalar_one()
+    assert cache.status == "failed"
+
+    monkeypatch.setattr(
+        save_service,
+        "enqueue_generate_glossary_definition",
+        lambda cache_row_id: _capture_enqueue.append(cache_row_id),
+    )
+    retry = await save_from_highlight(db_session, current_user=ctx, payload=payload)
+    assert retry.duplicate is True
+    assert retry.entry.id == failed.entry.id
+    assert retry.entry.definition_status == "pending"
+    assert _capture_enqueue == [cache.id]
+
+    factory = _factory(db_session)
+    await generate_glossary_definition_async(
+        _capture_enqueue[-1], gateway=_gateway(factory), session_factory=factory
+    )
+
+    async with factory() as s:
+        entry = await s.get(GlossaryEntry, failed.entry.id)
+        cache_after = await s.get(GlossaryDefinitionCache, cache.id)
+        assert entry.definition_status == "generated"
+        assert entry.short_definition
+        assert cache_after.status == "generated"
+
+
 # ── dedup ──
 async def test_duplicate_save_attaches_source_no_second_entry_no_event(
     db_session: AsyncSession, _capture_enqueue: list
@@ -233,6 +278,32 @@ async def test_duplicate_save_attaches_source_no_second_entry_no_event(
         )
     )
     assert events == 1  # only the first save emitted an event
+
+
+async def test_update_entry_rejects_entry_type_change(db_session: AsyncSession):
+    seed = await _seed(db_session)
+    ctx = _ctx(seed.students[0])
+    created = await save_manual(
+        db_session,
+        current_user=ctx,
+        payload=ManualEntryRequest(subject_id=seed.module.id, term="Cell wall"),
+    )
+    entry_before = await db_session.get(GlossaryEntry, created.entry.id)
+    original_cache_key = entry_before.cache_key
+
+    with pytest.raises(HTTPException) as exc:
+        await update_entry(
+            db_session,
+            current_user=ctx,
+            entry_id=created.entry.id,
+            payload=UpdateEntryRequest(entry_type="formula"),
+        )
+
+    assert exc.value.status_code == 422
+    assert exc.value.detail == {"code": "GLOSSARY_ENTRY_TYPE_IMMUTABLE"}
+    entry_after = await db_session.get(GlossaryEntry, created.entry.id)
+    assert entry_after.entry_type == "term"
+    assert entry_after.cache_key == original_cache_key
 
 
 # ── cache hit (no model call) ──

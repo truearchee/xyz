@@ -14,9 +14,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
+import logging
 from uuid import UUID
 
-from sqlalchemy import select, text
+from sqlalchemy import select, text, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from uuid6 import uuid7
@@ -35,6 +36,8 @@ from app.platform.db.models import (
 )
 from app.platform.events import GLOSSARY_TERM_SAVED, EventRecorder
 from app.workers.queues import enqueue_generate_glossary_definition
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -146,7 +149,8 @@ async def save_term(
 
     if inserted_entry_id is None:
         # Duplicate: the student already has this term in this subject. Attach a NEW source reference
-        # to the existing entry; create no second entry, emit no event (already saved).
+        # to the existing entry; create no second entry, emit no event (already saved). If a previous
+        # enqueue failed, this duplicate save is the user's retry and re-enqueues the failed cache row.
         existing = (
             await db.execute(
                 select(GlossaryEntry).where(
@@ -167,7 +171,10 @@ async def save_term(
                 selected_text=selected_text,
             )
         )
+        cache_row_id_to_enqueue = await _recover_failed_definition(db, cache_key=existing.cache_key)
         await db.commit()
+        if cache_row_id_to_enqueue is not None:
+            await _enqueue_definition_after_commit(db, cache_row_id_to_enqueue)
         return SaveOutcome(entry_id=existing.id, duplicate=True)
 
     # New entry. Record its source reference.
@@ -209,9 +216,72 @@ async def save_term(
 
     # --- enqueue AFTER commit (winner only) ---
     if cache_row_id_to_enqueue is not None:
-        enqueue_generate_glossary_definition(cache_row_id_to_enqueue)
+        await _enqueue_definition_after_commit(db, cache_row_id_to_enqueue)
 
     return SaveOutcome(entry_id=entry_id, duplicate=False)
+
+
+async def _enqueue_definition_after_commit(db: AsyncSession, cache_row_id: UUID) -> None:
+    """Queue the committed definition job, compensating to a retryable failed state on queue errors."""
+    try:
+        enqueue_generate_glossary_definition(cache_row_id)
+    except Exception:
+        logger.exception("glossary definition enqueue failed; compensating to failed")
+        await _mark_definition_enqueue_failed(db, cache_row_id=cache_row_id)
+
+
+async def _mark_definition_enqueue_failed(db: AsyncSession, *, cache_row_id: UUID) -> None:
+    row = (
+        await db.execute(
+            select(GlossaryDefinitionCache)
+            .where(GlossaryDefinitionCache.id == cache_row_id)
+            .with_for_update()
+        )
+    ).scalar_one_or_none()
+    if row is None or row.status == "generated":
+        await db.commit()
+        return
+    now = _now()
+    row.status = "failed"
+    row.updated_at = now
+    await db.execute(
+        update(GlossaryEntry)
+        .where(
+            GlossaryEntry.cache_key == row.cache_key,
+            GlossaryEntry.status == "active",
+            GlossaryEntry.definition_status == "pending",
+        )
+        .values(definition_status="failed", updated_at=now)
+    )
+    await db.commit()
+
+
+async def _recover_failed_definition(db: AsyncSession, *, cache_key: str) -> UUID | None:
+    row = (
+        await db.execute(
+            select(GlossaryDefinitionCache)
+            .where(
+                GlossaryDefinitionCache.cache_key == cache_key,
+                GlossaryDefinitionCache.prompt_version == GLOSSARY_DEFINITION_PROMPT_VERSION,
+            )
+            .with_for_update()
+        )
+    ).scalar_one_or_none()
+    if row is None or row.status != "failed":
+        return None
+    now = _now()
+    row.status = "pending"
+    row.updated_at = now
+    await db.execute(
+        update(GlossaryEntry)
+        .where(
+            GlossaryEntry.cache_key == row.cache_key,
+            GlossaryEntry.status == "active",
+            GlossaryEntry.definition_status == "failed",
+        )
+        .values(definition_status="pending", updated_at=now)
+    )
+    return row.id
 
 
 async def _resolve_definition(

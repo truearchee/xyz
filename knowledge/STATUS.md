@@ -1,6 +1,6 @@
 # Status
 
-_Last updated: 2026-06-17 — **Stage 7 core (7a–7c: glossary foundation + flashcards + multiple-choice) FULLY VERIFIED.** Branch `stage-7` (off main `a8cea6e`; migrations `0030`+`0031`). 7d quiz-highlight remains as the next unblocked sub-stage now that Stage 6 is closed._
+_Last updated: 2026-06-18 — **Stage 7 core (7a–7c: glossary foundation + flashcards + multiple-choice) remains implemented.** Session 7e review fixes are applied locally and backend tests are green, but the required full active E2E rerun is not green yet because two inherited admin module-row refresh assertions fail. Branch `stage-7` (off main `a8cea6e`; migrations `0030`+`0031`). 7d quiz-highlight remains as the next unblocked sub-stage now that Stage 6 is closed._
 
 Stage 7a delivers the personal glossary foundation: save terms (highlight-from-summary + manual add),
 **async AI definitions in the student's preferred language through the EXISTING `platform/llm` gateway**
@@ -39,6 +39,23 @@ PLAYWRIGHT_BASE_URL=http://localhost:3001 E2E_RUN_ID=e2e-1781717291-full \
 # 14 passed (3.2m)
 ```
 
+## Verification (Session 7e review fixes)
+```bash
+docker compose run --rm -v "$PWD/backend:/app" -T backend pytest -q \
+  tests/test_glossary_save.py tests/test_glossary_practice.py tests/test_glossary_unit.py
+# 20 passed in 3.37s
+
+docker compose run --rm -v "$PWD/backend:/app" -T backend pytest -q
+# 500 passed, 138 warnings in 62.31s
+
+PLAYWRIGHT_BASE_URL=http://localhost:3001 E2E_RUN_ID=e2e-1781766005-stage7e5 \
+  npx playwright test --workers=1
+# 12 passed, 2 failed (4.3.5c admin module row refresh; 5.5e admin module row refresh)
+```
+
+Session 7e is **not stamped accepted** because rule-14 full-suite green is still blocked. The Stage 5
+quiz and Stage 7 glossary browser specs passed in the latest full-suite attempts.
+
 ## NOT done — remaining for Stage 7
 - **7d** quiz-highlight. It is no longer blocked on Stage 6 coordination; Stage 6 is closed, so this is
   the next unblocked sub-stage.
@@ -51,6 +68,7 @@ PLAYWRIGHT_BASE_URL=http://localhost:3001 E2E_RUN_ID=e2e-1781717291-full \
 
 ## Stage 7 documents
 - Stage spec: [[specs/stage-07/7-glossary]]
+- 7e review-fixes spec/plan/report: [[specs/stage-07/7e-review-fixes]], [[plans/stage-07/7e-review-fixes]], [[steps/stage-07/7e-review-fixes]]
 - 7a report: [[steps/stage-07/7a-glossary-foundation]]
 - 7b/7c report: [[steps/stage-07/7bc-glossary-practice]]
 - Findings: [[steps/findings-stage-07]]
