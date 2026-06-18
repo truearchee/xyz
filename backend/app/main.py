@@ -9,6 +9,7 @@ from app.api.routers.glossary import router as glossary_router
 from app.api.routers.health import router as health_router
 from app.api.routers.me import router as me_router
 from app.api.routers.modules import router as modules_router
+from app.api.routers.progress import router as progress_router
 from app.api.routers.quiz import router as quiz_router
 from app.api.routers.student_summaries import router as student_summaries_router
 from app.api.routers.transcripts import router as transcripts_router
@@ -35,6 +36,7 @@ def create_app() -> FastAPI:
     app.include_router(assessments_router)
     app.include_router(glossary_router)
     app.include_router(assistant_router)
+    app.include_router(progress_router)
     return app
 
 

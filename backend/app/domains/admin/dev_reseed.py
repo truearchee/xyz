@@ -35,7 +35,7 @@ from app.platform.storage.base import StorageProvider
 from app.platform.storage.keys import generate_section_asset_storage_key
 
 
-EXPECTED_ALEMBIC_VERSION = "0033"  # Stage 8.2 advanced the head (0032 assistant → 0033 message context_snapshot)
+EXPECTED_ALEMBIC_VERSION = "0039"  # Stage 9 progress migrations advance the linear head to 0039.
 REFERENCE_COURSE_START_DATE = date(2026, 5, 11)
 REFERENCE_COURSE_END_DATE = date(2026, 6, 26)
 REFERENCE_WEEK_START_DAY = "monday"

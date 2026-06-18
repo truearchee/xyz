@@ -2,7 +2,7 @@
 type: architecture
 stage: 02
 created: 2026-05-29
-updated: 2026-06-17
+updated: 2026-06-18
 related-session: knowledge/specs/stage-02/2.1-db-spine.md
 ---
 
@@ -29,6 +29,9 @@ related-session: knowledge/specs/stage-02/2.1-db-spine.md
 - Decision: [[decisions/adr-041-section-metadata-and-week-resolver]]
 - Decision: [[decisions/adr-042-lab-attachments]]
 - Decision: [[decisions/adr-043-dev-reseed]]
+- Spec: [[specs/stage-09/9-my-progress-dashboard]]
+- Report: [[steps/stage-09/9-my-progress-dashboard]]
+- Decision: [[decisions/adr-052-single-tenant-mvp]]
 - Spec: [[specs/stage-04/4.1-transcript-upload]]
 - Plan: [[plans/stage-04/4.1-transcript-upload]]
 - Report: [[steps/stage-04/4.1-transcript-upload]]
@@ -69,6 +72,13 @@ The backend now has a SQLAlchemy declarative model package under `backend/app/pl
 - `ingestion_jobs` tracks idempotent background ingestion work. Session 4.3 wires `job_type='chunk'` after parse and adds `result_metadata jsonb` for structured worker output counts. Session 4.5a uses the pre-seeded `job_type` values `generate_brief_summary` / `generate_detailed_summary` and adds a nullable `failure_category` column (`provider_transient | rate_limited | invalid_output | invalid_input | failed`).
 - `ai_request_logs` (Session 4.5a) records one row per `LLMGateway` completion attempt (gateway-attempt log, not provider-call log). Holds prompt identity + hashes + token estimate/usage + status; provider transport fields are nullable because an attempt may terminate before transport (e.g. `invalid_input`). Stores hashes only — never raw transcript or prompt text.
 - `generated_lecture_summaries` (Session 4.5a) holds **success artifacts only** — a brief or detailed-study summary as `content_json jsonb` plus the full provenance set and an `ai_request_log_id` FK (NOT NULL). There is no `status` column; failures live in `ingestion_jobs` + `ai_request_logs`.
+- `course_grade_schemes`, `grade_boundaries`, `grade_components`, `student_grade_records`, and
+  `student_target_grade_goals` (Stage 9) store module grade schemes, letter thresholds, weighted
+  components, per-student component scores, and the one active target-grade goal. Weights are decimal
+  fractions that sum to `1.0000`; scores are `0-100`; forecast rows are not persisted.
+- `student_progress_snapshots` and `student_topic_mastery_snapshots` (Stage 9) store week-scoped
+  standing snapshots and lecture/lab section-scoped mastery read models for the progress dashboard.
+  These are seeded/read-model tables, not event-source tables.
 
 ## Section asset schema notes
 - `section_assets.storage_key` is a private object-storage path and is unique.
@@ -123,6 +133,16 @@ The backend now has a SQLAlchemy declarative model package under `backend/app/pl
 - `generated_lecture_summaries` has a six-column unique constraint `(transcript_id, summary_type, source_transcript_checksum, prompt_version, prompt_content_hash, input_hash)` so a new prompt version produces a distinct row instead of overwriting history. `summary_type` and `backend_used` use `text + CHECK`; `ai_request_log_id` references `ai_request_logs(id)` (no cascade, to preserve provenance).
 - `ingestion_jobs` gains a second one-active partial-unique index, `ingestion_jobs_one_active_summary_per_transcript`, on `(transcript_id, job_type)` where `job_type IN ('generate_brief_summary','generate_detailed_summary') AND status IN ('queued','running')` — the same pattern as the embed one-active index (migration 0007), now keyed per summary job type so a brief and a detailed job can both be active.
 - Summary job idempotency key = `{transcript_id}:{job_type}:{checksum}` (matching the parse/chunk/embed convention). Migration `0008` creates `ai_request_logs` and `generated_lecture_summaries`, adds `ingestion_jobs.failure_category`, and adds the summary one-active index.
+
+## Progress schema notes (Stage 9)
+- Stage 9 migrations use `0038` and `0039` in the assigned `0038-0043` block. No `0040` table was
+  needed because benchmark suppression config lives on `course_grade_schemes`.
+- ADR-052 records the single-tenant MVP decision; Stage 9 tables intentionally carry no
+  `organization_id`.
+- `student_target_grade_goals` enforces a partial unique index for one active target-grade row per
+  `(student_id, module_id)`. Updating a target changes that row and recomputes the forecast at read time.
+- The benchmark surface reads aggregate quiz average and cohort size only from completed
+  `quiz_attempts`; individual rows and per-student standings are not exposed by DTOs.
 
 ## ID strategy
 All primary keys are PostgreSQL `UUID` columns with no database-side default. Application models generate UUIDv7 values through `uuid6.uuid7`, keeping IDs time-ordered while avoiding `gen_random_uuid()` defaults.

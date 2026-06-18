@@ -28,6 +28,9 @@ import {
   OpenAPI,
   type PaginatedResponse_AssessmentScopeResponse_,
   type PaginatedResponse_MistakeBankItem_,
+  type ProgressDashboardRead,
+  type ProgressModuleDetail,
+  ProgressService,
   type QuizAttemptForStudent,
   type QuizAttemptResult,
   type QuizAttemptsSummary,
@@ -65,6 +68,7 @@ import {
   type SaveHighlightRequest,
   type SaveResponse,
   type StartPracticeRequest,
+  type TargetGradeRequest,
   type UpdateEntryRequest,
   type UpdatePreferencesRequest,
 } from './index';
@@ -441,6 +445,19 @@ export const api = {
     get: (moduleId: string) =>
       withAuthRecovery(() => ModulesService.getModuleModulesModuleIdGet(moduleId)),
     list: () => withAuthRecovery(() => ModulesService.listModulesModulesGet()),
+  },
+  progress: {
+    getDashboard: (): Promise<ProgressDashboardRead> =>
+      withAuthRecovery(() => ProgressService.getStudentProgressDashboard()),
+    getModule: (moduleId: string): Promise<ProgressModuleDetail> =>
+      withAuthRecovery(() => ProgressService.getStudentModuleProgress(moduleId)),
+    setTargetGrade: (
+      moduleId: string,
+      requestBody: TargetGradeRequest,
+    ): Promise<ProgressModuleDetail> =>
+      withAuthRecovery(() =>
+        ProgressService.setStudentTargetGrade(moduleId, requestBody),
+      ),
   },
   assessments: {
     create: (

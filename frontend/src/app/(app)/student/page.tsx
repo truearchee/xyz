@@ -10,6 +10,9 @@ export default function StudentPage() {
         <Link href="/student/glossary" data-testid="nav-glossary">
           Glossary
         </Link>
+        <Link href="/student/progress" data-testid="nav-progress">
+          My Progress
+        </Link>
         <Link href="/student/settings" data-testid="nav-settings">
           Settings
         </Link>

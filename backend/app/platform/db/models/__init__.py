@@ -5,8 +5,11 @@ from app.platform.db.models.assistant_conversation import AssistantConversation
 from app.platform.db.models.assistant_message import AssistantMessage
 from app.platform.db.models.base import Base
 from app.platform.db.models.course_membership import CourseMembership
+from app.platform.db.models.course_grade_scheme import CourseGradeScheme
 from app.platform.db.models.course_module import CourseModule
 from app.platform.db.models.generated_lecture_summary import GeneratedLectureSummary
+from app.platform.db.models.grade_boundary import GradeBoundary
+from app.platform.db.models.grade_component import GradeComponent
 from app.platform.db.models.glossary_definition_cache import GlossaryDefinitionCache
 from app.platform.db.models.glossary_entry import GlossaryEntry
 from app.platform.db.models.glossary_folder import GlossaryFolder
@@ -26,6 +29,10 @@ from app.platform.db.models.section_asset import SectionAsset
 from app.platform.db.models.section_question_pool import SectionQuestionPool
 from app.platform.db.models.student_activity_event import StudentActivityEvent
 from app.platform.db.models.student_answer import StudentAnswer
+from app.platform.db.models.student_grade_record import StudentGradeRecord
+from app.platform.db.models.student_progress_snapshot import StudentProgressSnapshot
+from app.platform.db.models.student_target_grade_goal import StudentTargetGradeGoal
+from app.platform.db.models.student_topic_mastery_snapshot import StudentTopicMasterySnapshot
 from app.platform.db.models.transcript import Transcript
 from app.platform.db.models.transcript_chunk import TranscriptChunk
 from app.platform.db.models.transcript_segment import TranscriptSegment
@@ -40,8 +47,11 @@ __all__ = [
     "AssistantMessage",
     "Base",
     "CourseMembership",
+    "CourseGradeScheme",
     "CourseModule",
     "GeneratedLectureSummary",
+    "GradeBoundary",
+    "GradeComponent",
     "GlossaryDefinitionCache",
     "GlossaryEntry",
     "GlossaryFolder",
@@ -61,6 +71,10 @@ __all__ = [
     "SectionQuestionPool",
     "StudentActivityEvent",
     "StudentAnswer",
+    "StudentGradeRecord",
+    "StudentProgressSnapshot",
+    "StudentTargetGradeGoal",
+    "StudentTopicMasterySnapshot",
     "Transcript",
     "TranscriptChunk",
     "TranscriptSegment",
