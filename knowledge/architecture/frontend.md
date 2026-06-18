@@ -2,7 +2,7 @@
 type: architecture
 stage: 04
 created: 2026-06-05
-updated: 2026-06-17
+updated: 2026-06-18
 related-session: knowledge/specs/stage-04/4.3.5c-stage2-admin-ui-backfill.md
 ---
 
@@ -23,15 +23,20 @@ related-session: knowledge/specs/stage-04/4.3.5c-stage2-admin-ui-backfill.md
 - Architecture: [[architecture/auth-current-user-context]]
 - Spec: [[specs/stage-05/5.5e-ui-browser-gate]]
 - Report: [[steps/stage-05/5.5e-ui-browser-gate]]
+- Spec: [[specs/stage-09/9-my-progress-dashboard]]
+- Report: [[steps/stage-09/9-my-progress-dashboard]]
 
 ## Route structure
 The root `frontend/src/app/layout.tsx` owns global providers only. The public auth page lives under `(auth)/login` and renders without the AppShell. Protected app pages live under `(app)` and are wrapped by `ProtectedAppLayout` plus `AppShell`.
 
-Route groups do not change public URLs. Current public app routes are `/login`, `/admin`, `/lecturer`, `/student`, and `/unauthorized`.
+Route groups do not change public URLs. Current public app routes are `/login`, `/admin`, `/lecturer`, `/student`, `/student/progress`, and `/unauthorized`.
 
 Session 4.3.5d Checkpoint A adds the lecturer module detail route `/lecturer/modules/[moduleId]`. It is a protected lecturer route under `(app)` and renders `frontend/src/features/content/lecturer/LecturerModuleDetail.tsx`.
 
 Session 4.3.5d Checkpoint D adds the student module detail route `/student/modules/[moduleId]`. It is a protected student route under `(app)` and renders `frontend/src/features/content/student/StudentModuleDetail.tsx`.
+
+Stage 9 adds the student progress route `/student/progress`. It is a protected student route under
+`(app)` and renders `frontend/src/features/progress/ProgressDashboard.tsx`.
 
 ## Session state
 `SessionProvider` is the browser source for frontend auth state. It reads Supabase browser session state, calls backend `GET /me`, and exposes app context from the backend response. Role routing and guards use the `/me` role only; frontend code must not decode JWT claims or read Supabase metadata for product role.
@@ -167,6 +172,19 @@ Session 5.5e extends the existing thin admin/lecturer/student surfaces for sched
 
 Section add/delete/reorder remains absent from the UI. The 5.5e browser gate asserts those controls are
 not present and backend mutation routes are absent/rejected.
+
+## Stage 9 My Progress UI
+Stage 9 adds a thin current-student dashboard at `/student/progress`:
+
+- `frontend/src/app/(app)/student/page.tsx` links to My Progress from the student home.
+- `frontend/src/app/(app)/student/progress/page.tsx` mounts `ProgressDashboard`.
+- `frontend/src/features/progress/ProgressDashboard.tsx` calls `api.progress.getDashboard`,
+  `api.progress.getModule`, and `api.progress.setTargetGrade` through the generated client wrapper.
+- The dashboard renders module cards, a target-grade select with auto-save, the six deterministic
+  forecast labels, an expandable calculation explanation, text fallback for trend data, topic mastery
+  rows, privacy-safe benchmark copy, and a non-functional gamification placeholder.
+- It follows the current inline-style idiom because the Stage 4.9 Tailwind/shared component system is
+  not present in this checkout.
 
 ## E2E bridge and run teardown
 `NEXT_PUBLIC_E2E_TEST_HOOKS=true` enables a browser-only `window.__xyzE2E` bridge for Playwright. It exposes Supabase session helpers, wrapper-backed `/me` and `/admin/users` calls with serializable result envelopes, and a single-use forced bearer-token override for deterministic 401 testing. The bridge is not registered unless the flag is exactly `true`.

@@ -369,7 +369,12 @@ async def list_users(
     offset: int,
 ) -> list[AppUser]:
     result = await db.scalars(
-        select(AppUser).order_by(AppUser.created_at, AppUser.id).limit(limit).offset(offset)
+        select(AppUser)
+        # Match module list behavior: newly created users must remain visible
+        # on page 1 even when interrupted E2E runs have left many rows behind.
+        .order_by(AppUser.created_at.desc(), AppUser.id.desc())
+        .limit(limit)
+        .offset(offset)
     )
     return list(result.all())
 

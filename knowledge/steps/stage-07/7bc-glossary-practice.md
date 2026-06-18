@@ -91,3 +91,6 @@ idempotent complete single event; practice personal-scoping 404).
 - 2026-06-17 21:40 — Stage 7 core gate closed: real-provider smoke passed with model echo
   `MBZUAI-IFM/K2-Think-v2` (route `cerebras`, `finish_reason='length'` follow-up opened), Stage 7
   browser gate passed, and full active E2E suite passed 14/14.
+- 2026-06-18 — [Session 9] added Stage 9 tables to backend test truncation and advanced the dev reseed
+  Alembic head pin to `0039`; glossary practice behavior unchanged. See
+  [[steps/stage-09/9-my-progress-dashboard]].
