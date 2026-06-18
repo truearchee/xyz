@@ -5,7 +5,7 @@ session: "5c"
 slug: answer-feedback-scoring-retake
 status: complete
 created: 2026-06-16
-updated: 2026-06-16
+updated: 2026-06-17
 spec: knowledge/specs/stage-05/5c-answer-feedback-scoring-retake.md
 plan: knowledge/plans/stage-05/5c-answer-feedback-scoring-retake.md
 ---
@@ -73,3 +73,6 @@ Throwaway DBs dropped; `xyz_lms`/`xyz_lms_test` untouched.
 
 ## Change history
 - 2026-06-16 — [Session 5c] initial report. Student quiz HTTP surface landed + verified (437 passed); OpenAPI client regenerated (additive, tsc-clean).
+- 2026-06-17 — [Session 6c] extended `api/routers/quiz.py`, `domains/quiz/service.py`, `schemas.py`, and
+  `platform/query/quiz_read.py` with mistakes-bank list/start, current-student bank pagination, and retake
+  prefix progress handling; Stage 5 post-class behavior remains covered by the full backend suite.

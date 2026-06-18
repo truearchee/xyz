@@ -20,6 +20,8 @@ from app.domains.quiz.generation_service import (
     generate_post_class_quiz_async,
     start_quiz_attempt,
 )
+from app.domains.quiz.assembly_service import try_assemble_attempt_async
+from app.domains.quiz.pool_service import generate_section_pool_async
 from app.platform.db.models import (
     AIRequestLog,
     AnswerOption,
@@ -29,6 +31,7 @@ from app.platform.db.models import (
     GeneratedLectureSummary,
     MistakeRecord,
     ModuleSection,
+    SectionQuestionPool,
     QuizAttempt,
     QuizQuestion,
     StudentActivityEvent,
@@ -304,7 +307,8 @@ async def test_s7_unpublish_hides_then_republish_resumes(auth_client, db_session
 async def test_start_endpoint_resume_and_start_over(auth_client, db_session, jwt_factory, mock_jwks_client, monkeypatch):
     seed = await _seed(db_session)
     # The start endpoint enqueues; no-op the enqueue so tests stay hermetic (no worker).
-    monkeypatch.setattr("app.domains.quiz.generation_service.enqueue_generate_post_class_quiz", lambda _id: None)
+    monkeypatch.setattr("app.domains.quiz.pool_service.enqueue_generate_section_pool", lambda _id: None)
+    monkeypatch.setattr("app.domains.quiz.assembly_service.enqueue_try_assemble_attempt", lambda _id: None)
     h = _headers(seed.student, jwt_factory)
     first = await auth_client.post(f"/student/sections/{seed.section.id}/quiz/start", headers=h)
     assert first.status_code == 200 and first.json()["status"] == "generating"
@@ -315,7 +319,11 @@ async def test_start_endpoint_resume_and_start_over(auth_client, db_session, jwt
 
     # Drive the generating attempt to completed, then Start Over → a NEW attempt.
     factory = _factory(db_session)
-    await generate_post_class_quiz_async(attempt_id, gateway=_gateway(factory), session_factory=factory)
+    pool_id = await db_session.scalar(
+        select(SectionQuestionPool.id).where(SectionQuestionPool.module_section_id == seed.section.id)
+    )
+    await generate_section_pool_async(pool_id, gateway=_gateway(factory), session_factory=factory)
+    await try_assemble_attempt_async(attempt_id, session_factory=factory)
     await _answer_all(auth_client, h, attempt_id, db_session, all_correct=False)
     assert (await auth_client.post(f"/student/quiz/attempts/{attempt_id}/complete", headers=h)).status_code == 200
     over = await auth_client.post(f"/student/sections/{seed.section.id}/quiz/start", headers=h)

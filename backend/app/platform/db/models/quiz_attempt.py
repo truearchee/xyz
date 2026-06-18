@@ -104,7 +104,7 @@ class QuizAttempt(Base):
         PostgresUUID(as_uuid=True),
         ForeignKey("ai_request_logs.id", ondelete="SET NULL"),
     )
-    # RQ job id ("quiz-generate:{attemptId}"); a string identity, not a DB row — no FK.
+    # RQ job id ("quiz-generate-{attemptId}"); a string identity, not a DB row — no FK.
     generation_job_id: Mapped[str | None] = mapped_column(Text)
     generation_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     generation_completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

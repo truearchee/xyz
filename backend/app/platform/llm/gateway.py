@@ -37,7 +37,7 @@ from app.platform.llm.models.prompt import (
     PromptKey,
     Usage,
 )
-from app.platform.llm.models.quiz import PostClassQuiz
+from app.platform.llm.models.quiz import GeneratedQuizPool, PostClassQuiz
 from app.platform.llm.models.summary import BriefSummary, DetailedSummary
 from app.platform.llm.provider import LLMProvider, get_provider
 from app.platform.llm.registry import PromptRegistry, get_prompt_registry
@@ -59,7 +59,7 @@ class ContextRefs:
 
 
 class CompletionResult(TypedDict):
-    parsed: BriefSummary | DetailedSummary | PostClassQuiz
+    parsed: BriefSummary | DetailedSummary | PostClassQuiz | GeneratedQuizPool
     model_id_echoed: str
     usage: Usage
     backend_used: Backend
@@ -99,6 +99,7 @@ class LLMGateway:
         sleep: Callable[[float], Awaitable[None]] | None = None,
         session_factory: async_sessionmaker[AsyncSession] | None = None,
     ) -> None:
+        self._provider_was_injected = provider is not None
         self._provider = provider or get_provider()
         self._registry = registry or get_prompt_registry()
         self._limiter = limiter or get_rate_limiter()
@@ -119,7 +120,10 @@ class LLMGateway:
         self,
         *,
         prompt_key: PromptKey,
-        output_schema: type[BriefSummary] | type[DetailedSummary] | type[PostClassQuiz],
+        output_schema: type[BriefSummary]
+        | type[DetailedSummary]
+        | type[PostClassQuiz]
+        | type[GeneratedQuizPool],
         context_refs: ContextRefs,
         priority: Priority,
         feature: GatewayFeature,
@@ -302,6 +306,12 @@ class LLMGateway:
         (``BackoffPolicy``) so the two sources together cannot exceed the per-attempt cap. On
         exhaustion raises terminal ``RateLimited`` for the outer handler. Returns ``(lease,
         backoff_count)`` so the caller keeps an accurate in-row count across both sources."""
+        if (
+            not self._provider_was_injected
+            and getattr(self._provider, "is_deterministic_test_provider", False)
+        ):
+            return _NoopLimiterLease(), backoff_count
+
         while True:
             try:
                 lease = await self._limiter.acquire(
@@ -340,3 +350,8 @@ class LLMGateway:
         priority: Priority,
     ) -> Iterator[str]:
         raise NotImplementedError("LLM streaming transport lands in Stage 8.3")
+
+
+class _NoopLimiterLease:
+    async def release(self) -> None:
+        return None

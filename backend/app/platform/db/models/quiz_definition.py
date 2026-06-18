@@ -41,6 +41,17 @@ class QuizDefinition(Base):
             unique=True,
             postgresql_where=text("quiz_mode = 'post_class'"),
         ),
+        # Stage 6b — shared-definition dedup for the MULTI-SECTION modes (post_class keeps the index
+        # above). scope_key = recap: sha256(sorted eligible section ids); exam_prep: str(assessmentScopeId);
+        # mistakes_bank (6c): str(moduleId). Identical scope ⇒ ONE shared definition across students.
+        Index(
+            "uq_quiz_definitions_scope",
+            "module_id",
+            "quiz_mode",
+            "scope_key",
+            unique=True,
+            postgresql_where=text("quiz_mode IN ('recap', 'exam_prep', 'mistakes_bank')"),
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(
@@ -48,10 +59,11 @@ class QuizDefinition(Base):
         primary_key=True,
         default=uuid7,
     )
-    module_section_id: Mapped[UUID] = mapped_column(
+    # Stage 6b: NULLABLE — multi-section modes (recap/exam_prep/mistakes_bank) carry scope in source_scope
+    # + scope_key, not a single section. post_class rows still set it (and keep their 0015 partial-unique).
+    module_section_id: Mapped[UUID | None] = mapped_column(
         PostgresUUID(as_uuid=True),
         ForeignKey("module_sections.id", ondelete="CASCADE"),
-        nullable=False,
     )
     module_id: Mapped[UUID] = mapped_column(
         PostgresUUID(as_uuid=True),
@@ -59,6 +71,10 @@ class QuizDefinition(Base):
         nullable=False,
     )
     quiz_mode: Mapped[str] = mapped_column(Text, nullable=False)
+    # Stage 6b multi-section scope: the canonical dedup key (see uq_quiz_definitions_scope) + the exam-prep
+    # scope link. NULL for post_class. FK on assessment_scope_id is added in migration 0025; bare UUID here.
+    scope_key: Mapped[str | None] = mapped_column(Text)
+    assessment_scope_id: Mapped[UUID | None] = mapped_column(PostgresUUID(as_uuid=True))
     question_policy: Mapped[dict] = mapped_column(
         JSONB,
         nullable=False,

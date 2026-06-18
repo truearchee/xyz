@@ -11,13 +11,14 @@ from decimal import Decimal
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.platform.db.models import (
     AnswerOption,
     CourseMembership,
     CourseModule,
+    MistakeRecord,
     ModuleSection,
     QuizAttempt,
     QuizDefinition,
@@ -36,11 +37,16 @@ class VisibleAttempt:
     quiz_definition_id: UUID
     quiz_mode: str
     module_id: UUID
-    module_section_id: UUID
-    section_type: str
+    # Stage 6b: NULL for MULTI-SECTION (recap/exam_prep) attempts; set for single-section (post_class).
+    module_section_id: UUID | None
+    section_type: str | None
+    # The definition's scope (e.g. {"sectionIds": [...]}) — the source of multi-section event metadata (6c).
+    source_scope: dict
     status: str
     attempt_number: int
     total_questions: int | None
+    new_question_count: int | None
+    mistake_review_question_count: int | None
     correct_count: int | None
     incorrect_count: int | None
     score_percentage: Decimal | None
@@ -66,25 +72,38 @@ async def get_visible_attempt(
                 QuizAttempt.status,
                 QuizAttempt.attempt_number,
                 QuizAttempt.total_questions,
+                QuizAttempt.new_question_count,
+                QuizAttempt.mistake_review_question_count,
                 QuizAttempt.correct_count,
                 QuizAttempt.incorrect_count,
                 QuizAttempt.score_percentage,
                 QuizAttempt.completed_at,
+                QuizDefinition.source_scope,
             )
             .join(QuizDefinition, QuizDefinition.id == QuizAttempt.quiz_definition_id)
-            .join(ModuleSection, ModuleSection.id == QuizDefinition.module_section_id)
-            .join(CourseModule, CourseModule.id == ModuleSection.course_module_id)
+            # Stage 6b: module via the DEFINITION (works when module_section_id IS NULL for multi-section);
+            # the section is a LEFT JOIN so a pooled attempt still resolves.
+            .join(CourseModule, CourseModule.id == QuizDefinition.module_id)
             .join(CourseMembership, CourseMembership.module_id == CourseModule.id)
+            .outerjoin(ModuleSection, ModuleSection.id == QuizDefinition.module_section_id)
             .where(
                 QuizAttempt.id == attempt_id,
                 QuizAttempt.student_id == student_id,
-                ModuleSection.publish_status == "published",
-                ModuleSection.status == "active",
-                ModuleSection.type.in_(QUIZ_SECTION_TYPES),
                 CourseModule.is_active.is_(True),
                 CourseMembership.user_id == student_id,
                 CourseMembership.role == "student",
                 CourseMembership.status == "active",
+                # Single-section (post_class) keeps the S7 published+active+lecture/lab gate; multi-section
+                # (module_section_id IS NULL) is module-membership only — content is snapshot-frozen at
+                # assembly and the sampling-time filter already enforced publish/eligibility per section.
+                or_(
+                    QuizDefinition.module_section_id.is_(None),
+                    and_(
+                        ModuleSection.publish_status == "published",
+                        ModuleSection.status == "active",
+                        ModuleSection.type.in_(QUIZ_SECTION_TYPES),
+                    ),
+                ),
             )
         )
     ).one_or_none()
@@ -101,10 +120,13 @@ async def get_visible_attempt(
         status=row[7],
         attempt_number=row[8],
         total_questions=row[9],
-        correct_count=row[10],
-        incorrect_count=row[11],
-        score_percentage=row[12],
-        completed_at=row[13],
+        new_question_count=row[10],
+        mistake_review_question_count=row[11],
+        correct_count=row[12],
+        incorrect_count=row[13],
+        score_percentage=row[14],
+        completed_at=row[15],
+        source_scope=row[16] or {},
     )
 
 
@@ -181,3 +203,45 @@ async def get_attempts_aggregate(
         )
     ).one()
     return AttemptsAggregate(attempt_count=int(row[0] or 0), best_score_percentage=row[1])
+
+
+async def get_mistake_bank_page(
+    db: AsyncSession,
+    *,
+    student_id: UUID,
+    module_id: UUID,
+    limit: int,
+    offset: int,
+) -> tuple[list[MistakeRecord], int]:
+    """Current-student-only mistakes for one module. This is the bank's authorization core: callers never
+    supply mistake ids, and no row outside ``student_id`` can enter the response or assembled attempt."""
+    membership = await db.scalar(
+        select(func.count())
+        .select_from(CourseMembership)
+        .join(CourseModule, CourseMembership.module_id == CourseModule.id)
+        .where(
+            CourseMembership.user_id == student_id,
+            CourseMembership.module_id == module_id,
+            CourseMembership.role == "student",
+            CourseMembership.status == "active",
+            CourseModule.is_active.is_(True),
+        )
+    )
+    if not membership:
+        return [], -1
+    base = (
+        select(MistakeRecord)
+        .where(MistakeRecord.student_id == student_id, MistakeRecord.module_id == module_id)
+        .order_by(MistakeRecord.updated_at.desc(), MistakeRecord.id.desc())
+    )
+    total = int(
+        await db.scalar(
+            select(func.count()).select_from(MistakeRecord).where(
+                MistakeRecord.student_id == student_id,
+                MistakeRecord.module_id == module_id,
+            )
+        )
+        or 0
+    )
+    items = (await db.scalars(base.limit(limit).offset(offset))).all()
+    return items, total

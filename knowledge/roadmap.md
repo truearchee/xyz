@@ -63,7 +63,7 @@ Stage 4.8   First hosted deploy (staging)              NOT STARTED  (new in v3) 
 Stage 4.9   Frontend foundation + platform hygiene     NOT STARTED  (new in v3)
 ✅ Stage 5   Shared quiz engine + event spine           FULLY VERIFIED — merged to main; migrations 0014–0020; gate 1 browser GREEN; gate 3 real-provider smoke GREEN; backend 442 pytest; frontend tsc green; ADR-040..046; F-5d-1 resolved
 ✅ Stage 5.5   Module schedule & section metadata       FULLY VERIFIED — gate 5.5e GREEN; reference schedule 28 sections; full active suite 12/12 after reseed; migration chain rebased after Stage 5 main (`0020 -> 0021 -> 0022`)
-Stage 6     Complete quiz modes                        NOT STARTED
+✅ Stage 6   Complete quiz modes                        FULLY VERIFIED — full active Playwright 14/14 + 5d/6d gates + backend 502 + rule-11 real-provider smoke PASS (264.5s, 16Q, model echo OK). 6e corrective gate proofs + F-6e smoke fix (pool trimmed max_tokens 32000→20000 / count 24→16, reasoning timeout 240→330; root cause = ramble-to-cap ≈ max_tokens/73, not the route). See [[steps/stage-06/6d-real-provider-smoke]] (2026-06-18) + ADR-047 F-6e amendment
 Stage 7     Glossary                                   NOT STARTED
 Stage 8     Assistant                                  NOT STARTED
 Stage 9     My Progress                                NOT STARTED
@@ -97,7 +97,24 @@ Signed URLs remain valid until TTL after unpublish                          → 
 can_publish derived from role rather than membership                        → reviewed in Stage 12 authz pass
 No custom exception handlers (raw default 500 bodies)                       → Stage 12
 No roadmap file in repo (F001)                                              → fixed by this document + repo rule above
+Quiz-pool ad-hoc first-recap ~264s first-wait (F-6e). OPEN, but the two quick
+levers are now CLOSED as tested-not-viable: (a) reasoning_effort=low alone →
+~38s but first-try validity ~75%→~33%; (b) reasoning_effort=low + json_object
+on nvidia tested 2026-06-18 (7-run probe): REFUTED — 14% first-try / ~46%
+within retry, worse than full-reasoning's 75% (low reasoning satisfies the
+JSON format with minimal content, ~1 question — json_object guarantees
+well-formed JSON, not correct content, so it is NOT a viable reliability lever
+for the low path; deep reasoning is load-bearing for output completeness).
+Genuinely-remaining lever = a true writing-class model, but per provider docs
+that route (cerebras/Instruct) supports NEITHER json_object NOR reasoning_effort
+— a separate, larger investigation, not a quick switch.                      → Stage 4.8 hosted-config pass / later quiz-perf tune
 ```
+
+**Load-bearing invariant (F-6e):** exam-prep UX acceptability **depends on D1 pre-warm firing** at
+AssessmentScope create/update (`assessments/service.py::_prewarm` → `prewarm_scope_pools`). It is what
+keeps a *known* exam off the ~264s pool-generation wait (only ad-hoc first recaps pay it; reuse covers
+everyone after). **Any future change to the pre-warm path must preserve this** — a regression there
+silently reintroduces the 264s wait on exams. See ADR-047's F-6e amendment + [[steps/stage-06/6d-real-provider-smoke]].
 
 Nothing in the completed work needs reverting. The provenance CHECK constraint, pinned model revision baked into the image, enqueue-after-commit, partial-unique one-active indexes, and the 401/403 boundary are correct and stay.
 
@@ -518,7 +535,22 @@ Admin creates module with schedule → sections carry week/date metadata
 
 ## Stage 6 — Complete Quiz Modes
 
-**Status:** NOT STARTED. **Prerequisite satisfied:** Stage 5.5 is FULLY VERIFIED.
+**Status:** ✅ **FULLY VERIFIED** (2026-06-18). Sub-sessions 6a–6d implemented; closure was unflipped
+after review found the 6d gate skipped core proof obligations and failed-pool retry was unwired
+([[specs/stage-06/6e-corrective-closure]]). Corrective session 6e fixed those (full retake-prefix-drop +
+bank-persistence browser proof, wired failed-pool retry through the UI, exam-prep event + retake-reuse
+assertions, ORM CHECK aligned). The final blocker — the rule-11 real-provider smoke "hard timeout" — was
+re-diagnosed live (F-6e): K2-Think-v2 reasons inline and rambles to fill `max_tokens`, so `stream:false`
+wall-clock ≈ `max_tokens`/~73 tok/s; 32000 ≈ 440s crossed 540 under variance. Fixed by trimming the
+request (`max_tokens` 32000→20000, count 24→16, validator floor 16→12) and setting the reasoning-route
+timeout 240→330 (lease TTL 360); the rule-11 smoke is retry-aware (mirrors `AI_RQ_RETRY_MAX`).
+**Smoke PASS** (264.5s, 16Q, model echo `MBZUAI-IFM/K2-Think-v2`); full active Playwright 14/14; 5d/6d
+gates green; backend 502. Route kept nvidia (cerebras = same speed; `use_nvidia` performance-inert) and
+`reasoning_effort=low` evaluated + rejected for now (7× faster but halves output validity). See
+[[steps/stage-06/6d-real-provider-smoke]] (2026-06-18) + ADR-047 F-6e amendment. **Carried debt:** the
+~264s ad-hoc-recap first-wait (reasoning_effort future-opt) + the load-bearing D1 pre-warm invariant are
+both recorded in the carried-debt ledger above.
+**Prerequisite satisfied:** Stage 5.5 is FULLY VERIFIED.
 
 **Backend scope (v2 carried):** `recap_period`, `exam_prep`, `mistakes_bank`; assessment scope by covered weeks (`AssessmentScope`); mistake-review prefix; retake reinforcement (`retakeCorrectCount`; prefix flag flips false after 2 correct retake answers; mistake stays in the bank).
 

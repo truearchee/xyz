@@ -20,6 +20,8 @@ const ASSET_STORAGE_KEY_PATTERN =
   /^modules\/[0-9a-f-]{36}\/sections\/[0-9a-f-]{36}\/assets\/[0-9a-f-]{36}\/[^/]+\.(pdf|ipynb)$/i;
 const TRANSCRIPT_STORAGE_KEY_PATTERN =
   /^modules\/[0-9a-f-]{36}\/sections\/[0-9a-f-]{36}\/transcripts\/[0-9a-f-]{36}\/[^/]+$/i;
+const LEGACY_DIRECT_TRANSCRIPT_STORAGE_KEY_PATTERN =
+  /^modules\/[0-9a-f-]{36}\/sections\/\d+\/[0-9a-f-]{36}\.vtt$/i;
 
 function loadEnv() {
   if (!existsSync(ENV_PATH)) {
@@ -136,7 +138,11 @@ function assertExactStorageKey(key) {
     throw new Error(`Refusing broad or invalid storage cleanup key: ${key}`);
   }
 
-  if (!ASSET_STORAGE_KEY_PATTERN.test(key) && !TRANSCRIPT_STORAGE_KEY_PATTERN.test(key)) {
+  if (
+    !ASSET_STORAGE_KEY_PATTERN.test(key) &&
+    !TRANSCRIPT_STORAGE_KEY_PATTERN.test(key) &&
+    !LEGACY_DIRECT_TRANSCRIPT_STORAGE_KEY_PATTERN.test(key)
+  ) {
     throw new Error(`Refusing non-object storage cleanup key: ${key}`);
   }
 }
@@ -334,11 +340,52 @@ function validateManifestForTeardown(identifier) {
 async function teardown(identifier) {
   const { env, manifest, path } = validateManifestForTeardown(identifier);
 
+  const definitionScope =
+    manifest.moduleIds.length > 0
+      ? `quiz_definition_id IN (SELECT id FROM quiz_definitions WHERE module_id IN (${uuidList(manifest.moduleIds)}))`
+      : '';
+  const studentScope =
+    manifest.appUserIds.length > 0 ? `student_id IN (${uuidList(manifest.appUserIds)})` : '';
+  const attemptScope = [definitionScope, studentScope].filter(Boolean).join(' OR ');
+  const questionScope = attemptScope
+    ? `quiz_attempt_id IN (SELECT id FROM quiz_attempts WHERE ${attemptScope})`
+    : '';
+  const poolScope =
+    manifest.sectionIds.length > 0
+      ? `section_question_pool_id IN (SELECT id FROM section_question_pools WHERE module_section_id IN (${uuidList(manifest.sectionIds)}))`
+      : '';
+
   const storageKeys = selectStorageKeys(manifest);
   const summary = {
     manifest: path,
     runId: manifest.runId,
     storageObjects: await deleteStorageKeys(env, storageKeys),
+    studentAnswers: deleteWhere('student_answers', [
+      questionScope
+        ? `quiz_question_id IN (SELECT id FROM quiz_questions WHERE ${questionScope})`
+        : '',
+    ]),
+    answerOptions: deleteWhere('answer_options', [
+      questionScope
+        ? `quiz_question_id IN (SELECT id FROM quiz_questions WHERE ${questionScope})`
+        : '',
+    ]),
+    quizQuestions: deleteWhere('quiz_questions', [questionScope]),
+    mistakeRecords: deleteWhere('mistake_records', [
+      manifest.moduleIds.length > 0 ? `module_id IN (${uuidList(manifest.moduleIds)})` : '',
+      manifest.appUserIds.length > 0 ? `student_id IN (${uuidList(manifest.appUserIds)})` : '',
+    ]),
+    quizAttempts: deleteWhere('quiz_attempts', [attemptScope]),
+    poolQuestions: deleteWhere('pool_questions', [poolScope]),
+    sectionQuestionPools: deleteWhere('section_question_pools', [
+      manifest.sectionIds.length > 0 ? `module_section_id IN (${uuidList(manifest.sectionIds)})` : '',
+    ]),
+    quizDefinitions: deleteWhere('quiz_definitions', [
+      manifest.moduleIds.length > 0 ? `module_id IN (${uuidList(manifest.moduleIds)})` : '',
+    ]),
+    assessmentScopes: deleteWhere('assessment_scopes', [
+      manifest.moduleIds.length > 0 ? `module_id IN (${uuidList(manifest.moduleIds)})` : '',
+    ]),
     // Stage 4.5: generated summaries reference ai_request_logs (RESTRICT). They must be removed
     // BEFORE deleting ingestion_jobs (whose delete cascades ai_request_logs), or the cascade hits
     // the RESTRICT FK. Scoped by the run's transcripts/sections.
@@ -371,6 +418,9 @@ async function teardown(identifier) {
       manifest.sectionIds.length > 0
         ? `transcript_id IN (SELECT id FROM transcripts WHERE module_section_id IN (${uuidList(manifest.sectionIds)}))`
         : '',
+    ]),
+    aiRequestLogs: deleteWhere('ai_request_logs', [
+      manifest.aiRequestLogIds.length > 0 ? `id IN (${uuidList(manifest.aiRequestLogIds)})` : '',
     ]),
     transcriptSegments: deleteWhere('transcript_segments', [
       manifest.transcriptSegmentIds.length > 0

@@ -17,6 +17,7 @@ export const MANIFEST_FIELDS = [
   'transcriptSegmentIds',
   'transcriptChunkIds',
   'ingestionJobIds',
+  'aiRequestLogIds',
   'storageKeys',
 ];
 
@@ -65,6 +66,7 @@ export function emptyManifest(runId) {
     transcriptSegmentIds: [],
     transcriptChunkIds: [],
     ingestionJobIds: [],
+    aiRequestLogIds: [],
     storageKeys: [],
     createdAt: new Date().toISOString(),
   };

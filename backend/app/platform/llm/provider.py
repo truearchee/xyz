@@ -45,6 +45,12 @@ VALID_FAULTS = (
     "timeout",
 )
 
+# Size of the deterministic section-pool fixture (Stage 6a). Within the validator's
+# [QUIZ_POOL_MIN_COUNT, QUIZ_POOL_MAX_COUNT] band and mirrors the domain POOL_TARGET so a gate samples a
+# realistic pool. Platform must not import domains (rule 8), so it is a local constant kept in sync.
+# Trimmed 24→16 alongside POOL_TARGET_SIZE / the prompt's requested count (F-6e live-latency fix).
+_DETERMINISTIC_POOL_SIZE = 16
+
 # ── Per-request fault injection (Stage 5b / D-C) ─────────────────────────────────────────────────
 # A FIFO sequence the DeterministicTestProvider consults once per ``send()`` (before its constructor
 # ``fault``), so a single process can drive inject→clear→succeed — the sequence the global
@@ -297,6 +303,8 @@ class DeterministicTestProvider:
     """Boundary-only test double. ``fault`` forces a classified failure for gate assertions — one
     fault per §8 outcome so the error map and the in-call 429 backoff are provable without a key."""
 
+    is_deterministic_test_provider = True
+
     def __init__(self, *, fault: str | None = None) -> None:
         if fault is None and settings.IS_NON_PROD:
             fault = os.environ.get("LLM_FAULT_INJECTION") or None
@@ -366,6 +374,8 @@ class DeterministicTestProvider:
         forced_invalid = active == "invalid_output"
         if name == "post_class_quiz_generation":
             return self._quiz_fixture(forced_invalid)
+        if name == "quiz_pool_generation":
+            return self._pool_fixture(forced_invalid)
         if name == "brief_summary":
             if forced_invalid:
                 return json.dumps({"wrong": "shape"})  # missing required `text`
@@ -416,6 +426,31 @@ class DeterministicTestProvider:
         ]
         if forced_invalid:
             questions.pop()  # 9 questions → fails the exactly-10 validator rule
+        return json.dumps({"questions": questions})
+
+    @staticmethod
+    def _pool_fixture(forced_invalid: bool) -> str:
+        """A schema-valid section POOL with KNOWN correct options (option A correct in every question).
+
+        ``_DETERMINISTIC_POOL_SIZE`` questions (within the validator's [min, max] band) so a gate can
+        deterministically sample, snapshot, and resolve correctness from the DB. Questions are numbered so
+        a seeded sampler's selection is observable and reproducible. ``forced_invalid`` returns too few
+        questions so the pool count rule fires (validator/retry test)."""
+        questions = [
+            {
+                "questionText": f"Pool question {i + 1}: which option is correct?",
+                "options": [
+                    {"text": f"Pool Q{i + 1} option A (correct)", "isCorrect": True},
+                    {"text": f"Pool Q{i + 1} option B", "isCorrect": False},
+                    {"text": f"Pool Q{i + 1} option C", "isCorrect": False},
+                    {"text": f"Pool Q{i + 1} option D", "isCorrect": False},
+                ],
+                "explanation": f"Option A is the correct answer for pool question {i + 1}.",
+            }
+            for i in range(_DETERMINISTIC_POOL_SIZE)
+        ]
+        if forced_invalid:
+            questions = questions[:5]  # below QUIZ_POOL_MIN_COUNT → fails the pool count rule
         return json.dumps({"questions": questions})
 
 

@@ -12,5 +12,7 @@ export type QuizAttemptForStudent = {
     status: string;
     attemptNumber: number;
     totalQuestions?: (number | null);
+    newQuestionCount?: (number | null);
+    mistakeReviewQuestionCount?: (number | null);
     questions?: Array<QuizQuestionForStudent>;
 };

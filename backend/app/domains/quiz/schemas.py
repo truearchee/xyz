@@ -9,11 +9,11 @@ Drafts only in 5a — no endpoints are wired here (start/answer/complete land in
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, model_validator
 from pydantic.alias_generators import to_camel
 
 
@@ -75,6 +75,8 @@ class QuizAttemptForStudent(CamelModel):
     status: str
     attempt_number: int
     total_questions: int | None = None
+    new_question_count: int | None = None
+    mistake_review_question_count: int | None = None
     questions: list[QuizQuestionForStudent] = []
 
 
@@ -109,3 +111,56 @@ class QuizAttemptsSummary(CamelModel):
 
     attempt_count: int
     best_score_percentage: Decimal | None = None
+
+
+# ── Stage 6b: recap + exam-prep ───────────────────────────────────────────────────────────────────
+class RecapScopeRequest(CamelModel):
+    """A recap span within one module — EITHER ``weeks`` OR a ``startDate``/``endDate`` range."""
+
+    weeks: list[int] | None = None
+    start_date: date | None = None
+    end_date: date | None = None
+
+    @model_validator(mode="after")
+    def _exactly_one_span(self) -> "RecapScopeRequest":
+        has_weeks = bool(self.weeks)
+        has_range = self.start_date is not None and self.end_date is not None
+        if has_weeks == has_range:  # neither or both
+            raise ValueError("provide exactly one of: weeks, or startDate+endDate")
+        return self
+
+
+class ScopeAvailabilityResponse(CamelModel):
+    """Whether a recap/exam-prep span is startable (D3 all-or-wait), and what is still processing."""
+
+    available: bool
+    reason_code: str | None = None  # 'processing' | 'no_eligible_sections'
+    ready_section_count: int = 0
+    processing_section_count: int = 0
+
+
+class ExamPrepScopeSummary(CamelModel):
+    """A lecturer AssessmentScope as a student sees it (+ its current availability)."""
+
+    id: UUID
+    name: str
+    covered_weeks: list[int]
+    available: bool
+    reason_code: str | None = None
+
+
+class MistakeBankItem(CamelModel):
+    """One current-student mistake as shown in the module mistakes-bank."""
+
+    id: UUID
+    module_id: UUID
+    module_section_id: UUID
+    source_quiz_definition_id: UUID
+    question_snapshot: dict
+    answer_options_snapshot: dict
+    selected_wrong_answer: str
+    correct_answer: str
+    explanation: str | None = None
+    retake_correct_count: int
+    show_in_retake_prefix: bool
+    updated_at: datetime

@@ -16,6 +16,7 @@ import {
   uploadSectionAsset,
 } from "../../../lib/api/upload";
 import { ForbiddenError, api } from "../../../lib/api/wrapper";
+import { AssessmentScopePanel } from "../../quiz/AssessmentScopePanel";
 import { SectionAssetList } from "./SectionAssetList";
 import { SectionMetadataEditor } from "./SectionMetadataEditor";
 import { SectionNotesEditor } from "./SectionNotesEditor";
@@ -319,6 +320,8 @@ export function LecturerModuleDetail({ moduleId }: LecturerModuleDetailProps) {
           </span>
         ) : null}
       </header>
+
+      <AssessmentScopePanel moduleId={moduleId} />
 
       {sortedSections.length === 0 ? (
         <section aria-label="Generated sections" style={styles.emptyPanel}>

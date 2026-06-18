@@ -9,26 +9,33 @@ the service before any resource work; non-student → 403 uniformly; hidden/not-
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Response
+from fastapi import APIRouter, Depends, Query, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domains.quiz import service
 from app.domains.quiz.schemas import (
     AnswerFeedback,
     AnswerSubmission,
+    ExamPrepScopeSummary,
+    MistakeBankItem,
     QuizAttemptForStudent,
     QuizAttemptResult,
     QuizAttemptsSummary,
     QuizAvailabilityResponse,
+    RecapScopeRequest,
+    ScopeAvailabilityResponse,
 )
 from app.platform.auth.context import CurrentUserContext
 from app.platform.auth.dependencies import get_current_user
 from app.platform.db.session import get_db_session
+from app.platform.query.pagination import PaginatedResponse, PaginationMeta
 
 router = APIRouter(tags=["quiz"])
 
 DbSession = Annotated[AsyncSession, Depends(get_db_session)]
 CurrentUser = Annotated[CurrentUserContext, Depends(get_current_user)]
+Limit = Annotated[int, Query(ge=1, le=100)]
+Offset = Annotated[int, Query(ge=0)]
 
 _NO_STORE = "private, no-store"
 
@@ -67,6 +74,18 @@ async def get_quiz_attempt(
 ) -> QuizAttemptForStudent:
     response.headers["Cache-Control"] = _NO_STORE
     return await service.get_attempt(db, current_user=current_user, attempt_id=attempt_id)
+
+
+@router.post(
+    "/student/quiz/attempts/{attempt_id}/retry",
+    response_model=QuizAttemptForStudent,
+    operation_id="retryStudentQuizAttempt",
+)
+async def retry_quiz_attempt(
+    attempt_id: UUID, response: Response, db: DbSession, current_user: CurrentUser
+) -> QuizAttemptForStudent:
+    response.headers["Cache-Control"] = _NO_STORE
+    return await service.retry_attempt(db, current_user=current_user, attempt_id=attempt_id)
 
 
 @router.post(
@@ -109,3 +128,102 @@ async def get_quiz_attempts_summary(
 ) -> QuizAttemptsSummary:
     response.headers["Cache-Control"] = _NO_STORE
     return await service.attempts_summary(db, current_user=current_user, section_id=section_id)
+
+
+# ── Stage 6b: recap + exam-prep (multi-section, pooled) ───────────────────────────────────────────
+@router.post(
+    "/student/modules/{module_id}/recap-quiz/availability",
+    response_model=ScopeAvailabilityResponse,
+    operation_id="getStudentRecapAvailability",
+)
+async def recap_availability(
+    module_id: UUID,
+    payload: RecapScopeRequest,
+    response: Response,
+    db: DbSession,
+    current_user: CurrentUser,
+) -> ScopeAvailabilityResponse:
+    response.headers["Cache-Control"] = _NO_STORE
+    return await service.recap_availability(
+        db, current_user=current_user, module_id=module_id, payload=payload
+    )
+
+
+@router.post(
+    "/student/modules/{module_id}/recap-quiz/start",
+    response_model=QuizAttemptForStudent,
+    operation_id="startStudentRecapQuiz",
+)
+async def start_recap_quiz(
+    module_id: UUID,
+    payload: RecapScopeRequest,
+    response: Response,
+    db: DbSession,
+    current_user: CurrentUser,
+) -> QuizAttemptForStudent:
+    response.headers["Cache-Control"] = _NO_STORE
+    return await service.start_recap(
+        db, current_user=current_user, module_id=module_id, payload=payload
+    )
+
+
+@router.get(
+    "/student/modules/{module_id}/exam-prep-scopes",
+    response_model=list[ExamPrepScopeSummary],
+    operation_id="listStudentExamPrepScopes",
+)
+async def list_exam_prep_scopes(
+    module_id: UUID, response: Response, db: DbSession, current_user: CurrentUser
+) -> list[ExamPrepScopeSummary]:
+    response.headers["Cache-Control"] = _NO_STORE
+    return await service.list_exam_prep_scopes(
+        db, current_user=current_user, module_id=module_id
+    )
+
+
+@router.post(
+    "/student/assessment-scopes/{scope_id}/exam-prep-quiz/start",
+    response_model=QuizAttemptForStudent,
+    operation_id="startStudentExamPrepQuiz",
+)
+async def start_exam_prep_quiz(
+    scope_id: UUID, response: Response, db: DbSession, current_user: CurrentUser
+) -> QuizAttemptForStudent:
+    response.headers["Cache-Control"] = _NO_STORE
+    return await service.start_exam_prep(db, current_user=current_user, scope_id=scope_id)
+
+
+# ── Stage 6c: mistakes-bank ──────────────────────────────────────────────────────────────────────
+@router.get(
+    "/student/modules/{module_id}/mistakes-bank",
+    response_model=PaginatedResponse[MistakeBankItem],
+    operation_id="listStudentMistakesBank",
+)
+async def list_mistakes_bank(
+    module_id: UUID,
+    response: Response,
+    db: DbSession,
+    current_user: CurrentUser,
+    limit: Limit = 50,
+    offset: Offset = 0,
+) -> PaginatedResponse[MistakeBankItem]:
+    response.headers["Cache-Control"] = _NO_STORE
+    items, total = await service.list_mistakes_bank(
+        db, current_user=current_user, module_id=module_id, limit=limit, offset=offset
+    )
+    return PaginatedResponse(
+        items=items,
+        pagination=PaginationMeta(limit=limit, offset=offset, total=total),
+    )
+
+
+@router.post(
+    "/student/modules/{module_id}/mistakes-bank/start",
+    response_model=QuizAttemptForStudent,
+    operation_id="startStudentMistakesBank",
+)
+async def start_mistakes_bank(
+    module_id: UUID, response: Response, db: DbSession, current_user: CurrentUser
+) -> QuizAttemptForStudent:
+    response.headers["Cache-Control"] = _NO_STORE
+    return await service.start_mistakes_bank(db, current_user=current_user, module_id=module_id)

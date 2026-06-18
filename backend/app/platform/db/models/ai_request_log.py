@@ -34,7 +34,7 @@ class AIRequestLog(Base):
         CheckConstraint("attempt_number >= 1", name="ck_ai_request_logs_attempt_number"),
         CheckConstraint(
             # Enumerated on purpose (extend deliberately per consuming feature; never "anything").
-            "feature IN ('summary_brief', 'summary_detailed', 'post_class_quiz')",
+            "feature IN ('summary_brief', 'summary_detailed', 'post_class_quiz', 'quiz_pool')",
             name="ck_ai_request_logs_feature",
         ),
         CheckConstraint(

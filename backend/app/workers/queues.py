@@ -34,7 +34,11 @@ def get_ai_queue() -> Queue:
 
 
 def quiz_generation_job_id(attempt_id: UUID) -> str:
-    return f"quiz-generate:{attempt_id}"
+    return f"quiz-generate-{attempt_id}"
+
+
+def section_pool_job_id(pool_id: UUID) -> str:
+    return f"quiz-pool-{pool_id}"
 
 
 def enqueue_parse_transcript(transcript_id: UUID) -> None:
@@ -89,6 +93,37 @@ def enqueue_generate_post_class_quiz(attempt_id: UUID) -> str:
     job_id = quiz_generation_job_id(attempt_id)
     get_ai_queue().enqueue(
         generate_post_class_quiz,
+        str(attempt_id),
+        job_id=job_id,
+        retry=Retry(max=AI_RQ_RETRY_MAX, interval=AI_RQ_RETRY_INTERVALS),
+    )
+    return job_id
+
+
+def enqueue_generate_section_pool(pool_id: UUID) -> str:
+    """Enqueue a section-pool generation (Stage 6a) under a stable job id (``quiz-pool-{pool_id}``) so the
+    reaper can check its liveness. Bounded RQ retry for transient / invalid-output failures (rule 15)."""
+    from app.domains.quiz.jobs import generate_section_pool
+
+    job_id = section_pool_job_id(pool_id)
+    get_ai_queue().enqueue(
+        generate_section_pool,
+        str(pool_id),
+        job_id=job_id,
+        retry=Retry(max=AI_RQ_RETRY_MAX, interval=AI_RQ_RETRY_INTERVALS),
+    )
+    return job_id
+
+
+def enqueue_try_assemble_attempt(attempt_id: UUID) -> str:
+    """Enqueue a pooled-attempt assembly (Stage 6a) under the SAME stable id as post_class generation
+    (``quiz-generate-{attempt_id}``) so the stuck-row reaper's liveness check keys on it correctly. The
+    job is idempotent/fenced, so the start-enqueue + each pool-completion fan-in re-enqueue are safe."""
+    from app.domains.quiz.jobs import try_assemble_attempt
+
+    job_id = quiz_generation_job_id(attempt_id)
+    get_ai_queue().enqueue(
+        try_assemble_attempt,
         str(attempt_id),
         job_id=job_id,
         retry=Retry(max=AI_RQ_RETRY_MAX, interval=AI_RQ_RETRY_INTERVALS),

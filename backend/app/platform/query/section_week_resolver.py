@@ -95,17 +95,63 @@ async def resolve_sections_by_weeks(
         )
     ).all()
 
-    return [
-        SectionWeekRow(
-            id=row.id,
-            course_module_id=row.course_module_id,
-            title=row.title,
-            type=row.type,
-            order_index=row.order_index,
-            week_number=row.week_number,
-            session_date=row.session_date,
-            due_at=row.due_at,
-            publish_status=row.publish_status,
+    return [_to_row(row) for row in rows]
+
+
+def _to_row(row) -> SectionWeekRow:
+    return SectionWeekRow(
+        id=row.id,
+        course_module_id=row.course_module_id,
+        title=row.title,
+        type=row.type,
+        order_index=row.order_index,
+        week_number=row.week_number,
+        session_date=row.session_date,
+        due_at=row.due_at,
+        publish_status=row.publish_status,
+    )
+
+
+async def resolve_sections_by_date_range(
+    db: AsyncSession,
+    *,
+    module_id: UUID,
+    start_date: date,
+    end_date: date,
+) -> list[SectionWeekRow]:
+    """Stage 6b recap-by-date-range — additive sibling of ``resolve_sections_by_weeks`` (the existing
+    signature is unchanged). Lecture/lab sections whose stored ``session_date`` falls within
+    ``[start_date, end_date]`` inclusive; only stamped (non-null ``session_date``) active sections, the same
+    Stage 6 safety boundary. Stage 6 still applies its student-access / publish / completed-summary filters
+    before creating a definition."""
+    if start_date > end_date:
+        raise ValueError("start_date must be on or before end_date")
+    rows = (
+        await db.execute(
+            select(
+                ModuleSection.id,
+                ModuleSection.course_module_id,
+                ModuleSection.title,
+                ModuleSection.type,
+                ModuleSection.order_index,
+                ModuleSection.week_number,
+                ModuleSection.session_date,
+                ModuleSection.due_at,
+                ModuleSection.publish_status,
+            )
+            .where(
+                ModuleSection.course_module_id == module_id,
+                ModuleSection.status == "active",
+                ModuleSection.type.in_(("lecture", "lab")),
+                ModuleSection.session_date.is_not(None),
+                ModuleSection.session_date >= start_date,
+                ModuleSection.session_date <= end_date,
+            )
+            .order_by(
+                ModuleSection.session_date.asc().nulls_last(),
+                ModuleSection.order_index.asc(),
+                ModuleSection.id.asc(),
+            )
         )
-        for row in rows
-    ]
+    ).all()
+    return [_to_row(row) for row in rows]

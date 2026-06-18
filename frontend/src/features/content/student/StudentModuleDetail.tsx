@@ -10,6 +10,7 @@ import {
   type StudentSectionDetail,
 } from "../../../lib/api";
 import { ForbiddenError, api } from "../../../lib/api/wrapper";
+import { StudentQuizModesPanel } from "../../quiz/StudentQuizModesPanel";
 import { StudentSectionView } from "./StudentSectionView";
 
 // Coarse per-section summary flag (§8.1) — one batched call, no per-section fan-out.
@@ -154,6 +155,11 @@ export function StudentModuleDetail({ moduleId }: StudentModuleDetailProps) {
           </span>
         ) : null}
       </header>
+
+      <StudentQuizModesPanel
+        moduleId={moduleId}
+        sections={sortedSections.map(({ detail }) => detail)}
+      />
 
       {sortedSections.length === 0 ? (
         <section aria-label="Published sections" style={styles.emptyPanel}>

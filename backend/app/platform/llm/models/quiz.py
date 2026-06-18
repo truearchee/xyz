@@ -13,6 +13,10 @@ from pydantic import BaseModel, ConfigDict
 from pydantic.alias_generators import to_camel
 
 QUIZ_SCHEMA_VERSION = "quiz-v1"
+# Stage 6a: the per-section POOL generation output. Same question shape as PostClassQuiz; the only
+# difference is the validated COUNT (a pool holds more than one quiz needs). Kept a distinct type so the
+# OutputValidator dispatches to the pool-count rule without touching the shipped exactly-10 post_class path.
+QUIZ_POOL_SCHEMA_VERSION = "quiz-pool-v1"
 
 
 class CamelModel(BaseModel):
@@ -35,4 +39,10 @@ class GeneratedQuizQuestion(CamelModel):
 
 
 class PostClassQuiz(CamelModel):
+    questions: list[GeneratedQuizQuestion]
+
+
+class GeneratedQuizPool(CamelModel):
+    """A section question pool — many validated MCQs from one generation call (Stage 6a, rule 15)."""
+
     questions: list[GeneratedQuizQuestion]
