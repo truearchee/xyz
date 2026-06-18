@@ -33,6 +33,7 @@ from app.platform.llm.errors import (
     ProviderTransient,
     RateLimited,
 )
+from app.platform.llm.models.assistant import ASSISTANT_LATEST_QUESTION_MARKER
 from app.platform.llm.models.prompt import Backend, RenderedPrompt, Usage
 
 VALID_FAULTS = (
@@ -50,6 +51,21 @@ VALID_FAULTS = (
 # realistic pool. Platform must not import domains (rule 8), so it is a local constant kept in sync.
 # Trimmed 24→16 alongside POOL_TARGET_SIZE / the prompt's requested count (F-6e live-latency fix).
 _DETERMINISTIC_POOL_SIZE = 16
+
+# Off-topic keywords the deterministic double recognizes in a student's LATEST question (assistant v2)
+# to emit ``isStudyRelated=false`` → the backend's decide_grounding maps that to educational_redirect.
+# This is the deterministic stand-in for the real model's study-relatedness judgment; it inspects ONLY
+# the text after ASSISTANT_LATEST_QUESTION_MARKER, so the system prompt and retrieved context can never
+# false-trigger it. Kept out of the v2 system prompt's own off-topic example wording.
+_ASSISTANT_OFF_TOPIC_MARKERS = (
+    "movie",
+    "weather",
+    "restaurant",
+    "sports score",
+    "celebrity",
+    "dating",
+    "horoscope",
+)
 
 # ── Per-request fault injection (Stage 5b / D-C) ─────────────────────────────────────────────────
 # A FIFO sequence the DeterministicTestProvider consults once per ``send()`` (before its constructor
@@ -416,17 +432,32 @@ class DeterministicTestProvider:
                 payload.pop("examples")  # drop a required section
             return json.dumps(payload)
         if name == "assistant":
+            return self._assistant_fixture(rendered, forced_invalid)
+        raise ValueError(f"deterministic provider has no canned output for prompt {name!r}")
+
+    @staticmethod
+    def _assistant_fixture(rendered: RenderedPrompt, forced_invalid: bool) -> str:
+        answer = (
+            "Here is a concise study-assistant answer. It walks through the idea in "
+            "clear prose so the conversation reads naturally and is easy to follow."
+        )
+        # v1 (Stage 8.1): just {"answer": ...}; forced_invalid drops the required key.
+        if rendered.prompt_key.version != "v2":
             if forced_invalid:
                 return json.dumps({"wrong": "shape"})  # missing required `answer`
-            return json.dumps(
-                {
-                    "answer": (
-                        "Here is a concise study-assistant answer. It walks through the idea in "
-                        "clear prose so the conversation reads naturally and is easy to follow."
-                    )
-                }
-            )
-        raise ValueError(f"deterministic provider has no canned output for prompt {name!r}")
+            return json.dumps({"answer": answer})
+
+        # v2 (Stage 8.2): {"answer": ..., "isStudyRelated": bool}. is_study_related is derived
+        # deterministically from the student's LATEST question (the text after the marker), so the
+        # full grounding pipeline (decide_grounding) is exercisable in CI/E2E without a real model.
+        # forced_invalid OMITS isStudyRelated → validator raises InvalidOutput (review #4 fail-safe).
+        if forced_invalid:
+            return json.dumps({"answer": answer})  # missing required `isStudyRelated`
+        latest_question = rendered.content.rsplit(ASSISTANT_LATEST_QUESTION_MARKER, 1)[-1].lower()
+        is_study_related = not any(
+            marker in latest_question for marker in _ASSISTANT_OFF_TOPIC_MARKERS
+        )
+        return json.dumps({"answer": answer, "isStudyRelated": is_study_related})
 
     @staticmethod
     def _quiz_fixture(forced_invalid: bool) -> str:

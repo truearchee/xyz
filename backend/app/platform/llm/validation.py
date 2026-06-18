@@ -14,7 +14,7 @@ import json
 from pydantic import ValidationError
 
 from app.platform.llm.errors import InvalidOutput
-from app.platform.llm.models.assistant import AssistantAnswer
+from app.platform.llm.models.assistant import AssistantAnswer, AssistantGroundedAnswer
 from app.platform.llm.models.quiz import GeneratedQuizPool, PostClassQuiz
 from app.platform.llm.models.summary import BriefSummary, DetailedSummary
 
@@ -160,9 +160,17 @@ class OutputValidator:
         | type[DetailedSummary]
         | type[PostClassQuiz]
         | type[GeneratedQuizPool]
-        | type[AssistantAnswer],
+        | type[AssistantAnswer]
+        | type[AssistantGroundedAnswer],
         section_type: str,
-    ) -> BriefSummary | DetailedSummary | PostClassQuiz | GeneratedQuizPool | AssistantAnswer:
+    ) -> (
+        BriefSummary
+        | DetailedSummary
+        | PostClassQuiz
+        | GeneratedQuizPool
+        | AssistantAnswer
+        | AssistantGroundedAnswer
+    ):
         if output_schema is BriefSummary:
             return self._validate_brief(raw_text)
         if output_schema is DetailedSummary:
@@ -173,6 +181,8 @@ class OutputValidator:
             return self._validate_quiz_pool(raw_text)
         if output_schema is AssistantAnswer:
             return self._validate_assistant(raw_text)
+        if output_schema is AssistantGroundedAnswer:
+            return self._validate_assistant_grounded(raw_text)
         raise InvalidOutput(
             f"unsupported output schema: {getattr(output_schema, '__name__', output_schema)!r}",
             error_code="unsupported_schema",
@@ -213,6 +223,32 @@ class OutputValidator:
         except ValidationError as exc:
             raise InvalidOutput(
                 f"assistant answer failed schema validation: {exc.error_count()} error(s)",
+                error_code="schema",
+            ) from exc
+        answer = message.answer.strip()
+        if len(answer) < ASSISTANT_MIN_CHARS:
+            raise InvalidOutput("assistant answer is empty", error_code="too_short")
+        if len(answer) > ASSISTANT_MAX_CHARS:
+            raise InvalidOutput("assistant answer is too long", error_code="too_long")
+        # NB: NO refusal-marker check — a polite educational_redirect is legitimate assistant output.
+        return message
+
+    # ── grounded assistant chat (Stage 8.2) ──────────────────────────────────────────────────────
+    def _validate_assistant_grounded(self, raw_text: str) -> AssistantGroundedAnswer:
+        # Same tolerant extract + last-valid selection. The KEY difference from 8.1: ``isStudyRelated``
+        # is REQUIRED. A missing/non-bool flag fails schema validation → InvalidOutput → the worker
+        # marks the turn failed/invalid_output (retryable) and writes NO grounding_status — the answer
+        # never silently defaults to grounded or general (review #4, fail-safe).
+        return _select_last_valid(
+            _candidate_objects(raw_text), self._validate_assistant_grounded_object
+        )
+
+    def _validate_assistant_grounded_object(self, data: dict) -> AssistantGroundedAnswer:
+        try:
+            message = AssistantGroundedAnswer.model_validate(data)
+        except ValidationError as exc:
+            raise InvalidOutput(
+                f"grounded assistant answer failed schema validation: {exc.error_count()} error(s)",
                 error_code="schema",
             ) from exc
         answer = message.answer.strip()

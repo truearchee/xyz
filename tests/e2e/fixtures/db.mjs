@@ -530,6 +530,42 @@ WHERE am.conversation_id = ${sqlLiteral(conversationId)}::uuid;
 `);
 }
 
+// Stage 8.2 — the text of a transcript's first (lowest-index) embedded chunk. The grounding gate asks
+// this verbatim: with the deterministic embedding encoder, identical text → cosine distance 0 (well
+// under the relevance threshold) → a lecture_grounded answer. Reads the NORMALIZED chunk text (what
+// retrieval actually compares + injects), never the raw transcript segment.
+export function getFirstTranscriptChunkText(transcriptId) {
+  assertUuid(transcriptId, 'transcriptId');
+  // JSON round-trip so the exact text (incl. any internal whitespace) survives psql's line splitting —
+  // the gate sends it back verbatim and the deterministic encoder needs a byte-identical query.
+  const row = runPsqlJson(`
+SELECT json_build_object('text', text)::text
+FROM transcript_chunks
+WHERE transcript_id = ${sqlLiteral(transcriptId)}::uuid
+  AND embedding IS NOT NULL
+ORDER BY chunk_index
+LIMIT 1;
+`);
+  if (!row || !row.text) throw new Error(`No embedded chunk found for transcript ${transcriptId}`);
+  return row.text;
+}
+
+// Stage 8.2 — the backend-derived grounding outcome per assistant turn (decision 3: groundingStatus is
+// set server-side, never parsed from prose). Lets the gate assert the DB truth behind the UI label/basis.
+export function getAssistantMessageGrounding(conversationId) {
+  assertUuid(conversationId, 'conversationId');
+  return runPsqlJson(`
+SELECT coalesce(json_agg(json_build_object(
+  'role', role,
+  'status', status,
+  'groundingStatus', grounding_status,
+  'aiRequestLogId', ai_request_log_id
+) ORDER BY created_at, id), '[]'::json)::text
+FROM assistant_messages
+WHERE conversation_id = ${sqlLiteral(conversationId)}::uuid;
+`);
+}
+
 // Stage 4.7 R1 — canary validity: how many of a transcript's SEGMENTS (raw transcript text) contain a
 // needle. Proves the G3 sentinel actually rode the transcript that backs the student's summary (not an
 // orphan), so its absence from the student surface is a live guarantee, not a vacuous one.

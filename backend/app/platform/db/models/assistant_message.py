@@ -12,7 +12,7 @@ from sqlalchemy import (
     Text,
     text,
 )
-from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID as PostgresUUID
 from sqlalchemy.orm import Mapped, mapped_column
 from uuid6 import uuid7
 
@@ -103,6 +103,9 @@ class AssistantMessage(Base):
         server_default=text("false"),
     )
     client_idempotency_key: Mapped[str | None] = mapped_column(Text)
+    # Server-side generation-time grounding audit (Stage 8.2). Written at completion; NEVER serialized to
+    # the browser — the read model composes only a safe human "answer basis" from it.
+    context_snapshot: Mapped[dict | None] = mapped_column(JSONB)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

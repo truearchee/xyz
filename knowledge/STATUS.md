@@ -1,6 +1,31 @@
 # Status
 
-_Last updated: 2026-06-18 — **Stage 8.1 FULLY VERIFIED** (branch `stage-81-83`, rebased onto Stage 7).
+_Last updated: 2026-06-18 — **Stage 8.2 (context resolver + grounded retrieval) — FULLY VERIFIED.** All
+gates GREEN: backend 558 pytest, tsc, migration 0033 round-trip (single head), 5 security tests + a focused
+/cso pass (0 findings ≥8/10), the 8.2 browser gate, full active Playwright **17/17 (rule 14)**, and the
+**real-provider smoke (rule 11)** — model echo `MBZUAI-IFM/K2-Think-v2` on both turns and the real
+K2-Think-v2 emitted a valid `isStudyRelated` (true study / false off-topic), validating the R-isStudyRelated
+risk on the real model ([[steps/stage-08/8.2-real-provider-smoke]]).
+Built: embedder promoted to `platform/embeddings/` + shared `EmbeddingConfig` + `EMBEDDING_PROVIDER`
+deterministic mode (ADR-050); assistant worker now runs resolve→retrieve→one-call→ground→snapshot
+(ADR-051) — exact pgvector cosine scan scoped to the conversation's STORED section through the 4.7
+visibility gate, deterministic threshold (0.35; real-MiniLM in-lecture 0.17–0.21 vs off-lecture 0.89–0.95),
+ONE INTERACTIVE gateway call returning a required `isStudyRelated` flag, backend-derived `groundingStatus`
+via fixed-precedence `decide_grounding`, server-only generation-time `context_snapshot` (migration **0033**)
+→ student-safe "Where did this come from?" basis; frontend neutral "Not from this lecture" label + collapsed
+basis disclosure. Verified: migration 0033 round-trip (single head **0033**); backend **558 pytest**
+(embedder promotion byte-identical); `tsc` exit 0; 5 security tests (§13) + a focused **/cso** pass (0
+findings ≥8/10); **8.2 browser gate** (grounded lecture + LAB, off-lecture labeled general, unrelated
+redirect, unassigned 404, safe basis); **full active Playwright 17/17 (rule 14)**. Two transient full-suite
+reds were root-caused + fixed (NOT papered over): (1) the shared-`kyiv-backend` image contention re-upped
+`ai_worker` onto non-8.2 code mid-suite → baked my code into the unique `kyiv-backend-e2e-hatyai` image +
+folded the e2e config into the base compose (LOCAL compose edits — REVERT before commit); (2) a test-timing
+race where deterministic embeds completed faster than `4.3.5e`'s intermediate-state poll → the live e2e
+stack uses **real MiniLM** (deterministic encoder stays scoped to backend pytest). See
+[[steps/stage-08/findings-8.2-gate-image-contention]], [[steps/stage-08/8.2-context-retrieval]]. NO OpenAPI
+change (`MessageRead` already exposed `groundingStatus`+`answerBasis`). Below: Stage 8.1 + prior._
+
+_Prior — 2026-06-18 — **Stage 8.1 FULLY VERIFIED** (branch `stage-81-83`, rebased onto Stage 7).
 8.1 conversation foundation built: new `assistant` domain (conversations + messages), gateway `assistant`
 feature (AssistantAnswer schema + validator branch, no refusal-rejection; deterministic provider branch;
 `prompts/assistant/v1.yaml`), lecture entry point + thin chat panel in the **existing inline idiom**

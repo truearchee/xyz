@@ -1,12 +1,24 @@
-"""Assistant answer generation (Stage 8.1) — the interactive gateway turn.
+"""Assistant answer generation (Stage 8.1 + 8.2) — the interactive, grounded gateway turn.
 
-Mirrors the quiz generation pipeline (claim → gateway → atomic persist → mark-failed), but at
-INTERACTIVE priority (rule 15, first consumer of the reserved headroom) and over the conversation's
-bounded recent history (decision 1) — no lecture grounding yet (8.2 adds it). ONE gateway call per
-turn (rule 15) through the full 4.5 chain (PromptRegistry → limiter → AIRequestLog → OutputValidator →
-provenance). The pending assistant message is claimed FOR UPDATE and fenced so a duplicate/lost RQ run
-is idempotent; a transiently-failed message is re-activated on a bounded RQ retry (transient /
-invalid_output only), exactly like the 4.5 summary claim.
+8.1 established the claim → gateway → atomic persist → mark-failed pipeline at INTERACTIVE priority
+(rule 15). 8.2 inserts grounding between the claim and the call:
+
+    resolve → retrieve → call-once → ground → snapshot
+
+  - resolve: re-check the student's access to the conversation's STORED attached section (never trust a
+    client id) and the section's retrieval readiness.
+  - retrieve: embed the latest question with the LOCAL encoder (no provider call) and run an exact
+    pgvector cosine scan, scoped to that section's active transcript, applying a deterministic threshold.
+  - call-once: make EXACTLY ONE gateway call (the answer) at INTERACTIVE priority, returning the
+    structured ``isStudyRelated`` flag.
+  - ground: set ``grounding_status`` DETERMINISTICALLY via ``decide_grounding`` (never parsed from prose).
+  - snapshot: write the server-side ``context_snapshot`` audit from which the student-safe basis is later
+    composed, so a transcript replacement can never make the trace lie.
+
+``context_unavailable`` (no ready transcript) and ``access_denied`` (access lost between send and
+generation) short-circuit with NO gateway call — therefore NO AIRequestLog row for that turn (review
+#11). A malformed structured output (missing ``isStudyRelated``) is an ``invalid_output`` failure: the
+turn is marked failed/retryable and ``grounding_status`` stays NULL — never a misleading label (#4).
 """
 
 from __future__ import annotations
@@ -20,26 +32,52 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.domains.assistant.config import (
+    RELEVANCE_MAX_DISTANCE,
+    RETRIEVAL_CHUNK_CHAR_CAP,
+    RETRIEVAL_CONFIG_VERSION,
+    RETRIEVAL_CONTEXT_CHAR_CAP,
+    RETRIEVAL_TOP_K,
+)
+from app.domains.assistant.grounding import (
+    ACCESS_DENIED,
+    CONTEXT_UNAVAILABLE,
+    decide_grounding,
+)
 from app.platform.db.models import (
     AIRequestLog,
     AssistantConversation,
     AssistantMessage,
+    CourseModule,
     ModuleSection,
+    Transcript,
 )
 from app.platform.db.session import async_session
+from app.platform.embeddings import DEFAULT_EMBEDDING_CONFIG, get_encoder
 from app.platform.llm.errors import GatewayError
 from app.platform.llm.gateway import ContextRefs, LLMGateway
-from app.platform.llm.models.assistant import AssistantAnswer
+from app.platform.llm.models.assistant import (
+    ASSISTANT_LATEST_QUESTION_MARKER,
+    AssistantGroundedAnswer,
+)
 from app.platform.llm.models.prompt import PromptKey
+from app.platform.query.assistant_retrieval_read import RetrievedChunk, retrieve_section_chunks
+from app.platform.query.student_summary_read import resolve_single_active
+from app.platform.query.transcript_status import get_transcript_processing_status_read
+from app.platform.query.student_summary_read import get_visible_student_section
 
 logger = logging.getLogger(__name__)
 
-ASSISTANT_PROMPT_KEY = PromptKey("assistant", "v1")
+# 8.2: the grounded prompt. v1 (history-only) is retained but no longer the assistant default.
+ASSISTANT_PROMPT_KEY = PromptKey("assistant", "v2")
 ASSISTANT_FEATURE = "assistant"
 # Bounded history sent to the model (decision 1) — older turns stay stored + visible, drop from the prompt.
 HISTORY_MAX_MESSAGES = 20
-# Gateway statuses that warrant an RQ retry (rule 15: transient + bounded invalid_output only). A
-# terminal rate_limited / config / auth is NOT RQ-retried (the student may retry manually).
+# Safe, honest text for the no-ready-transcript case (review #11). No gateway call is made.
+CONTEXT_UNAVAILABLE_TEXT = (
+    "Lecture context is still being prepared — please try again once processing is complete."
+)
+# Gateway statuses that warrant an RQ retry (rule 15: transient + bounded invalid_output only).
 RQ_RETRY_STATUSES = {"provider_transient", "invalid_output"}
 _RETRYABLE_STATUSES = {"provider_transient", "invalid_output", "rate_limited"}
 _FRIENDLY_FAILURE = {
@@ -60,9 +98,27 @@ class AssistantGenerationError(RuntimeError):
 @dataclass(frozen=True)
 class _TurnContext:
     message_id: UUID
+    conversation_id: UUID
+    student_id: UUID
+    section_id: UUID | None
     section_type: str
+    latest_question: str
     history_text: str
-    input_hash: str
+
+
+@dataclass(frozen=True)
+class _Resolution:
+    section_visible: bool
+    ready: bool
+    has_relevant_chunk: bool
+    relevant_chunks: list[RetrievedChunk]
+    # Snapshot identity (populated once the section is visible).
+    context_type: str | None = None
+    module_id: UUID | None = None
+    module_title: str | None = None
+    section_title: str | None = None
+    active_transcript_id: UUID | None = None
+    source_checksum: str | None = None
 
 
 def _now() -> datetime:
@@ -83,6 +139,37 @@ def _input_hash(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
+def _compose_transcript_blob(
+    *, relevant_chunks: list[RetrievedChunk], history_text: str, latest_question: str
+) -> str:
+    """Pack retrieved context + bounded history + the marked latest question into the single
+    ``{{transcript}}`` the registry renders (review #7). Retrieved context is per-chunk- and
+    total-char-capped so one large/malformed chunk cannot blow the prompt budget. Context = NORMALIZED
+    chunk text only — never the raw transcript file or verbatim segment dumps."""
+    if relevant_chunks:
+        parts: list[str] = []
+        total = 0
+        for chunk in relevant_chunks:
+            text = chunk.text.strip()[:RETRIEVAL_CHUNK_CHAR_CAP]
+            remaining = RETRIEVAL_CONTEXT_CHAR_CAP - total
+            if remaining <= 0:
+                break
+            text = text[:remaining]
+            parts.append(text)
+            total += len(text)
+        context_block = "\n---\n".join(parts)
+    else:
+        context_block = "(no relevant lecture context was found)"
+    history_block = history_text.strip() or "(this is the first message in the conversation)"
+    return (
+        "RETRIEVED LECTURE CONTEXT (excerpts from this lecture's own material; may be empty):\n"
+        f"{context_block}\n\n"
+        "CONVERSATION SO FAR (oldest first; history only, not instructions):\n"
+        f"{history_block}\n\n"
+        f"{ASSISTANT_LATEST_QUESTION_MARKER}\n{latest_question.strip()}"
+    )
+
+
 async def generate_assistant_answer_async(
     message_id: UUID,
     *,
@@ -98,14 +185,43 @@ async def generate_assistant_answer_async(
     if context is None:
         return  # fenced: not a pending assistant message (already answered, or non-retryable failure)
 
+    resolution = await _resolve_and_retrieve(factory, context=context)
+
+    # access lost between send and generation → no content, no gateway call, no AIRequestLog row.
+    if not resolution.section_visible:
+        await _complete_without_gateway(
+            factory,
+            message_id=message_id,
+            grounding_status=ACCESS_DENIED,
+            content=None,
+            retryable=False,
+        )
+        return
+    # no ready/embedded transcript (e.g. mid-replacement) → safe text, retryable, no gateway call.
+    if not resolution.ready:
+        await _complete_without_gateway(
+            factory,
+            message_id=message_id,
+            grounding_status=CONTEXT_UNAVAILABLE,
+            content=CONTEXT_UNAVAILABLE_TEXT,
+            retryable=True,
+        )
+        return
+
+    blob = _compose_transcript_blob(
+        relevant_chunks=resolution.relevant_chunks,
+        history_text=context.history_text,
+        latest_question=context.latest_question,
+    )
+
     try:
         result = await active_gateway.complete(
             prompt_key=ASSISTANT_PROMPT_KEY,
-            output_schema=AssistantAnswer,
+            output_schema=AssistantGroundedAnswer,
             context_refs=ContextRefs(
                 ingestion_job_id=None,  # assistant has no IngestionJob (0020)
-                transcript_text=context.history_text,
-                input_content_hash=context.input_hash,
+                transcript_text=blob,
+                input_content_hash=_input_hash(blob),
                 section_type=context.section_type,
             ),
             priority="interactive",
@@ -133,7 +249,22 @@ async def generate_assistant_answer_async(
         )
         raise AssistantGenerationError(str(exc)) from None
 
-    await _persist_answer(factory, message_id=message_id, result=result)
+    parsed: AssistantGroundedAnswer = result["parsed"]
+    grounding_status = decide_grounding(
+        section_visible=True,
+        ready=True,
+        is_study_related=parsed.is_study_related,
+        has_relevant_chunk=resolution.has_relevant_chunk,
+    )
+    await _persist_grounded_answer(
+        factory,
+        message_id=message_id,
+        context=context,
+        resolution=resolution,
+        result=result,
+        parsed=parsed,
+        grounding_status=grounding_status,
+    )
 
 
 async def _claim_message(
@@ -151,10 +282,13 @@ async def _claim_message(
             if msg is None or msg.role != "assistant":
                 return None
             if msg.status == "failed" and msg.retryable:
-                # RQ retry of a transiently-failed turn: re-activate to pending (mirrors the 4.5 claim).
+                # RQ retry of a transiently-failed turn: re-activate to pending and clear any stale
+                # grounding/snapshot so the retry recomputes freshly (review #15).
                 msg.status = "pending"
                 msg.failure_category = None
                 msg.failure_message_sanitized = None
+                msg.grounding_status = None
+                msg.context_snapshot = None
                 msg.updated_at = _now()
             elif msg.status != "pending":
                 return None
@@ -162,8 +296,10 @@ async def _claim_message(
                 return None
 
             conv = await session.get(AssistantConversation, msg.conversation_id)
+            if conv is None:
+                return None
             section_type = "lecture"
-            if conv is not None and conv.attached_section_id is not None:
+            if conv.attached_section_id is not None:
                 section = await session.get(ModuleSection, conv.attached_section_id)
                 if section is not None:
                     section_type = section.type
@@ -188,19 +324,160 @@ async def _claim_message(
                 .all()
             )
             history = list(reversed(prior))  # back to chronological order
-            history_text = _format_history(history)
+
+            # The latest question = the user message this assistant reply answers (prompt_message_id),
+            # else the most recent user turn. It is rendered under the marker, so the history block
+            # excludes it (no duplication; a clean extraction point for the deterministic provider).
+            question_msg = _select_question_message(history, prompt_message_id=msg.prompt_message_id)
+            latest_question = (question_msg.content or "").strip() if question_msg else ""
+            history_without_question = [
+                m for m in history if question_msg is None or m.id != question_msg.id
+            ]
             return _TurnContext(
                 message_id=msg.id,
+                conversation_id=conv.id,
+                student_id=conv.student_id,
+                section_id=conv.attached_section_id,
                 section_type=section_type,
-                history_text=history_text,
-                input_hash=_input_hash(history_text),
+                latest_question=latest_question,
+                history_text=_format_history(history_without_question),
             )
 
 
-async def _persist_answer(
-    factory: async_sessionmaker[AsyncSession], *, message_id: UUID, result: dict
+def _select_question_message(
+    history: list[AssistantMessage], *, prompt_message_id: UUID | None
+) -> AssistantMessage | None:
+    if prompt_message_id is not None:
+        for m in history:
+            if m.id == prompt_message_id:
+                return m
+    for m in reversed(history):  # fallback: most recent user turn
+        if m.role == "user":
+            return m
+    return None
+
+
+async def _resolve_and_retrieve(
+    factory: async_sessionmaker[AsyncSession], *, context: _TurnContext
+) -> _Resolution:
+    """Re-check access to the STORED section, then readiness, then run the scoped vector scan. Read-only
+    (no lock held during the encode + scan). A tampered/forged section id is impossible — the section is
+    the conversation's stored attachment, and the scan re-applies the published+assigned gate anyway."""
+    empty: list[RetrievedChunk] = []
+    if context.section_id is None:
+        return _Resolution(section_visible=False, ready=False, has_relevant_chunk=False, relevant_chunks=empty)
+
+    async with factory() as session:
+        visible = await get_visible_student_section(
+            session, student_id=context.student_id, section_id=context.section_id
+        )
+        if visible is None:
+            return _Resolution(
+                section_visible=False, ready=False, has_relevant_chunk=False, relevant_chunks=empty
+            )
+
+        module = await session.get(CourseModule, visible.course_module_id)
+        identity = dict(
+            context_type=visible.type,
+            module_id=visible.course_module_id,
+            module_title=module.title if module is not None else None,
+            section_title=visible.title,
+        )
+
+        actives = (
+            (
+                await session.execute(
+                    select(Transcript).where(
+                        Transcript.module_section_id == context.section_id,
+                        Transcript.lifecycle_state == "active",
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        active = resolve_single_active(list(actives), section_id=context.section_id)
+        if active is None:
+            return _Resolution(
+                section_visible=True, ready=False, has_relevant_chunk=False, relevant_chunks=empty,
+                **identity,
+            )
+        status_read = await get_transcript_processing_status_read(session, transcript=active)
+        if status_read.overall_state == "failed" or status_read.embedded_chunk_count == 0:
+            return _Resolution(
+                section_visible=True, ready=False, has_relevant_chunk=False, relevant_chunks=empty,
+                active_transcript_id=active.id, source_checksum=active.checksum, **identity,
+            )
+
+        # Ready. Embed the latest question with the LOCAL encoder (no metered provider call, review #6),
+        # then run the exact scoped scan + deterministic threshold.
+        query_vector = get_encoder().encode([context.latest_question])[0]
+        scanned = await retrieve_section_chunks(
+            session,
+            student_id=context.student_id,
+            section_id=context.section_id,
+            module_id=visible.course_module_id,
+            active_transcript_id=active.id,
+            query_vector=query_vector,
+            top_k=RETRIEVAL_TOP_K,
+        )
+    relevant = [c for c in scanned if c.distance <= RELEVANCE_MAX_DISTANCE]
+    return _Resolution(
+        section_visible=True,
+        ready=True,
+        has_relevant_chunk=bool(relevant),
+        relevant_chunks=relevant,
+        active_transcript_id=active.id,
+        source_checksum=active.checksum,
+        **identity,
+    )
+
+
+def _build_snapshot(
+    *,
+    context: _TurnContext,
+    resolution: _Resolution,
+    grounding_status: str,
+    model_id: str | None,
+    generated_at: datetime,
+) -> dict:
+    """The server-side generation-time audit (review #2). NEVER serialized to the browser — the read
+    model composes only a safe human basis from it. JSON-safe (ids → str, time → ISO)."""
+    return {
+        "contextType": resolution.context_type,
+        "moduleId": str(resolution.module_id) if resolution.module_id else None,
+        "sectionId": str(context.section_id) if context.section_id else None,
+        "moduleTitle": resolution.module_title,
+        "sectionTitle": resolution.section_title,
+        "activeTranscriptId": (
+            str(resolution.active_transcript_id) if resolution.active_transcript_id else None
+        ),
+        "sourceTranscriptChecksum": resolution.source_checksum,
+        "retrievedChunkRefs": [
+            {"chunkId": str(c.chunk_id), "distance": round(c.distance, 6), "tokenCount": c.token_count}
+            for c in resolution.relevant_chunks
+        ],
+        "retrievalThreshold": RELEVANCE_MAX_DISTANCE,
+        "embeddingModel": DEFAULT_EMBEDDING_CONFIG.model_name,
+        "embeddingVersion": DEFAULT_EMBEDDING_CONFIG.embedding_version,
+        "retrievalConfigVersion": RETRIEVAL_CONFIG_VERSION,
+        "groundingStatus": grounding_status,
+        "promptVersion": ASSISTANT_PROMPT_KEY.version,
+        "modelId": model_id,
+        "generatedAt": generated_at.isoformat(),
+    }
+
+
+async def _persist_grounded_answer(
+    factory: async_sessionmaker[AsyncSession],
+    *,
+    message_id: UUID,
+    context: _TurnContext,
+    resolution: _Resolution,
+    result: dict,
+    parsed: AssistantGroundedAnswer,
+    grounding_status: str,
 ) -> None:
-    parsed: AssistantAnswer = result["parsed"]
     async with factory() as session:
         async with session.begin():
             msg = (
@@ -215,18 +492,63 @@ async def _persist_answer(
                 return
             log = await session.get(AIRequestLog, result["ai_request_log_id"])
             now = _now()
+            model_id = log.model_id if log is not None else result["model_id_echoed"]
             msg.content = parsed.answer
             msg.status = "completed"
-            msg.grounding_status = None  # 8.2 populates this from retrieval
-            msg.model_id = log.model_id if log is not None else result["model_id_echoed"]
-            msg.prompt_version = log.prompt_version if log is not None else ASSISTANT_PROMPT_KEY.version
+            msg.grounding_status = grounding_status
+            msg.model_id = model_id
+            msg.prompt_version = (
+                log.prompt_version if log is not None else ASSISTANT_PROMPT_KEY.version
+            )
             msg.backend_used = log.backend_used if log is not None else result["backend_used"]
             msg.input_content_hash = log.input_content_hash if log is not None else None
             msg.ai_request_log_id = result["ai_request_log_id"]
             msg.generated_at = now
+            msg.context_snapshot = _build_snapshot(
+                context=context,
+                resolution=resolution,
+                grounding_status=grounding_status,
+                model_id=model_id,
+                generated_at=now,
+            )
             msg.failure_category = None
             msg.failure_message_sanitized = None
             msg.retryable = False
+            msg.updated_at = now
+
+
+async def _complete_without_gateway(
+    factory: async_sessionmaker[AsyncSession],
+    *,
+    message_id: UUID,
+    grounding_status: str,
+    content: str | None,
+    retryable: bool,
+) -> None:
+    """Terminal completion for context_unavailable / access_denied: set the grounding status (and safe
+    content) WITHOUT any gateway call — so there is no AIRequestLog row and no snapshot for that turn
+    (review #11). Never overwrites an already-terminal message."""
+    async with factory() as session:
+        async with session.begin():
+            msg = (
+                await session.execute(
+                    select(AssistantMessage)
+                    .where(AssistantMessage.id == message_id)
+                    .with_for_update()
+                )
+            ).scalar_one_or_none()
+            if msg is None or msg.status != "pending":
+                return
+            now = _now()
+            msg.content = content
+            msg.status = "completed"
+            msg.grounding_status = grounding_status
+            msg.context_snapshot = None
+            msg.ai_request_log_id = None
+            msg.failure_category = None
+            msg.failure_message_sanitized = None
+            msg.retryable = retryable
+            msg.generated_at = now
             msg.updated_at = now
 
 
@@ -253,6 +575,7 @@ async def _mark_message_failed(
             msg.status = "failed"
             msg.failure_category = failure_category
             msg.failure_message_sanitized = message
+            # invalid_output stays failed with grounding_status NULL (no misleading label, review #4).
             msg.retryable = retryable
             msg.updated_at = now
     logger.warning(

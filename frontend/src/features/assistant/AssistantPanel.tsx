@@ -11,7 +11,9 @@
  * answer shows an inline Retry; the student's question is preserved on failure. Enter sends,
  * Shift+Enter inserts a newline. Assistant answers render through the existing SummaryMarkdown.
  *
- * No streaming (8.3), no grounding label (8.2), no conversation-list sidebar (8.4).
+ * Stage 8.2 adds the backend-set grounding presentation: a neutral "Not from this lecture" label for
+ * general answers and a collapsed "Where did this come from?" basis line (server-composed, safe — never
+ * chunks/distances/prompts). No streaming (8.3), no conversation-list sidebar (8.4).
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -322,12 +324,56 @@ function MessageBubble({
               Retry
             </button>
           </div>
-        ) : message.content ? (
-          <SummaryMarkdown content={message.content} testId={`assistant-answer-${message.id}`} />
         ) : (
-          <p style={styles.muted}>No answer.</p>
+          <AssistantAnswerBody message={message} onRetry={onRetry} />
         )}
       </div>
+    </div>
+  );
+}
+
+// Completed answer (Stage 8.2): the backend-set groundingStatus drives a neutral label + a collapsed,
+// safe "Where did this come from?" basis line. The label is text-only / no colour (decision §12); the
+// basis exposes only the human answerBasis the server composed — never chunks, distances, or prompts.
+function AssistantAnswerBody({
+  message,
+  onRetry,
+}: {
+  message: MessageRead;
+  onRetry: (messageId: string) => void;
+}) {
+  const isGeneral = message.groundingStatus === "general_not_from_lecture";
+  const isUnavailable = message.groundingStatus === "context_unavailable";
+  return (
+    <div style={styles.answerBody}>
+      {isGeneral ? (
+        <p data-testid="assistant-not-from-lecture" style={styles.notFromLecture}>
+          Not from this lecture
+        </p>
+      ) : null}
+      {message.content ? (
+        <SummaryMarkdown content={message.content} testId={`assistant-answer-${message.id}`} />
+      ) : (
+        <p style={styles.muted}>No answer.</p>
+      )}
+      {message.answerBasis ? (
+        <details data-testid="assistant-basis" style={styles.basis}>
+          <summary style={styles.basisSummary}>Where did this come from?</summary>
+          <p data-testid="assistant-basis-text" style={styles.basisText}>
+            {message.answerBasis}
+          </p>
+        </details>
+      ) : null}
+      {isUnavailable && message.retryable ? (
+        <button
+          type="button"
+          data-testid="assistant-retry"
+          onClick={() => onRetry(message.id)}
+          style={styles.secondaryButton}
+        >
+          Retry
+        </button>
+      ) : null}
     </div>
   );
 }
@@ -359,6 +405,12 @@ const styles = {
     fontSize: 14, lineHeight: 1.5, padding: "8px 10px", resize: "vertical", width: "100%",
   },
   failed: { display: "grid", gap: 8, justifyItems: "start" },
+  answerBody: { display: "grid", gap: 6, justifyItems: "start" },
+  // Neutral, no colour (decision §12) — distinguishes "general study answer" from a grounded one by text.
+  notFromLecture: { color: "#4b5563", fontSize: 12, fontWeight: 600, margin: 0 },
+  basis: { fontSize: 12, width: "100%" },
+  basisSummary: { color: "#4b5563", cursor: "pointer", fontSize: 12 },
+  basisText: { color: "#4b5563", fontSize: 12, lineHeight: 1.4, margin: "4px 0 0 0" },
   bodyText: { color: "#111827", fontSize: 14, lineHeight: 1.5, margin: 0 },
   muted: { color: "#4b5563", fontSize: 14, fontStyle: "italic", margin: 0 },
   primaryButton: {

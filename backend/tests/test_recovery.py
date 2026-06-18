@@ -18,7 +18,7 @@ from app.domains.recovery.locks import maintenance_advisory_lock
 from app.domains.recovery.reaper import run_stuck_row_reaper
 from app.domains.recovery.reconciliation import run_storage_reconciliation
 from app.domains.transcripts import parse_service
-from app.domains.transcripts.embedding_encoder import DeterministicEmbeddingEncoder
+from app.platform.embeddings import DeterministicEmbeddingEncoder
 from app.domains.transcripts.embedding_service import embed_transcript_async
 from app.domains.transcripts.parse_service import ParseClaim
 from app.domains.transcripts.parsers import ParsedSegment

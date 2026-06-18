@@ -21,7 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domains.transcripts import chunk_service, embedding_service, parse_service
 from app.domains.transcripts import retry as retry_module
-from app.domains.transcripts.embedding_encoder import DeterministicEmbeddingEncoder
+from app.platform.embeddings import DeterministicEmbeddingEncoder
 from app.domains.transcripts.fencing import can_commit_step
 from app.domains.transcripts.retry import resolve_retry_scope
 from app.platform.db.models import (

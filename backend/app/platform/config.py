@@ -124,6 +124,21 @@ class Settings:
         return value
 
     @property
+    def EMBEDDING_PROVIDER(self) -> str:
+        """`sentence_transformers` (default; real MiniLM snapshot) or `deterministic` (CI/E2E only —
+        hash-based identical-text→distance-0 vectors, no model download). Mirrors ``LLM_PROVIDER``.
+        ``deterministic`` is rejected in prod/staging so a misconfigured deploy can never serve
+        garbage retrieval (review #9)."""
+        value = os.environ.get("EMBEDDING_PROVIDER", "sentence_transformers").strip()
+        if value not in {"sentence_transformers", "deterministic"}:
+            raise SettingsError(
+                "EMBEDDING_PROVIDER must be 'sentence_transformers' or 'deterministic'"
+            )
+        if value == "deterministic" and not self.IS_NON_PROD:
+            raise SettingsError("EMBEDDING_PROVIDER=deterministic is not allowed in prod/staging")
+        return value
+
+    @property
     def SUPABASE_JWKS_URL(self) -> str:
         return self._required("SUPABASE_JWKS_URL")
 

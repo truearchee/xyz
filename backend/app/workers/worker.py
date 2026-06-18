@@ -8,7 +8,7 @@ from rq import Queue, Worker
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
-from app.domains.transcripts.embedding_encoder import validate_model_snapshot
+from app.platform.embeddings import validate_model_snapshot
 from app.platform.config import settings
 from app.workers.queues import AI_QUEUE_NAME, EMBEDDING_QUEUE_NAME, INGESTION_QUEUE_NAME
 

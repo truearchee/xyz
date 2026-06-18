@@ -16,6 +16,11 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.domains.assistant.grounding import (
+    CONTEXT_UNAVAILABLE,
+    GENERAL_NOT_FROM_LECTURE,
+    LECTURE_GROUNDED,
+)
 from app.domains.assistant.policy import (
     CONVERSATION_NOT_FOUND,
     MESSAGE_NOT_FOUND,
@@ -53,6 +58,31 @@ def _to_conversation_read(conv: AssistantConversation) -> ConversationRead:
     )
 
 
+def _compose_answer_basis(msg: AssistantMessage) -> str | None:
+    """The student-safe "Where did this come from?" line (Stage 8.2, review #3).
+
+    Composed ONLY from the stored generation-time snapshot + grounding_status — never from a fresh join,
+    so a later transcript replacement can't retroactively change a past answer's basis. NEVER exposes
+    chunk ids, distances, checksums, prompts, or reasoning — only module/section TITLES for the grounded
+    case, and static honest text otherwise. educational_redirect / access_denied carry no basis line."""
+    status = msg.grounding_status
+    if status == LECTURE_GROUNDED:
+        snapshot = msg.context_snapshot or {}
+        module_title = snapshot.get("moduleTitle")
+        section_title = snapshot.get("sectionTitle")
+        noun = "lab" if snapshot.get("contextType") == "lab" else "lecture"
+        if module_title and section_title:
+            return f"Based on this {noun}'s context: {module_title} → {section_title}"
+        return f"Based on this {noun}'s context"
+    if status == GENERAL_NOT_FROM_LECTURE:
+        return (
+            "No relevant lecture context was found — general study knowledge, not from this lecture"
+        )
+    if status == CONTEXT_UNAVAILABLE:
+        return "Lecture context is still being prepared"
+    return None  # lecture_grounded handled above; educational_redirect / access_denied / None → no line
+
+
 def _to_message_read(msg: AssistantMessage | None) -> MessageRead | None:
     if msg is None:
         return None
@@ -62,7 +92,7 @@ def _to_message_read(msg: AssistantMessage | None) -> MessageRead | None:
         status=msg.status,
         content=msg.content,
         grounding_status=msg.grounding_status,
-        answer_basis=None,  # 8.2
+        answer_basis=_compose_answer_basis(msg),
         retryable=msg.retryable,
         failure_message=msg.failure_message_sanitized,
         created_at=msg.created_at,
@@ -307,11 +337,16 @@ async def retry_message(
     await _resolve_owned_conversation(
         db, student_id=current_user.user_id, conversation_id=msg.conversation_id
     )
-    if msg.status != "failed":
+    # Retryable iff a failed turn OR a context_unavailable turn (the latter completes with safe text +
+    # retryable=true so the student can re-ask once processing finishes, review #11). A retry recomputes
+    # retrieval/grounding FRESHLY: clear content + grounding + snapshot so nothing stale survives (#15).
+    if not (msg.status == "failed" or msg.grounding_status == CONTEXT_UNAVAILABLE):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail={"code": "not_failed"})
 
     msg.status = "pending"
     msg.content = None
+    msg.grounding_status = None
+    msg.context_snapshot = None
     msg.failure_category = None
     msg.failure_message_sanitized = None
     msg.retryable = False
