@@ -67,12 +67,24 @@ FK precedent in the same table (`source_quiz_attempt_id` → `quiz_attempts`, ad
 **D4 — Server-verified, pinned-404 anti-spoofing.** The save is verified, never trusted: the message
 must be a **completed assistant** message that belongs to the referenced conversation; the conversation
 must be **owned** by the caller, not soft-deleted, and **section-bound**; the bound section must be
-**published + assigned** (live re-check); and `selectedText` must occur in the message after a
-conservative markdown-strip + whitespace-collapse normalization (`glossary/snippet.py`). Subject/folder
-are server-derived from the bound section. The 404 family (ownership / existence / binding / visibility)
-mirrors the assistant's pinned 404 exactly; role / status / text-mismatch are distinct 4xx that fire
-only after ownership is proven, so they leak nothing. Threat model: not arbitrary terms (manual add
-already allows those) but **false source attribution** — claiming the assistant said something it didn't.
+**published + assigned** (live re-check); and **both** the stored `selectedText` snippet **and the
+persisted `term`** must occur in the message after a conservative markdown-strip + whitespace-collapse
+normalization (`glossary/snippet.py`). Subject/folder are server-derived from the bound section. The 404
+family (ownership / existence / binding / visibility) mirrors the assistant's pinned 404 exactly; role /
+status / text-mismatch are distinct 4xx that fire only after ownership is proven, so they leak nothing.
+Threat model: not arbitrary terms (manual add already allows those) but **false source attribution** —
+claiming the assistant said something it didn't.
+
+**D4 amendment (pre-landing review, 2026-06-20).** The first cut verified only `selectedText`-in-message;
+the persisted `term` (the entry headword) was not tied to the message, so a direct-API caller could pair a
+real in-message `selectedText` with an arbitrary `term` and record a `conversation`-sourced entry whose
+headword the assistant never said. Bounded (glossary is personal-scoped → no cross-user attribution; manual
+add already allows arbitrary terms; the summary highlight path has no containment check at all), but it
+contradicts this ADR's anti-spoofing intent, so the service now also requires `term`-in-message
+(`GLOSSARY_TERM_NOT_IN_MESSAGE`, 422). The UI sends `term == selectedText` (the highlight), so real saves
+never trip it. The normalizer's accepted over/under-match boundaries (intraword underscore over-matches; a
+selection spanning list markers under-matches) stay as documented — negligible under personal scope + the
+containment gate, and an under-match only yields a clean 422 with manual add as the fallback.
 
 ## Consequences
 - No new prompt, model, route, queue, or cache-key change (rule 6 satisfied by reuse); rule-11 smoke not

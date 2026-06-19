@@ -370,6 +370,25 @@ async def test_blank_selected_text_rejected(db_session: AsyncSession):
     assert exc.value.detail == {"code": "GLOSSARY_SELECTED_TEXT_REQUIRED"}
 
 
+async def test_arbitrary_term_with_real_selected_text_rejected(db_session: AsyncSession):
+    # Anti-spoofing closes the term-vs-snippet gap: a real in-message selectedText paired with an
+    # arbitrary persisted term (the assistant never said it) is rejected. The UI sends term==selectedText,
+    # so this only blocks a direct-API caller forging a headword onto a real assistant message.
+    seed = await _seed(db_session)
+    ctx = _ctx(seed.students[0])
+    conv = await _conversation(db_session, student=seed.students[0], attached_section_id=seed.section.id)
+    msg = await _message(db_session, conv=conv, content="The mitochondria is the powerhouse.")
+
+    with pytest.raises(HTTPException) as exc:
+        await save_from_highlight(
+            db_session,
+            current_user=ctx,
+            payload=_payload(conv, msg, term="answer key", selected_text="mitochondria"),
+        )
+    assert exc.value.status_code == 422
+    assert exc.value.detail == {"code": "GLOSSARY_TERM_NOT_IN_MESSAGE"}
+
+
 # ── (a) a student's OWN message cannot be a save source ──
 async def test_user_message_rejected(db_session: AsyncSession):
     seed = await _seed(db_session)

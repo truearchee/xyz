@@ -27,6 +27,7 @@ from app.domains.glossary.policy import (
     SOURCE_MESSAGE_NOT_COMPLETED,
     SOURCE_NOT_ASSISTANT_MESSAGE,
     SUBJECT_NOT_FOUND,
+    TERM_NOT_IN_MESSAGE,
     conflict,
     not_found,
     require_student,
@@ -139,6 +140,12 @@ async def _save_from_conversation(
         raise conflict(SOURCE_MESSAGE_NOT_COMPLETED)
     if not selected_text_in_message(selected, resolved.message_content):
         raise validation_error(SELECTED_TEXT_NOT_IN_MESSAGE)
+    # The PERSISTED headword must also come from the message — not just the stored snippet — so a
+    # conversation-sourced entry can never carry a term the assistant didn't say (anti-spoofing). The UI
+    # sends term == selectedText (the highlight), so this never trips a real save; it blocks a direct-API
+    # caller pairing a real selectedText with an arbitrary term.
+    if not selected_text_in_message(payload.term, resolved.message_content):
+        raise validation_error(TERM_NOT_IN_MESSAGE)
     outcome = await save_term(
         db,
         student_id=current_user.user_id,

@@ -30,7 +30,7 @@ _Last updated: 2026-06-19 — **Stage 8.5 (Save-to-Glossary from the Assistant) 
 ## Verification
 - Alembic: fresh DB reached `0040 -> 0041`; `alembic heads` → `0041 (head)`; `downgrade 0040 → upgrade
   head` round-trip clean.
-- Backend `pytest`: **619 → fixed dev_reseed pin → ≈636 passed**; new `test_glossary_conversation_save`
+- Backend `pytest`: first full run **619 passed + 1 failed** (the dev_reseed version pin) → fixed → **620 passed**; the pre-landing review added 5 tests → **625 passed**; new `test_glossary_conversation_save`
   **16 passed** (all spec negatives + empty-context/cache-collapse proofs); `test_glossary_save` **9
   passed** (summary regression, untouched).
 - Client regenerated from the live OpenAPI (only the 4 expected files); frontend `tsc` exit 0; `test:unit`

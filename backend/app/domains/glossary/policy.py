@@ -29,6 +29,10 @@ SOURCE_NOT_ASSISTANT_MESSAGE = "GLOSSARY_SOURCE_NOT_ASSISTANT_MESSAGE"
 SOURCE_MESSAGE_NOT_COMPLETED = "GLOSSARY_SOURCE_MESSAGE_NOT_COMPLETED"
 SELECTED_TEXT_NOT_IN_MESSAGE = "GLOSSARY_SELECTED_TEXT_NOT_IN_MESSAGE"
 SELECTED_TEXT_REQUIRED = "GLOSSARY_SELECTED_TEXT_REQUIRED"
+# The PERSISTED headword must also be from the message (not just the snippet) — anti-spoofing closes the
+# "real selectedText + arbitrary term" gap so a conversation-sourced entry can't carry a term the
+# assistant never said (review finding; the UI sends term == selectedText, so real flows never trip it).
+TERM_NOT_IN_MESSAGE = "GLOSSARY_TERM_NOT_IN_MESSAGE"
 
 
 def require_student(role: str) -> None:
