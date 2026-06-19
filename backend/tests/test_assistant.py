@@ -248,6 +248,33 @@ async def test_open_or_create_is_idempotent(auth_client, db_session, jwt_factory
     assert count == 1
 
 
+async def test_open_or_create_rejects_processing_or_unavailable_sections(
+    auth_client, db_session, jwt_factory, mock_jwks_client
+):
+    processing = await _seed(db_session, active_transcript=True, embedded=False)
+    unavailable = await _seed(db_session, active_transcript=False)
+
+    processing_response = await auth_client.post(
+        f"/student/sections/{processing.section.id}/assistant/conversation",
+        headers=_headers(processing.student, jwt_factory),
+    )
+    unavailable_response = await auth_client.post(
+        f"/student/sections/{unavailable.section.id}/assistant/conversation",
+        headers=_headers(unavailable.student, jwt_factory),
+    )
+
+    assert processing_response.status_code == 409, processing_response.text
+    assert processing_response.json()["detail"] == {
+        "code": "assistant_not_ready",
+        "state": "processing",
+    }
+    assert unavailable_response.status_code == 409, unavailable_response.text
+    assert unavailable_response.json()["detail"] == {
+        "code": "assistant_not_ready",
+        "state": "unavailable",
+    }
+
+
 # ── the create-then-complete turn through the gateway ─────────────────────────────────────────────
 async def test_send_then_generate_completes_with_provenance(db_session, captured_enqueue):
     seed = await _seed(db_session)
@@ -314,6 +341,38 @@ async def test_send_is_idempotent_on_client_key(db_session, captured_enqueue):
     assert user_count == 1
     # only the FIRST send enqueued a turn
     assert captured_enqueue == [first.assistant_message.id]
+
+
+async def test_send_rejects_new_turn_while_assistant_turn_pending(db_session, captured_enqueue):
+    seed = await _seed(db_session)
+    ctx = _ctx(seed.student)
+    conv = await service.open_or_create_conversation(
+        db_session, current_user=ctx, section_id=seed.section.id
+    )
+    first = await service.send_message(
+        db_session,
+        current_user=ctx,
+        conversation_id=conv.id,
+        payload=SendMessageRequest(content="first", client_idempotency_key="first-key"),
+    )
+
+    duplicate_retry = await service.send_message(
+        db_session,
+        current_user=ctx,
+        conversation_id=conv.id,
+        payload=SendMessageRequest(content="first", client_idempotency_key="first-key"),
+    )
+    assert duplicate_retry.user_message.id == first.user_message.id
+
+    with pytest.raises(Exception) as exc:
+        await service.send_message(
+            db_session,
+            current_user=ctx,
+            conversation_id=conv.id,
+            payload=SendMessageRequest(content="second", client_idempotency_key="second-key"),
+        )
+    assert getattr(exc.value, "status_code", None) == 409
+    assert exc.value.detail == {"code": "assistant_turn_pending"}
 
 
 async def test_retry_failed_turn_never_duplicates_user_message(db_session, captured_enqueue):
@@ -391,7 +450,9 @@ async def test_list_messages_paginated_in_order(db_session, captured_enqueue):
     )
     await generate_assistant_answer_async(sent.assistant_message.id, gateway=_gateway(factory), session_factory=factory)
 
-    items, total = await service.list_messages(db_session, current_user=ctx, conversation_id=conv.id, limit=50, offset=0)
-    assert total == 2
+    items, next_cursor, has_more = await service.list_messages(
+        db_session, current_user=ctx, conversation_id=conv.id, before=None, limit=50
+    )
+    assert has_more is False and next_cursor is None
     assert [m.role for m in items] == ["user", "assistant"]
     assert items[1].status == "completed" and items[1].content

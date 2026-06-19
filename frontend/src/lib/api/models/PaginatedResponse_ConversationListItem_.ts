@@ -2,9 +2,9 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { MessageRead } from './MessageRead';
+import type { ConversationListItem } from './ConversationListItem';
 import type { PaginationMeta } from './PaginationMeta';
-export type PaginatedResponse_MessageRead_ = {
-    items: Array<MessageRead>;
+export type PaginatedResponse_ConversationListItem_ = {
+    items: Array<ConversationListItem>;
     pagination: PaginationMeta;
 };

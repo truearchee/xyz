@@ -40,6 +40,15 @@ const fixtureUsers = [
     fullName: 'Student E2E',
     role: 'student',
   },
+  {
+    // Stage 8.4: a second student for the cross-student isolation gate (each student has their own
+    // lecture chat; student-2 never sees student-1's, direct id access → 404).
+    key: 'student2',
+    id: '10000000-0000-4000-8000-000000000005',
+    email: 'student2_e2e@example.test',
+    fullName: 'Student Two E2E',
+    role: 'student',
+  },
 ];
 
 const fixtureIds = {

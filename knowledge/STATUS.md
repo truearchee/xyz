@@ -1,102 +1,46 @@
 # Status
 
-_Last updated: 2026-06-19 — **Stage 4.9g monochrome redesign merge is complete and verified on top of Stage 9.** Stage 5-9 backend/schema behavior remains preserved from `main`; Alembic remains the single Stage 9 head `0039`; the imported Stage 4.9f monochrome frontend design foundation is active._
+_Last updated: 2026-06-19 — **Stage 8.4 PR #10 is rebased onto current `main` after Stage 4.9g and re-verified on a clean DB.** Conflict resolution preserved the Stage 4.9 monochrome/tokenized frontend foundation from `main` and integrated the Stage 8.4 Assistant Workspace + floating-widget changes on top. Stage 8.4 remains pre-merge; PR #10 is ready for owner review, not merged._
 
 ## Current branch
-- Branch: `merge-4.9f-redesign`
-- Target branch: `main`
-- Merge source: `stage/4.9f`
-- Migration block used: `0038-0039` inside the assigned `0038-0043` block.
-- Local runtime: backend `http://localhost:8002`, frontend `http://localhost:3002` via `.context/stage9-compose.override.yml` because host `:8000` is occupied by another workspace.
+- Branch: `stage-8-4-implementation`
+- Target branch: `origin/main`
+- PR: `#10`
+- Migration block used: `0040` inside the assigned `0040-0045` block (single expected head `0040`; chain `0033 → 0038 → 0039 → 0040`, with `0034-0037` frozen for 8.3).
+- Rebase note: `origin/main` still ended at Alembic `0039`, so the Stage 8.4 migration did **not** need renumbering.
 
-## Stage 4.9g merge status
-- Merge scope: import Stage 4.9f's monochrome Apple x Linear frontend design foundation while preserving Stage 5-9 backend, migrations, prompts, generated API client, and feature routes from `main`.
-- Backend/migration/prompt/generated-client guard: `backend/**`, `backend/alembic/**`, `backend/prompts/**`, `backend/tests/**`, `backend/openapi.json`, and `frontend/src/lib/api/**` are intentionally kept diff-clean against `main`.
-- Accepted frontend design foundation: Tailwind v4/PostCSS setup, `frontend/src/app/globals.css`, `frontend/src/components/ui/**`, design check scripts, and tokenized restyles for preserved Stage 5-9 surfaces.
-- Verification: backend `578 passed`, frontend `tsc exit 0`, Alembic `0039 (head)`, `git diff --check` clean, backend/generated-client guard diff empty, and `/student/glossary`, `/student/progress`, assistant panel, and quiz modes present.
+## Stage 4.9g baseline now on main
+- Stage 4.9g merged the Stage 4.9f monochrome frontend design foundation while preserving Stage 5-9 backend/schema behavior.
+- Active frontend baseline includes Tailwind v4/PostCSS, `frontend/src/app/globals.css`, `frontend/src/components/ui/**`, design check scripts, and tokenized restyles for preserved Stage 5-9 surfaces.
+- Conflict resolution for Stage 8.4 kept this baseline in `StudentPage`, `AppShell`, and `AssistantPanel`; 8.4 assistant links/shared-store behavior were integrated into the tokenized UI.
 
-## Stage 9 delivered
-- ADR-052 records the single-tenant MVP decision before new tables; Stage 8 already owns ADR-050 and ADR-051.
-- Finding recorded: design docs claim the Stage 4.9 Tailwind/shared UI system exists, but this checkout lacks it; Stage 9 UI uses the current inline-style idiom.
-- Migration `0038`: grade schemes, grade boundaries, grade components, student grade records, active target-grade goals.
-- Migration `0039`: week progress snapshots and lecture/lab section topic mastery snapshots.
-- Decimal forecast engine with `final_no_remaining`, `achieved`, `impossible`, `on_track`, `at_risk`, `requires_high_score`.
-- Current-student-only routes:
-  - `GET /student/progress`
-  - `GET /student/modules/{module_id}/progress`
-  - `PUT /student/modules/{module_id}/target-grade`
-- Privacy-safe responses: no other student identifiers, individual grade rows, component scores, standings, named comparisons, or other students' quiz averages; benchmark `studentAverage` is the requesting student's own value only.
-- Demo seed: `backend/scripts/seed_progress_demo.py --reset-stage9-demo`, guarded against unsafe DBs and tied to Alembic head `0039`.
-- Frontend route: `/student/progress`, linked from the student home and backed by generated OpenAPI client methods.
-- E2E spec: `tests/e2e/9-my-progress.spec.ts`, run-scoped fixture with all six forecast states, no-AI-log assertion, payload privacy checks, cross-student 404, lecturer 403, and screenshot capture for all forecast states.
-- Admin user list ordering was adjusted newest-first so the existing Stage 2 admin browser gate remains stable when interrupted E2E runs leave residue.
+## Stage 8.4 delivered (Option A — navigation/UX + conversation management, NO new AI surface)
+- **Migration 0040**: `deleted_at` (soft-delete), `title_source` (auto|manual), `last_activity_at` (backfilled); one-active partial-unique index rebuilt to `WHERE conversation_kind='lecture_default' AND deleted_at IS NULL` (delete-then-reopen → fresh row). Downgrade reconciles soft-deleted tombstones before restoring the 0039 unique predicate. `dev_reseed` head pin bumped 0039→0040.
+- **Invariants A–E** each tested: one-active-per-lecture, store-level send idempotency, current-access-wins (filtered + 404), supersession keeps access, delete-while-pending no-resurrection.
+- **Endpoints** (student-only): `GET /student/assistant/conversations` (offset list), keyset `GET …/{id}/messages`, `GET/PATCH/DELETE …/conversations/{id}`. Every one routes through `require_student` (403) + ownership + the Stage 4.7 visibility gate (404, never 403).
+- **Keyset pagination** for messages (ADR-053 sibling envelope; rule-10 escalation); **conversation-management contract** (ADR-054). GET-detail endpoint added (spec amendment).
+- **Frontend**: single-source-of-truth store (`AssistantStoreProvider`, one poll loop, in-flight send keys), shared `ConversationView`, refactored `AssistantPanel`, Workspace list + conversation (context pill, Open lecture, inline rename, delete-with-exact-copy), lecture picker, floating widget + drawer (focus trap, ESC, lecture context pill, deterministic placement, a11y aria-live), chat starters, nav home.
+- **Second external-review repairs**: workspace deep-link composer stays disabled while initial messages load; backend rejects a new send while an assistant turn is pending; widget and server open/create both enforce assistant readiness; shared store treats deleted/access-revoked 404s as gone.
+- **Mobile keyboard claim**: keyboard overlap is explicitly **not verified** and not claimed in 8.4; tracked as follow-up.
 
 ## Verification
-```bash
-docker compose run --rm -v "$PWD/backend:/app" -T backend pytest -q \
-  tests/test_progress_forecast.py tests/test_progress_api.py
-# 18 passed, 6 warnings in 3.13s
+Post-rebase evidence for PR #10:
+- Alembic clean DB upgrade reached `0039 -> 0040`; `alembic heads` returned exactly `0040 (head)`. No migration renumber was needed.
+- Backend: targeted grounding regression **2 passed** after adapting existing-conversation coverage to the readiness gate; full backend `pytest -q` **604 passed**, 158 warnings.
+- Frontend: `bun test tests/frontend/assistant-send-idempotency.test.ts` **4 passed**; `npm run type-check` passed; `npx next build` passed.
+- Browser: cold frontend reproduction `tests/e2e/4.3.5b-shell-routing.spec.ts --workers=1` **1 passed** after prewarming role home routes for local Next-dev cold compilation; full active Playwright suite on a clean DB (rule 14) **20 passed** in 5.9m, run id `e2e-stage84-rebase6-1781890833`, serial `--workers=1`.
+- Rule-11 real-provider smoke PASS: assistant/v2 model echo `MBZUAI-IFM/K2-Think-v2` matched on study and off-topic cases; `isStudyRelated` true/false correct.
 
-docker compose -f docker-compose.yml -f .context/stage9-compose.override.yml run --rm -T backend \
-  sh -lc 'alembic heads && alembic downgrade 0033 && alembic upgrade head && alembic heads && alembic current'
-# Reverified after rebase onto Stage 8.2: 0039 (head); downgraded 0039 -> 0038 -> 0033; upgraded 0033 -> 0038 -> 0039; current 0039 (head)
-
-docker compose run --rm -v "$PWD/backend:/app" -T backend pytest -q
-# 542 passed, 143 warnings in 103.04s
-
-cd frontend && npx tsc --noEmit
-# exit 0
-
-docker compose -f docker-compose.yml -f .context/stage9-compose.override.yml exec -T frontend npx tsc --noEmit
-# exit 0
-
-npx playwright test tests/e2e/9-my-progress.spec.ts --list
-# Total: 1 test in 1 file
-
-npx playwright test --list
-# Total: 16 tests in 14 files
-
-docker compose -f docker-compose.yml -f .context/stage9-compose.override.yml run --rm \
-  -v "$PWD/backend:/app" -T backend python scripts/seed_progress_demo.py --reset-stage9-demo
-# passed; emitted two module IDs and Student A-F demo emails
-
-PLAYWRIGHT_BASE_URL=http://localhost:3002 NEXT_PUBLIC_API_BASE_URL=http://localhost:8002 \
-  STAGE9_SCREENSHOT_DIR=knowledge/steps/stage-09/screenshots \
-  npx playwright test tests/e2e/9-my-progress.spec.ts --project=chromium --workers=1
-# 1 passed (30.8s)
-
-E2E_RUN_ID=e2e-stage9-followup-1781790440 \
-  PLAYWRIGHT_BASE_URL=http://localhost:3002 NEXT_PUBLIC_API_BASE_URL=http://localhost:8002 \
-  npx playwright test tests/e2e/9-my-progress.spec.ts --project=chromium --workers=1
-# 1 passed (24.8s)
-
-set -a; source .env.e2e; set +a
-PLAYWRIGHT_BASE_URL=http://localhost:3002 NEXT_PUBLIC_API_BASE_URL=http://localhost:8002 \
-  npx playwright test --workers=1
-# 16 passed (4.7m)
-
-git diff --check
-# exit 0
-
-curl -i -sS http://localhost:8002/health
-# HTTP/1.1 200 OK
-
-curl -i -sS http://localhost:3002/student/progress
-# HTTP/1.1 200 OK
-```
-
-## Stage 9 documents
-- Spec: [[specs/stage-09/9-my-progress-dashboard]]
-- Plan: [[plans/stage-09/9-my-progress-dashboard]]
-- Report: [[steps/stage-09/9-my-progress-dashboard]]
-- ADR: [[decisions/adr-052-single-tenant-mvp]]
-- Finding: [[steps/stage-09/findings-design-doc-reality-gap]]
-
-## Open risks
-- No known Stage 9 merge/rebase risks remain after reconciling the Stage 8.2 migration head and ADR numbering.
+## Stage 8.4 documents
+- Spec: [[specs/stage-08/8.4-assistant-workspace-widget]]
+- Plan: [[plans/stage-08/8.4-assistant-workspace-widget]]
+- Report: [[steps/stage-08/8.4-assistant-workspace-widget]]
+- ADRs: [[decisions/adr-053-keyset-pagination-sibling-envelope]], [[decisions/adr-054-assistant-conversation-management-contract]]
+- Findings: [[steps/stage-08/findings-8.4-keyset-pagination-escalation]], [[steps/stage-08/findings-8.4-gate-run]]
+- Smoke: [[steps/stage-08/8.4-real-provider-smoke]]
 
 ## Prior
-- 2026-06-18 — Stage 7 core (7a-7c) FULLY VERIFIED; 7d remains separate work.
-- 2026-06-18 — Stage 6 CLOSED and FULLY VERIFIED after rule-11 real-provider smoke and full active Playwright suite.
-- 2026-06-17 — Stage 5.5 FULLY VERIFIED.
-- 2026-06-12 — Stage 4.7 FULLY VERIFIED on main.
+- 2026-06-19 — Stage 4.9g monochrome redesign merge complete and verified on main.
+- 2026-06-18 — Stage 9 My Progress FULLY VERIFIED (migrations 0038-0039).
+- 2026-06-18 — Stage 8.2 grounded retrieval FULLY VERIFIED; 8.1 conversation foundation FULLY VERIFIED.
+- 2026-06-18 — Stage 7 core (7a-7c) FULLY VERIFIED; Stage 6 + Stage 5.5 + Stage 5 FULLY VERIFIED.

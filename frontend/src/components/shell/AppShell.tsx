@@ -1,8 +1,8 @@
 'use client';
 
+import Link from 'next/link';
 import type { ReactNode } from 'react';
 import { useState } from 'react';
-import Link from 'next/link';
 
 import type { CurrentUserResponse } from '../../lib/api';
 import { roleHomePath } from '../../lib/routing/ProtectedAppLayout';
@@ -18,6 +18,9 @@ const NAV_LABEL: Record<string, string> = {
   lecturer: 'My modules',
   student: 'My modules',
 };
+
+const navLinkClass =
+  'rounded-md px-2 py-1 font-medium text-text-muted hover:bg-surface-muted hover:text-text focus:outline-none focus:ring-2 focus:ring-focus-ring focus:ring-offset-2';
 
 export function AppShell({ children, user }: AppShellProps) {
   const [isSigningOut, setIsSigningOut] = useState(false);
@@ -50,13 +53,15 @@ export function AppShell({ children, user }: AppShellProps) {
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-3">
           <div className="flex items-center gap-4">
             <strong className="font-display text-lg font-semibold text-primary">XYZ LMS</strong>
-            <nav aria-label="Role navigation" className="text-sm">
-              <Link
-                href={homePath}
-                className="rounded-md px-2 py-1 font-medium text-text-muted hover:bg-surface-muted hover:text-text focus:outline-none focus:ring-2 focus:ring-focus-ring focus:ring-offset-2"
-              >
+            <nav aria-label="Role navigation" className="flex flex-wrap items-center gap-2 text-sm">
+              <Link href={homePath} className={navLinkClass}>
                 {NAV_LABEL[user.role] ?? 'Home'}
               </Link>
+              {user.role === 'student' ? (
+                <Link href="/student/assistant" className={navLinkClass} data-testid="shell-nav-assistant">
+                  Assistant
+                </Link>
+              ) : null}
             </nav>
           </div>
           <div className="flex items-center gap-3 text-sm">

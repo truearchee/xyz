@@ -139,6 +139,49 @@ WHERE module_section_id = ${sqlLiteral(sectionId)}::uuid
   return Number(rows.at(-1) ?? 0);
 }
 
+// E2E-only: create an active transcript that is visibly "processing" for assistant readiness
+// without racing the real transcript worker. No chunks/embeddings are inserted.
+export function seedProcessingTranscriptForSection(sectionId, lecturerEmail) {
+  assertUuid(sectionId, 'sectionId');
+  const row = runPsqlJson(`
+WITH lecturer AS (
+  SELECT id FROM app_users WHERE email = ${sqlLiteral(lecturerEmail)} LIMIT 1
+),
+inserted AS (
+  INSERT INTO transcripts (
+    id,
+    module_section_id,
+    source_type,
+    original_file_name,
+    storage_key,
+    mime_type,
+    file_size,
+    checksum,
+    status,
+    uploaded_by_user_id,
+    lifecycle_state
+  )
+  SELECT
+    gen_random_uuid(),
+    ${sqlLiteral(sectionId)}::uuid,
+    'manual_upload',
+    'processing.vtt',
+    'e2e/' || gen_random_uuid()::text || '/processing.vtt',
+    'text/vtt',
+    10,
+    encode(sha256(gen_random_uuid()::text::bytea), 'hex'),
+    'chunking',
+    lecturer.id,
+    'active'
+  FROM lecturer
+  RETURNING id
+)
+SELECT json_build_object('id', id)::text FROM inserted;
+`);
+  if (!row?.id) throw new Error(`Failed to seed processing transcript for ${sectionId}`);
+  return row.id;
+}
+
 // Stage 4.6: full lifecycle/lineage view of every transcript in a section (active + pending +
 // superseded), for replacement-continuity + supersession assertions.
 export function getTranscriptsBySection(sectionId) {
@@ -511,7 +554,9 @@ SELECT coalesce(json_agg(json_build_object(
   'id', id,
   'role', role,
   'status', status,
-  'aiRequestLogId', ai_request_log_id
+  'content', content,
+  'aiRequestLogId', ai_request_log_id,
+  'clientIdempotencyKey', client_idempotency_key
 ) ORDER BY created_at, id), '[]'::json)::text
 FROM assistant_messages
 WHERE conversation_id = ${sqlLiteral(conversationId)}::uuid;
@@ -564,6 +609,65 @@ SELECT coalesce(json_agg(json_build_object(
 FROM assistant_messages
 WHERE conversation_id = ${sqlLiteral(conversationId)}::uuid;
 `);
+}
+
+// --- Stage 8.4: conversation lifecycle (soft-delete, title source, activity) ----------------------
+// Full lifecycle view of one conversation — soft-delete tombstone + title source + activity ordering.
+export function getAssistantConversationLifecycle(conversationId) {
+  assertUuid(conversationId, 'conversationId');
+  return runPsqlJson(`
+SELECT json_build_object(
+  'id', id,
+  'title', title,
+  'titleSource', title_source,
+  'deletedAt', deleted_at,
+  'lastActivityAt', last_activity_at,
+  'conversationKind', conversation_kind
+)::text
+FROM assistant_conversations
+WHERE id = ${sqlLiteral(conversationId)}::uuid
+LIMIT 1;
+`);
+}
+
+// Count of ACTIVE (non-soft-deleted) lecture_default conversations for (student, section), so
+// delete-then-reopen assertions are precise — the tombstone must NOT count (invariant A).
+export function countActiveAssistantConversations(studentId, sectionId) {
+  assertUuid(studentId, 'studentId');
+  assertUuid(sectionId, 'sectionId');
+  const rows = runPsqlRows(`
+SELECT count(*)::int
+FROM assistant_conversations
+WHERE student_id = ${sqlLiteral(studentId)}::uuid
+  AND attached_section_id = ${sqlLiteral(sectionId)}::uuid
+  AND conversation_kind = 'lecture_default'
+  AND deleted_at IS NULL;
+`);
+  return Number(rows.at(-1) ?? 0);
+}
+
+// Deterministically seed a PENDING assistant turn (a completed user message + a pending assistant reply)
+// WITHOUT enqueuing a job, so the conversation shows an in-flight answer with no timing race — used by the
+// delete-while-pending gate (invariant E). E2E-only. Returns the assistant message id. assistant_messages
+// has no server default for id, so each row supplies gen_random_uuid().
+export function seedPendingAssistantTurn(conversationId, question = 'Pending question for the delete-while-pending gate') {
+  assertUuid(conversationId, 'conversationId');
+  const row = runPsqlJson(`
+WITH user_msg AS (
+  INSERT INTO assistant_messages (id, conversation_id, role, status, content, retryable)
+  VALUES (gen_random_uuid(), ${sqlLiteral(conversationId)}::uuid, 'user', 'completed', ${sqlLiteral(question)}, false)
+  RETURNING id
+),
+assistant_msg AS (
+  INSERT INTO assistant_messages (id, conversation_id, role, status, prompt_message_id, retryable)
+  SELECT gen_random_uuid(), ${sqlLiteral(conversationId)}::uuid, 'assistant', 'pending', user_msg.id, false
+  FROM user_msg
+  RETURNING id
+)
+SELECT json_build_object('assistantMessageId', (SELECT id FROM assistant_msg))::text;
+`);
+  if (!row?.assistantMessageId) throw new Error(`Failed to seed pending turn for ${conversationId}`);
+  return row.assistantMessageId;
 }
 
 // Stage 4.7 R1 — canary validity: how many of a transcript's SEGMENTS (raw transcript text) contain a

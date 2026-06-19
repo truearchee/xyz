@@ -16,6 +16,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.domains.assistant.cursor import decode_cursor, encode_cursor
 from app.domains.assistant.grounding import (
     CONTEXT_UNAVAILABLE,
     GENERAL_NOT_FROM_LECTURE,
@@ -30,18 +31,24 @@ from app.domains.assistant.policy import (
 )
 from app.domains.assistant.schemas import (
     AssistantAvailabilityResponse,
+    ConversationListItem,
     ConversationRead,
     MessageRead,
     SendMessageRequest,
     SendMessageResponse,
 )
 from app.platform.auth.context import CurrentUserContext
-from app.platform.db.models import AssistantConversation, AssistantMessage
-from app.platform.query.assistant_readiness_read import get_section_assistant_readiness
-from app.platform.query.student_summary_read import get_visible_student_section
+from app.platform.db.models import AssistantConversation, AssistantMessage, CourseModule
+from app.platform.query.assistant_readiness_read import READY, get_section_assistant_readiness
+from app.platform.query.student_summary_read import (
+    StudentConversationListRow,
+    get_visible_student_conversation_list,
+    get_visible_student_section,
+)
 from app.workers.queues import enqueue_generate_assistant_answer
 
 LECTURE_DEFAULT = "lecture_default"
+TITLE_MAX_CHARS = 120
 
 
 def _now() -> datetime:
@@ -53,9 +60,46 @@ def _to_conversation_read(conv: AssistantConversation) -> ConversationRead:
         id=conv.id,
         conversation_kind=conv.conversation_kind,
         attached_section_id=conv.attached_section_id,
+        title=conv.title,
+        title_source=conv.title_source,
+        last_activity_at=conv.last_activity_at,
         created_at=conv.created_at,
         updated_at=conv.updated_at,
     )
+
+
+def _display_title(*, title: str | None, title_source: str, section_title: str | None) -> str:
+    """Derive-on-read title (Stage 8.4): a manual rename wins; otherwise the lecture/lab title (always
+    present in Option A). NEVER AI-generated (rule 15); old null-title 8.1 rows need no backfill."""
+    if title_source == "manual" and title:
+        return title
+    return section_title or "Untitled chat"
+
+
+def _to_conversation_list_item(row: StudentConversationListRow) -> ConversationListItem:
+    return ConversationListItem(
+        id=row.id,
+        display_title=_display_title(
+            title=row.title, title_source=row.title_source, section_title=row.section_title
+        ),
+        module_id=row.module_id,
+        module_title=row.module_title,
+        attached_section_id=row.attached_section_id,
+        section_title=row.section_title,
+        section_type=row.section_type,
+        last_message_preview=row.last_message_preview,
+        last_activity_at=row.last_activity_at,
+        message_count=row.message_count,
+        grounding_chip="Lecture grounded",  # Option A is lecture-grounded only (no ungrounded chat)
+    )
+
+
+def _normalize_title(raw: str) -> str:
+    """Plain-text, Unicode-safe, whitespace-collapsed, length-bounded. Stripped of control/format chars
+    so a title can never inject markup (it renders as escaped plain text in the UI)."""
+    collapsed = " ".join(raw.split())  # collapse any Unicode whitespace run → single space + trim ends
+    cleaned = "".join(ch for ch in collapsed if ch.isprintable())
+    return cleaned[:TITLE_MAX_CHARS].strip()
 
 
 def _compose_answer_basis(msg: AssistantMessage) -> str | None:
@@ -107,9 +151,13 @@ def _to_message_read(msg: AssistantMessage | None) -> MessageRead | None:
 async def _resolve_owned_conversation(
     db: AsyncSession, *, student_id: UUID, conversation_id: UUID
 ) -> AssistantConversation:
-    """Owner + live access re-check (decision 5). Not-owned, missing, or lost-access ⇒ pinned 404."""
+    """Owner + live access re-check (decision 5). Not-owned, missing, soft-deleted, or lost-access ⇒
+    pinned 404 (8.4: a soft-deleted conversation is gone for the student — direct reopen / poll 404s,
+    which is what closes delete-while-pending, invariant E)."""
     conv = await db.get(AssistantConversation, conversation_id)
     if conv is None or conv.student_id != student_id:
+        raise not_found(CONVERSATION_NOT_FOUND)
+    if conv.deleted_at is not None:
         raise not_found(CONVERSATION_NOT_FOUND)
     # Re-validate against CURRENT permissions every load: if attached to a section that is no longer
     # published / the student no longer belongs to, the conversation is inaccessible (no messages render).
@@ -132,8 +180,8 @@ async def get_availability(
     )
     if visible is None:
         raise not_found(SECTION_NOT_FOUND)
-    state = await get_section_assistant_readiness(db, section_id=section_id)
-    return AssistantAvailabilityResponse(state=state)
+    readiness = await get_section_assistant_readiness(db, section_id=section_id)
+    return AssistantAvailabilityResponse(state=readiness)
 
 
 # ── open or create the lecture_default conversation (race-safe) ───────────────────────────────────
@@ -147,16 +195,26 @@ async def open_or_create_conversation(
     if visible is None:
         raise not_found(SECTION_NOT_FOUND)
 
+    readiness = await get_section_assistant_readiness(db, section_id=section_id)
+    if readiness != READY:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": "assistant_not_ready", "state": readiness},
+        )
+
     existing = await _existing_lecture_default(db, student_id=current_user.user_id, section_id=section_id)
     if existing is not None:
         return _to_conversation_read(existing)
 
+    now = _now()
     conv = AssistantConversation(
         student_id=current_user.user_id,
         conversation_kind=LECTURE_DEFAULT,
         attached_section_id=section_id,
-        created_at=_now(),
-        updated_at=_now(),
+        title_source="auto",
+        last_activity_at=now,
+        created_at=now,
+        updated_at=now,
     )
     db.add(conv)
     try:
@@ -183,45 +241,156 @@ async def _existing_lecture_default(
                 AssistantConversation.student_id == student_id,
                 AssistantConversation.attached_section_id == section_id,
                 AssistantConversation.conversation_kind == LECTURE_DEFAULT,
+                AssistantConversation.deleted_at.is_(None),
             )
         )
     ).scalar_one_or_none()
 
 
-# ── message history (paginated) ──────────────────────────────────────────────────────────────────
-async def list_messages(
+# ── conversation list (Workspace) ─────────────────────────────────────────────────────────────────
+async def list_conversations(
     db: AsyncSession,
     *,
     current_user: CurrentUserContext,
-    conversation_id: UUID,
     limit: int,
     offset: int,
-) -> tuple[list[MessageRead], int]:
+) -> tuple[list[ConversationListItem], int]:
+    """The student's OWN, non-soft-deleted, still-accessible conversations, newest-activity-first. The
+    visibility filter is the SAME 4.7 gate as a direct open, so an access-revoked conversation simply
+    has no row (invariant C is structural)."""
+    require_student(current_user.role)
+    rows, total = await get_visible_student_conversation_list(
+        db, student_id=current_user.user_id, limit=limit, offset=offset
+    )
+    return [_to_conversation_list_item(r) for r in rows], total
+
+
+async def get_conversation_detail(
+    db: AsyncSession, *, current_user: CurrentUserContext, conversation_id: UUID
+) -> ConversationListItem:
+    """One conversation's metadata for the Workspace conversation view + context pill (lecture/module
+    titles, display title, message count). Resolves ownership + CURRENT visibility (404 on not-owned /
+    soft-deleted / access-revoked — invariant C), so a deep link to a now-inaccessible chat 404s."""
     require_student(current_user.role)
     conv = await _resolve_owned_conversation(
         db, student_id=current_user.user_id, conversation_id=conversation_id
     )
-    total = (
+    if conv.attached_section_id is None:  # Option A always attaches a section; defensive otherwise
+        raise not_found(CONVERSATION_NOT_FOUND)
+    visible = await get_visible_student_section(
+        db, student_id=current_user.user_id, section_id=conv.attached_section_id
+    )
+    if visible is None:  # resolve already re-checked, but never trust a stale read
+        raise not_found(CONVERSATION_NOT_FOUND)
+    module = await db.get(CourseModule, visible.course_module_id)
+    count = (
         await db.execute(
             select(func.count())
             .select_from(AssistantMessage)
             .where(AssistantMessage.conversation_id == conv.id)
         )
     ).scalar_one()
-    rows = (
+    return ConversationListItem(
+        id=conv.id,
+        display_title=_display_title(
+            title=conv.title, title_source=conv.title_source, section_title=visible.title
+        ),
+        module_id=visible.course_module_id,
+        module_title=module.title if module is not None else "",
+        attached_section_id=conv.attached_section_id,
+        section_title=visible.title,
+        section_type=visible.type,
+        last_message_preview=None,
+        last_activity_at=conv.last_activity_at or conv.updated_at,
+        message_count=int(count),
+        grounding_chip="Lecture grounded",
+    )
+
+
+# ── message history (KEYSET pagination — ADR-053) ──────────────────────────────────────────────────
+async def list_messages(
+    db: AsyncSession,
+    *,
+    current_user: CurrentUserContext,
+    conversation_id: UUID,
+    before: str | None,
+    limit: int,
+) -> tuple[list[MessageRead], str | None, bool]:
+    """Keyset page over the stable composite ``(created_at, id)``. With no ``before`` the NEWEST page is
+    returned; ``before=next_cursor`` walks older. Items come back in display order (oldest→newest within
+    the page) so the UI prepends older pages on scroll-up. The ``(created_at, id)`` tiebreak is
+    load-bearing: 8.1 stamps a turn's user + assistant rows with the SAME ``created_at``."""
+    require_student(current_user.role)
+    conv = await _resolve_owned_conversation(
+        db, student_id=current_user.user_id, conversation_id=conversation_id
+    )
+    query = select(AssistantMessage).where(AssistantMessage.conversation_id == conv.id)
+    if before is not None:
+        before_created_at, before_id = decode_cursor(before)
+        query = query.where(
+            (AssistantMessage.created_at < before_created_at)
+            | (
+                (AssistantMessage.created_at == before_created_at)
+                & (AssistantMessage.id < before_id)
+            )
+        )
+    rows_desc = (
         (
             await db.execute(
-                select(AssistantMessage)
-                .where(AssistantMessage.conversation_id == conv.id)
-                .order_by(AssistantMessage.created_at.asc(), AssistantMessage.id.asc())
-                .limit(limit)
-                .offset(offset)
+                query.order_by(
+                    AssistantMessage.created_at.desc(), AssistantMessage.id.desc()
+                ).limit(limit + 1)
             )
         )
         .scalars()
         .all()
     )
-    return [_to_message_read(m) for m in rows], int(total)
+    has_more = len(rows_desc) > limit
+    page_desc = rows_desc[:limit]
+    next_cursor = (
+        encode_cursor(page_desc[-1].created_at, page_desc[-1].id)
+        if has_more and page_desc
+        else None
+    )
+    return [_to_message_read(m) for m in reversed(page_desc)], next_cursor, has_more
+
+
+# ── rename / soft-delete (Workspace conversation management) ────────────────────────────────────────
+async def rename_conversation(
+    db: AsyncSession,
+    *,
+    current_user: CurrentUserContext,
+    conversation_id: UUID,
+    title: str,
+) -> ConversationRead:
+    require_student(current_user.role)
+    conv = await _resolve_owned_conversation(
+        db, student_id=current_user.user_id, conversation_id=conversation_id
+    )
+    cleaned = _normalize_title(title)
+    if not cleaned:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail={"code": "empty_title"}
+        )
+    conv.title = cleaned
+    conv.title_source = "manual"  # a later auto-title never overwrites a manual one
+    conv.updated_at = _now()  # rename does NOT bump last_activity_at → it never reorders the list
+    await db.commit()
+    return _to_conversation_read(conv)
+
+
+async def soft_delete_conversation(
+    db: AsyncSession,
+    *,
+    current_user: CurrentUserContext,
+    conversation_id: UUID,
+) -> None:
+    require_student(current_user.role)
+    conv = await _resolve_owned_conversation(
+        db, student_id=current_user.user_id, conversation_id=conversation_id
+    )
+    conv.deleted_at = _now()  # frees the one-active slot so reopening the lecture is a FRESH row (A)
+    await db.commit()
 
 
 # ── send a message (user saved first + pending assistant + enqueue-after-commit) ─────────────────
@@ -236,6 +405,7 @@ async def send_message(
     conv = await _resolve_owned_conversation(
         db, student_id=current_user.user_id, conversation_id=conversation_id
     )
+    conv = await _lock_conversation_for_turn(db, conversation_id=conv.id)
 
     # Idempotency (decision 8): a re-send with the same client key returns the existing turn — never a
     # duplicate user message or a duplicate AI call.
@@ -244,6 +414,11 @@ async def send_message(
     )
     if existing_user is not None:
         return await _existing_turn_response(db, user_msg=existing_user)
+    if await _has_pending_assistant_turn(db, conversation_id=conv.id):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": "assistant_turn_pending"},
+        )
 
     now = _now()
     user_msg = AssistantMessage(
@@ -269,6 +444,7 @@ async def send_message(
     )
     db.add(assistant_msg)
     conv.updated_at = now
+    conv.last_activity_at = now  # user-message creation bumps activity (orders the Workspace list)
     try:
         await db.commit()
     except IntegrityError:
@@ -293,6 +469,21 @@ async def send_message(
     )
 
 
+async def _lock_conversation_for_turn(
+    db: AsyncSession, *, conversation_id: UUID
+) -> AssistantConversation:
+    conv = (
+        await db.execute(
+            select(AssistantConversation)
+            .where(AssistantConversation.id == conversation_id)
+            .with_for_update()
+        )
+    ).scalar_one_or_none()
+    if conv is None or conv.deleted_at is not None:
+        raise not_found(CONVERSATION_NOT_FOUND)
+    return conv
+
+
 async def _user_message_by_key(
     db: AsyncSession, *, conversation_id: UUID, key: str
 ) -> AssistantMessage | None:
@@ -305,6 +496,21 @@ async def _user_message_by_key(
             )
         )
     ).scalar_one_or_none()
+
+
+async def _has_pending_assistant_turn(db: AsyncSession, *, conversation_id: UUID) -> bool:
+    value = (
+        await db.execute(
+            select(AssistantMessage.id)
+            .where(
+                AssistantMessage.conversation_id == conversation_id,
+                AssistantMessage.role == "assistant",
+                AssistantMessage.status == "pending",
+            )
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    return value is not None
 
 
 async def _existing_turn_response(

@@ -247,6 +247,118 @@ async def _fetch_one(query: str, params: dict | None = None):
         await engine.dispose()
 
 
+async def _seed_assistant_0040_delete_reopen_shape() -> dict[str, object]:
+    """Seed the exact 8.4 lifecycle shape that 0039 cannot represent.
+
+    0040 allows a soft-deleted lecture_default tombstone plus a fresh active row for the same
+    (student, section). Downgrade must reconcile that before restoring the old 0039 unique index.
+    """
+    student_id = uuid7()
+    lecturer_id = uuid7()
+    module_id = uuid7()
+    section_id = uuid7()
+    deleted_conversation_id = uuid7()
+    active_conversation_id = uuid7()
+    deleted_message_id = uuid7()
+
+    engine = create_async_engine(_test_database_url())
+    try:
+        async with engine.begin() as connection:
+            await connection.execute(
+                text(
+                    """
+                    INSERT INTO app_users (id, auth_provider_id, email, full_name, role)
+                    VALUES
+                      (:student_id, :student_auth, :student_email, 'Stage 8.4 Student', 'student'),
+                      (:lecturer_id, :lecturer_auth, :lecturer_email, 'Stage 8.4 Lecturer', 'lecturer')
+                    """
+                ),
+                {
+                    "student_id": student_id,
+                    "student_auth": f"auth-{student_id}",
+                    "student_email": f"stage84-{student_id}@example.test",
+                    "lecturer_id": lecturer_id,
+                    "lecturer_auth": f"auth-{lecturer_id}",
+                    "lecturer_email": f"stage84-{lecturer_id}@example.test",
+                },
+            )
+            await connection.execute(
+                text(
+                    """
+                    INSERT INTO course_modules (id, title, owner_id, timezone, is_active)
+                    VALUES (:module_id, 'Stage 8.4 Downgrade Module', :lecturer_id, 'UTC', true)
+                    """
+                ),
+                {"module_id": module_id, "lecturer_id": lecturer_id},
+            )
+            await connection.execute(
+                text(
+                    """
+                    INSERT INTO module_sections (
+                        id, course_module_id, title, type, order_index, publish_status, status
+                    )
+                    VALUES (
+                        :section_id, :module_id, 'Stage 8.4 Downgrade Lecture',
+                        'lecture', 0, 'published', 'active'
+                    )
+                    """
+                ),
+                {"section_id": section_id, "module_id": module_id},
+            )
+            await connection.execute(
+                text(
+                    """
+                    INSERT INTO assistant_conversations (
+                        id, student_id, conversation_kind, attached_section_id, title,
+                        title_source, deleted_at, last_activity_at
+                    )
+                    VALUES
+                      (
+                        :deleted_conversation_id, :student_id, 'lecture_default', :section_id,
+                        'Deleted tombstone', 'auto', now() - interval '5 minutes', now() - interval '10 minutes'
+                      ),
+                      (
+                        :active_conversation_id, :student_id, 'lecture_default', :section_id,
+                        'Fresh active', 'auto', NULL, now()
+                      )
+                    """
+                ),
+                {
+                    "deleted_conversation_id": deleted_conversation_id,
+                    "active_conversation_id": active_conversation_id,
+                    "student_id": student_id,
+                    "section_id": section_id,
+                },
+            )
+            await connection.execute(
+                text(
+                    """
+                    INSERT INTO assistant_messages (
+                        id, conversation_id, role, status, content, retryable, client_idempotency_key
+                    )
+                    VALUES (
+                        :deleted_message_id, :deleted_conversation_id, 'user', 'completed',
+                        'message on the tombstone', false, 'deleted-key'
+                    )
+                    """
+                ),
+                {
+                    "deleted_message_id": deleted_message_id,
+                    "deleted_conversation_id": deleted_conversation_id,
+                },
+            )
+    finally:
+        await engine.dispose()
+
+    return {
+        "student_id": student_id,
+        "section_id": section_id,
+        "deleted_conversation_id": deleted_conversation_id,
+        "active_conversation_id": active_conversation_id,
+        "deleted_message_id": deleted_message_id,
+    }
+
+
 async def _insert_transcript_fixture(connection) -> dict[str, object]:
     app_user_id = uuid7()
     module_id = uuid7()
@@ -798,6 +910,52 @@ def test_migration_round_trip() -> None:
     _assert_success(_run_alembic("upgrade", "head"))
     _assert_success(_run_alembic("downgrade", "base"))
     _assert_success(_run_alembic("upgrade", "head"))
+
+
+def test_assistant_0040_downgrade_reconciles_delete_reopen_tombstone() -> None:
+    try:
+        _assert_success(_run_alembic("downgrade", "base"))
+        _assert_success(_run_alembic("upgrade", "head"))
+        ids = asyncio.run(_seed_assistant_0040_delete_reopen_shape())
+
+        # This used to fail while recreating the 0039 unique index because both rows shared the same
+        # (student_id, attached_section_id, lecture_default) identity. The downgrade must remove the
+        # soft-deleted tombstone before restoring the old predicate.
+        _assert_success(_run_alembic("downgrade", "0039"))
+
+        remaining = asyncio.run(
+            _fetch_one(
+                """
+                SELECT
+                  count(*)::int AS conversation_count,
+                  string_agg(id::text, ',') AS remaining_conversation_id
+                FROM assistant_conversations
+                WHERE student_id = :student_id
+                  AND attached_section_id = :section_id
+                  AND conversation_kind = 'lecture_default'
+                """,
+                {"student_id": ids["student_id"], "section_id": ids["section_id"]},
+            )
+        )
+        assert remaining.conversation_count == 1
+        assert remaining.remaining_conversation_id == str(ids["active_conversation_id"])
+
+        tombstone_messages = asyncio.run(
+            _fetch_one(
+                """
+                SELECT count(*)::int AS message_count
+                FROM assistant_messages
+                WHERE conversation_id = :deleted_conversation_id
+                """,
+                {"deleted_conversation_id": ids["deleted_conversation_id"]},
+            )
+        )
+        assert tombstone_messages.message_count == 0
+
+        _assert_success(_run_alembic("upgrade", "head"))
+    finally:
+        _assert_success(_run_alembic("downgrade", "base"))
+        _assert_success(_run_alembic("upgrade", "head"))
 
 
 def test_section_asset_kind_migration_backfills_existing_rows() -> None:

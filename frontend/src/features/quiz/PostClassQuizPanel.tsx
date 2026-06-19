@@ -301,6 +301,7 @@ export function PostClassQuizPanel({ sectionId }: { sectionId: string }) {
           <button
             type="button"
             data-testid="quiz-complete"
+            data-assistant-safe-area
             disabled={!allAnswered || busy}
             onClick={() => void onComplete()}
             style={styles.primaryButton}
