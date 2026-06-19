@@ -114,3 +114,4 @@ docker exec test2-db-1 psql -U postgres -c "CREATE DATABASE xyz_lms_5d"
 - 2026-06-17 — [Knowledge fix] added the missing 5d spec and plan, and linked the spec-plan-report trio.
 - 2026-06-17 16:56 — [Session 6d] post-class start was retrofitted to the Stage 6 pooled path in `backend/app/domains/quiz/service.py` and `generation_service.py`; the Stage 5 direct-generation functions remain as the revert path. The required 5d browser gate re-run is still blocked by the 6d runtime environment.
 - 2026-06-17 18:59 — [Session 6d] re-ran the 5d browser gate successfully on the pooled post-class path (`1 passed (16.3s)`) and updated `tests/e2e/5d-post-class-quiz.spec.ts` to expect the Stage 6 retake-prefix count after one saved mistake.
+- 2026-06-19 — [Session 4.9g] visually restyled quiz UI primitives/panels onto the imported monochrome token system; quiz API/data flow unchanged. See [[steps/stage-04/4.9g-merge-monochrome-redesign]].

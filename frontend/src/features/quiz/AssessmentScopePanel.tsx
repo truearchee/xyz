@@ -141,29 +141,36 @@ export function AssessmentScopePanel({ moduleId }: { moduleId: string }) {
 }
 
 const styles = {
-  block: { border: "1px solid #d7dde8", borderRadius: 8, display: "grid", gap: 12, padding: 16 },
-  heading: { color: "#111827", fontSize: 18, lineHeight: 1.3, margin: 0 },
-  muted: { color: "#4b5563", fontSize: 14, lineHeight: 1.5, margin: 0 },
+  block: {
+    background: "var(--color-surface)",
+    border: "1px solid var(--color-border)",
+    borderRadius: "var(--radius-lg)",
+    display: "grid",
+    gap: 12,
+    padding: 16,
+  },
+  heading: { color: "var(--color-text)", fontSize: 18, lineHeight: 1.3, margin: 0 },
+  muted: { color: "var(--color-text-muted)", fontSize: 14, lineHeight: 1.5, margin: 0 },
   form: {
     alignItems: "end", display: "grid", gap: 10,
     gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
   },
-  label: { color: "#374151", display: "grid", fontSize: 13, fontWeight: 700, gap: 6 },
+  label: { color: "var(--color-text)", display: "grid", fontSize: 13, fontWeight: 600, gap: 6 },
   input: {
-    border: "1px solid #cbd5e1", borderRadius: 6, color: "#111827", fontSize: 14,
+    background: "var(--color-surface)", border: "1px solid var(--color-border-strong)", borderRadius: "var(--radius-md)", color: "var(--color-text)", fontSize: 14,
     minHeight: 36, padding: "0 10px",
   },
   primaryButton: {
-    background: "#174a63", border: "1px solid #174a63", borderRadius: 6, color: "#ffffff",
+    background: "var(--color-primary)", border: "1px solid var(--color-primary)", borderRadius: 999, color: "var(--color-on-primary)",
     cursor: "pointer", fontSize: 13, fontWeight: 700, minHeight: 36, padding: "0 14px",
   },
-  errorText: { color: "#991b1b", fontSize: 13, margin: 0 },
-  statusText: { color: "#047857", fontSize: 13, fontWeight: 700, margin: 0 },
+  errorText: { color: "var(--color-danger-text)", fontSize: 13, margin: 0 },
+  statusText: { color: "var(--color-success-text)", fontSize: 13, fontWeight: 700, margin: 0 },
   tableWrap: { display: "grid", gap: 8, overflowX: "auto" },
   table: { borderCollapse: "collapse", fontSize: 13, minWidth: 520, width: "100%" },
   th: {
-    borderBottom: "1px solid #d7dde8", color: "#374151", fontWeight: 700,
+    borderBottom: "1px solid var(--color-border)", color: "var(--color-text-muted)", fontWeight: 700,
     padding: "8px 10px", textAlign: "left",
   },
-  td: { borderBottom: "1px solid #eef2f7", color: "#111827", padding: "8px 10px" },
+  td: { borderBottom: "1px solid var(--color-border)", color: "var(--color-text)", padding: "8px 10px" },
 } satisfies Record<string, React.CSSProperties>;

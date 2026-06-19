@@ -61,61 +61,61 @@ export function StudentSectionDetail({ moduleId, sectionId }: { moduleId: string
 
   if (shellState === "loading") {
     return (
-      <section aria-busy="true" style={styles.panel}>
-        <h1 style={styles.stateTitle}>Loading section…</h1>
+      <section aria-busy="true" className="rounded-lg border border-border p-6">
+        <h1 className="m-0 font-display text-lg leading-snug text-text">Loading section…</h1>
       </section>
     );
   }
   if (shellState === "missing") {
     return (
-      <section aria-label="Section unavailable" style={styles.panel}>
-        <h1 style={styles.stateTitle}>This section is unavailable</h1>
-        <p style={styles.stateText}>It may be unpublished or you may not have access.</p>
+      <section aria-label="Section unavailable" className="rounded-lg border border-border p-6">
+        <h1 className="m-0 font-display text-lg leading-snug text-text">This section is unavailable</h1>
+        <p className="mt-2 text-sm leading-normal text-text-muted">It may be unpublished or you may not have access.</p>
       </section>
     );
   }
   if (shellState === "error" || section === null) {
     return (
-      <section role="alert" style={styles.errorPanel}>
-        <h1 style={styles.stateTitle}>Couldn’t load this section</h1>
-        <p style={styles.stateText}>Please refresh to try again.</p>
+      <section role="alert" className="rounded-lg border border-danger p-6 text-danger-text">
+        <h1 className="m-0 font-display text-lg leading-snug">Couldn’t load this section</h1>
+        <p className="mt-2 text-sm leading-normal">Please refresh to try again.</p>
       </section>
     );
   }
 
   return (
-    <section aria-labelledby="student-section-title" data-testid="student-section-detail" style={styles.shell}>
+    <section aria-labelledby="student-section-title" data-testid="student-section-detail" className="grid gap-5">
       <header>
-        <p style={styles.eyebrow}>{section.type}</p>
-        <h1 id="student-section-title" style={styles.title}>
+        <p className="m-0 mb-1 text-xs font-medium uppercase text-text-muted">{section.type}</p>
+        <h1 id="student-section-title" className="m-0 break-words font-display text-2xl leading-tight text-text">
           {section.title}
         </h1>
       </header>
 
-      <section aria-label="Lecturer notes" style={styles.block}>
-        <h2 style={styles.blockHeading}>Lecturer notes</h2>
+      <section aria-label="Lecturer notes" className="grid gap-2 rounded-lg border border-border bg-surface-raised p-4">
+        <h2 className="m-0 text-xs font-semibold uppercase text-text-muted">Lecturer notes</h2>
         {section.lecturerNotes ? (
-          <p style={styles.bodyText}>{section.lecturerNotes}</p>
+          <p className="m-0 whitespace-pre-wrap text-sm leading-normal text-text">{section.lecturerNotes}</p>
         ) : (
-          <p style={styles.muted}>No lecturer notes</p>
+          <p className="m-0 text-sm italic text-text-muted">No lecturer notes</p>
         )}
       </section>
 
       {section.type === "lab" ? (
-        <section aria-label="Deadline" style={styles.block}>
-          <h2 style={styles.blockHeading}>Deadline</h2>
-          <p data-testid={`student-section-detail-due-at-${section.id}`} style={styles.bodyText}>
+        <section aria-label="Deadline" className="grid gap-2 rounded-lg border border-border bg-surface-raised p-4">
+          <h2 className="m-0 text-xs font-semibold uppercase text-text-muted">Deadline</h2>
+          <p data-testid={`student-section-detail-due-at-${section.id}`} className="m-0 text-sm leading-normal text-text">
             {section.dueAt ? formatDateTime(section.dueAt) : "No deadline set"}
           </p>
         </section>
       ) : null}
 
-      <section aria-label="Learning materials" style={styles.block}>
-        <h2 style={styles.blockHeading}>Learning materials</h2>
+      <section aria-label="Learning materials" className="grid gap-2 rounded-lg border border-border bg-surface-raised p-4">
+        <h2 className="m-0 text-xs font-semibold uppercase text-text-muted">Learning materials</h2>
         {section.materials.length === 0 ? (
-          <p style={styles.muted}>No materials</p>
+          <p className="m-0 text-sm italic text-text-muted">No materials</p>
         ) : (
-          <ul style={styles.materialList}>
+          <ul className="m-0 grid list-none gap-2 p-0 text-text">
             {section.materials.map((m) => (
               <StudentAssetRow
                 asset={m}
@@ -200,21 +200,21 @@ function SummariesPanel({ sectionId }: { sectionId: string }) {
 
   if (summaries === null) {
     return (
-      <section aria-busy={!readError} aria-label="Summaries" style={styles.block}>
-        <h2 style={styles.blockHeading}>Summaries</h2>
+      <section aria-busy={!readError} aria-label="Summaries" className="grid gap-2 rounded-lg border border-border bg-surface-raised p-4">
+        <h2 className="m-0 text-xs font-semibold uppercase text-text-muted">Summaries</h2>
         {readError ? (
-          <p role="alert" style={styles.muted}>
+          <p role="alert" className="m-0 text-sm italic text-text-muted">
             Couldn’t load summaries — refresh to try again.
           </p>
         ) : (
-          <p style={styles.muted}>Loading summaries…</p>
+          <p className="m-0 text-sm italic text-text-muted">Loading summaries…</p>
         )}
       </section>
     );
   }
 
   return (
-    <section aria-label="Summaries" style={styles.block}>
+    <section aria-label="Summaries" className="grid gap-2 rounded-lg border border-border bg-surface-raised p-4">
       {/* Stage 7a: highlight any text in a summary and save it to the personal glossary. */}
       <SaveToGlossary moduleSectionId={sectionId}>
         <SummarySlot label="Brief summary" testId="student-summary-brief" slot={summaries.summaries.brief} capped={capped} />
@@ -244,49 +244,19 @@ function SummarySlot({
     return null; // block absent for non-lecture/lab
   }
   return (
-    <div data-testid={testId} data-state={slot.state} style={styles.summaryBlock}>
-      <h3 style={styles.summaryHeading}>{label}</h3>
+    <div data-testid={testId} data-state={slot.state} className="grid gap-1.5">
+      <h3 className="m-0 text-sm font-semibold text-text">{label}</h3>
       {slot.state === READY && slot.content ? (
         <SummaryMarkdown content={slot.content} testId={`${testId}-content`} />
       ) : slot.state === GENERATING ? (
-        <p role="status" style={styles.muted}>
+        <p role="status" className="m-0 text-sm italic text-text-muted">
           {capped ? "Still being generated — refresh to check." : "Summary is being generated."}
         </p>
       ) : (
-        <p role="status" style={styles.muted}>
+        <p role="status" className="m-0 text-sm italic text-text-muted">
           Summary is currently unavailable.
         </p>
       )}
     </div>
   );
 }
-
-const styles = {
-  shell: { display: "grid", gap: 18 },
-  panel: { border: "1px solid #d7dde8", borderRadius: 8, padding: 24 },
-  errorPanel: { border: "1px solid #f0b4b4", borderRadius: 8, color: "#7f1d1d", padding: 24 },
-  eyebrow: {
-    color: "#4b5563",
-    fontSize: 13,
-    fontWeight: 700,
-    margin: "0 0 4px",
-    textTransform: "uppercase",
-  },
-  title: { color: "#111827", fontSize: 24, lineHeight: 1.2, margin: 0 },
-  block: { border: "1px solid #d7dde8", borderRadius: 8, display: "grid", gap: 8, padding: 16 },
-  blockHeading: {
-    color: "#111827",
-    fontSize: 13,
-    fontWeight: 700,
-    margin: 0,
-    textTransform: "uppercase",
-    letterSpacing: "0.03em",
-  },
-  summaryBlock: { display: "grid", gap: 6 },
-  summaryHeading: { color: "#374151", fontSize: 14, fontWeight: 700, margin: 0 },
-  bodyText: { color: "#111827", fontSize: 14, lineHeight: 1.5, margin: 0 },
-  muted: { color: "#4b5563", fontSize: 14, fontStyle: "italic", margin: 0 },
-  stateTitle: { fontSize: 18, lineHeight: 1.35, margin: 0 },
-  stateText: { fontSize: 14, lineHeight: 1.5, margin: "8px 0 0" },
-  materialList: { color: "#111827", display: "grid", gap: 8, listStyle: "none", margin: 0, padding: 0 },
-} satisfies Record<string, React.CSSProperties>;

@@ -166,3 +166,6 @@ runs this workspace on:
   and progress routers/generated-client exports were kept as additive unions, and post-rebase
   verification passed focused progress backend `18 passed`, frontend `tsc --noEmit`, and Alembic
   round-trip `0033 -> 0038 -> 0039`.
+- 2026-06-19 — [Session 4.9g] visually tokenized the progress dashboard against the imported monochrome
+  design foundation; progress API/schema/forecast behavior unchanged. See
+  [[steps/stage-04/4.9g-merge-monochrome-redesign]].

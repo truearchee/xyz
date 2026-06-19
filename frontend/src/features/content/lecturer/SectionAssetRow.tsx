@@ -12,6 +12,11 @@ type SectionAssetRowProps = {
   onReplace: (assetId: string, file: File) => Promise<void>;
 };
 
+const btnPrimary =
+  "min-h-[34px] rounded-full border border-primary bg-primary px-3 text-xs font-medium text-on-primary hover:bg-primary-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2";
+const btnDisabled =
+  "min-h-[34px] cursor-not-allowed rounded-full border border-border bg-surface-muted px-3 text-xs font-medium text-text-muted";
+
 export function SectionAssetRow({
   asset,
   disabled = false,
@@ -36,24 +41,24 @@ export function SectionAssetRow({
   }
 
   return (
-    <li data-testid={`section-asset-row-${asset.id}`} style={styles.row}>
-      <div style={styles.meta}>
-        <span style={styles.fileName}>{asset.fileName}</span>
-        <span style={styles.fileDetail}>
+    <li
+      data-testid={`section-asset-row-${asset.id}`}
+      className="grid items-start gap-3 rounded-lg border border-border p-3 [grid-template-columns:repeat(auto-fit,minmax(190px,1fr))]"
+    >
+      <div className="grid min-w-0 gap-1">
+        <span className="break-words text-sm font-semibold text-text">{asset.fileName}</span>
+        <span className="text-xs text-text-muted">
           {formatBytes(asset.fileSize)} · {asset.mimeType}
         </span>
       </div>
       <span
         data-testid={`section-asset-processing-status-${asset.id}`}
-        style={styles.processingBadge}
+        className="w-fit self-start rounded-full border border-success bg-success-surface px-2.5 py-1 text-xs font-medium capitalize text-success-text"
       >
         {formatProcessingStatus(asset.processingStatus)}
       </span>
-      <div
-        data-testid={`section-asset-replace-${asset.id}`}
-        style={styles.replace}
-      >
-        <label htmlFor={inputId} style={styles.replaceLabel}>
+      <div data-testid={`section-asset-replace-${asset.id}`} className="grid gap-2">
+        <label htmlFor={inputId} className="text-xs font-medium text-text-muted">
           Replacement PDF
         </label>
         <input
@@ -64,26 +69,25 @@ export function SectionAssetRow({
             setSelectedFile(event.currentTarget.files?.[0] ?? null);
           }}
           ref={inputRef}
-          style={styles.input}
+          className="min-h-[34px] rounded-md border border-border-strong px-[7px] py-[5px] text-xs focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
           type="file"
         />
         <button
           disabled={disabled || isReplacing || !selectedFile}
           onClick={() => void submitReplace()}
-          style={
-            disabled || isReplacing || !selectedFile
-              ? styles.disabledButton
-              : styles.button
-          }
+          className={disabled || isReplacing || !selectedFile ? btnDisabled : btnPrimary}
           type="button"
         >
           {isReplacing ? "Replacing..." : "Replace"}
         </button>
         {selectedFile ? (
-          <p style={styles.selected}>Selected: {selectedFile.name}</p>
+          <p className="m-0 break-words text-xs text-text-muted">Selected: {selectedFile.name}</p>
         ) : null}
         {errorMessage ? (
-          <p role="alert" style={styles.error}>
+          <p
+            role="alert"
+            className="m-0 rounded-md border border-danger bg-danger-surface px-2 py-1.5 text-xs leading-snug text-danger-text"
+          >
             {errorMessage}
           </p>
         ) : null}
@@ -105,96 +109,3 @@ function formatBytes(bytes: number): string {
 function formatProcessingStatus(status: string): string {
   return status.replace(/_/g, " ");
 }
-
-const buttonBase = {
-  borderRadius: 6,
-  fontSize: 13,
-  fontWeight: 700,
-  minHeight: 34,
-  padding: "0 12px",
-} satisfies React.CSSProperties;
-
-const styles = {
-  row: {
-    alignItems: "start",
-    border: "1px solid #d7dde8",
-    borderRadius: 8,
-    display: "grid",
-    gap: 12,
-    gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))",
-    padding: 12,
-  },
-  meta: {
-    display: "grid",
-    gap: 4,
-    minWidth: 0,
-  },
-  fileName: {
-    color: "#111827",
-    fontSize: 14,
-    fontWeight: 700,
-    overflowWrap: "anywhere",
-  },
-  fileDetail: {
-    color: "#4b5563",
-    fontSize: 12,
-  },
-  processingBadge: {
-    alignSelf: "start",
-    background: "#ecfdf5",
-    border: "1px solid #a7f3d0",
-    borderRadius: 999,
-    color: "#047857",
-    fontSize: 12,
-    fontWeight: 800,
-    padding: "4px 9px",
-    textTransform: "capitalize",
-    width: "fit-content",
-  },
-  replace: {
-    display: "grid",
-    gap: 7,
-  },
-  replaceLabel: {
-    color: "#374151",
-    fontSize: 12,
-    fontWeight: 700,
-  },
-  input: {
-    border: "1px solid #cbd5e1",
-    borderRadius: 6,
-    fontSize: 13,
-    minHeight: 34,
-    padding: "5px 7px",
-  },
-  button: {
-    ...buttonBase,
-    background: "#174a63",
-    border: "1px solid #174a63",
-    color: "#ffffff",
-    cursor: "pointer",
-  },
-  disabledButton: {
-    ...buttonBase,
-    background: "#e5e7eb",
-    border: "1px solid #d1d5db",
-    color: "#6b7280",
-    cursor: "not-allowed",
-  },
-  selected: {
-    color: "#374151",
-    fontSize: 12,
-    margin: 0,
-    overflowWrap: "anywhere",
-  },
-  error: {
-    background: "#fef2f2",
-    border: "1px solid #fecaca",
-    borderRadius: 6,
-    color: "#7f1d1d",
-    fontSize: 13,
-    lineHeight: 1.4,
-    margin: 0,
-    padding: "7px 9px",
-  },
-} satisfies Record<string, React.CSSProperties>;

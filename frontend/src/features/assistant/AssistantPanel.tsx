@@ -1,9 +1,7 @@
 "use client";
 
 /**
- * Lecture assistant panel (Stage 8.1). Thin chat surface on the student section page, built in the
- * existing inline-style idiom (the monochrome design system is not in code yet — see
- * knowledge/steps/stage-08/findings-design-doc-reality-gap.md).
+ * Lecture assistant panel (Stage 8.1). Thin chat surface on the student section page.
  *
  * States: availability (ready / processing / unavailable) → "Start chat" → message list + composer.
  * User vs assistant messages are distinguished by ALIGNMENT + surface tone, never a hue. The pending
@@ -194,62 +192,62 @@ export function AssistantPanel({ sectionId }: { sectionId: string }) {
   // ── render ────────────────────────────────────────────────────────────────────────────────────
   function body() {
     if (error && availability === null) {
-      return <p role="alert" style={styles.muted}>{error}</p>;
+      return <p role="alert" className={classes.muted}>{error}</p>;
     }
     if (availability === null) {
-      return <p style={styles.muted}>Loading assistant…</p>;
+      return <p className={classes.muted}>Loading assistant...</p>;
     }
     if (availability === "unavailable") {
       return (
-        <p data-testid="assistant-unavailable" role="status" style={styles.muted}>
+        <p data-testid="assistant-unavailable" role="status" className={classes.muted}>
           The assistant isn’t available for this section yet.
         </p>
       );
     }
     if (availability === "processing") {
       return (
-        <p data-testid="assistant-processing" role="status" style={styles.muted}>
+        <p data-testid="assistant-processing" role="status" className={classes.muted}>
           This lecture is still being prepared for the assistant.
         </p>
       );
     }
     if (!conversationId) {
       return (
-        <div style={styles.startBlock}>
-          <p style={styles.bodyText}>Ask questions about this lecture.</p>
+        <div className={classes.startBlock}>
+          <p className={classes.bodyText}>Ask questions about this lecture.</p>
           <button
             type="button"
             data-testid="assistant-start-chat"
             disabled={opening}
             onClick={() => void onStartChat()}
-            style={styles.primaryButton}
+            className={classes.primaryButton}
           >
-            {opening ? "Opening…" : "Start chat"}
+            {opening ? "Opening..." : "Start chat"}
           </button>
-          {error ? <p role="alert" style={styles.muted}>{error}</p> : null}
+          {error ? <p role="alert" className={classes.muted}>{error}</p> : null}
         </div>
       );
     }
     return (
-      <div style={styles.chat}>
+      <div className={classes.chat}>
         <div
           aria-label="Conversation"
           aria-live="polite"
           data-testid="assistant-messages"
           onScroll={onScroll}
           ref={scrollRef}
-          style={styles.messageList}
+          className={classes.messageList}
         >
           {messages.length === 0 ? (
-            <p data-testid="assistant-empty" style={styles.muted}>
+            <p data-testid="assistant-empty" className={classes.muted}>
               No messages yet — ask your first question below.
             </p>
           ) : (
             messages.map((m) => <MessageBubble key={m.id} message={m} capped={capped} onRetry={onRetry} />)
           )}
         </div>
-        <div style={styles.composer}>
-          <label htmlFor="assistant-input" style={styles.srOnly}>
+        <div className={classes.composer}>
+          <label htmlFor="assistant-input" className="sr-only">
             Ask a question about this lecture
           </label>
           <textarea
@@ -257,10 +255,10 @@ export function AssistantPanel({ sectionId }: { sectionId: string }) {
             data-testid="assistant-input"
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={onKeyDown}
-            placeholder="Ask about this lecture…"
+            placeholder="Ask about this lecture..."
             ref={inputRef}
             rows={2}
-            style={styles.textarea}
+            className={classes.textarea}
             value={input}
           />
           <button
@@ -268,19 +266,19 @@ export function AssistantPanel({ sectionId }: { sectionId: string }) {
             data-testid="assistant-send"
             disabled={sending || hasPending || input.trim().length === 0}
             onClick={() => void onSend()}
-            style={styles.primaryButton}
+            className={classes.primaryButton}
           >
-            {sending ? "Sending…" : "Send"}
+            {sending ? "Sending..." : "Send"}
           </button>
         </div>
-        {error ? <p role="alert" style={styles.muted}>{error}</p> : null}
+        {error ? <p role="alert" className={classes.muted}>{error}</p> : null}
       </div>
     );
   }
 
   return (
-    <section aria-label="Lecture assistant" data-testid="assistant-panel" style={styles.block}>
-      <h2 style={styles.blockHeading}>Ask the lecture assistant</h2>
+    <section aria-label="Lecture assistant" data-testid="assistant-panel" className={classes.block}>
+      <h2 className={classes.blockHeading}>Ask the lecture assistant</h2>
       {body()}
     </section>
   );
@@ -297,29 +295,29 @@ function MessageBubble({
 }) {
   if (message.role === "user") {
     return (
-      <div data-testid="assistant-message-user" style={styles.userRow}>
-        <div style={styles.userBubble}>{message.content}</div>
+      <div data-testid="assistant-message-user" className={classes.userRow}>
+        <div className={classes.userBubble}>{message.content}</div>
       </div>
     );
   }
   // assistant
   return (
-    <div data-state={message.status} data-testid="assistant-message-assistant" style={styles.assistantRow}>
-      <div style={styles.assistantBubble}>
+    <div data-state={message.status} data-testid="assistant-message-assistant" className={classes.assistantRow}>
+      <div className={classes.assistantBubble}>
         {message.status === "pending" ? (
-          <p role="status" style={styles.muted}>
+          <p role="status" className={classes.muted}>
             {capped ? "Still thinking — this is taking a while." : "Thinking…"}
           </p>
         ) : message.status === "failed" ? (
-          <div style={styles.failed}>
-            <p role="alert" style={styles.muted}>
+          <div className={classes.failed}>
+            <p role="alert" className={classes.muted}>
               {message.failureMessage ?? "The assistant couldn’t answer that."}
             </p>
             <button
               type="button"
               data-testid="assistant-retry"
               onClick={() => onRetry(message.id)}
-              style={styles.secondaryButton}
+              className={classes.secondaryButton}
             >
               Retry
             </button>
@@ -345,21 +343,21 @@ function AssistantAnswerBody({
   const isGeneral = message.groundingStatus === "general_not_from_lecture";
   const isUnavailable = message.groundingStatus === "context_unavailable";
   return (
-    <div style={styles.answerBody}>
+    <div className={classes.answerBody}>
       {isGeneral ? (
-        <p data-testid="assistant-not-from-lecture" style={styles.notFromLecture}>
+        <p data-testid="assistant-not-from-lecture" className={classes.notFromLecture}>
           Not from this lecture
         </p>
       ) : null}
       {message.content ? (
         <SummaryMarkdown content={message.content} testId={`assistant-answer-${message.id}`} />
       ) : (
-        <p style={styles.muted}>No answer.</p>
+        <p className={classes.muted}>No answer.</p>
       )}
       {message.answerBasis ? (
-        <details data-testid="assistant-basis" style={styles.basis}>
-          <summary style={styles.basisSummary}>Where did this come from?</summary>
-          <p data-testid="assistant-basis-text" style={styles.basisText}>
+        <details data-testid="assistant-basis" className={classes.basis}>
+          <summary className={classes.basisSummary}>Where did this come from?</summary>
+          <p data-testid="assistant-basis-text" className={classes.basisText}>
             {message.answerBasis}
           </p>
         </details>
@@ -369,7 +367,7 @@ function AssistantAnswerBody({
           type="button"
           data-testid="assistant-retry"
           onClick={() => onRetry(message.id)}
-          style={styles.secondaryButton}
+          className={classes.secondaryButton}
         >
           Retry
         </button>
@@ -378,51 +376,29 @@ function AssistantAnswerBody({
   );
 }
 
-const styles = {
-  block: { border: "1px solid #d7dde8", borderRadius: 8, display: "grid", gap: 12, padding: 16 },
-  blockHeading: {
-    color: "#111827", fontSize: 13, fontWeight: 700, letterSpacing: "0.03em", margin: 0,
-    textTransform: "uppercase",
-  },
-  startBlock: { display: "grid", gap: 10, justifyItems: "start" },
-  chat: { display: "grid", gap: 12 },
-  messageList: {
-    display: "grid", gap: 10, maxHeight: 420, overflowY: "auto", paddingRight: 4,
-  },
-  userRow: { display: "flex", justifyContent: "flex-end" },
-  assistantRow: { display: "flex", justifyContent: "flex-start" },
-  userBubble: {
-    background: "#eef1f5", borderRadius: 12, color: "#111827", fontSize: 14, lineHeight: 1.5,
-    maxWidth: "85%", padding: "8px 12px", whiteSpace: "pre-wrap",
-  },
-  assistantBubble: {
-    background: "#ffffff", border: "1px solid #d7dde8", borderRadius: 12, color: "#111827",
-    fontSize: 14, lineHeight: 1.5, maxWidth: "90%", padding: "8px 12px",
-  },
-  composer: { display: "grid", gap: 8 },
-  textarea: {
-    border: "1px solid #b8c0cc", borderRadius: 8, color: "#111827", fontFamily: "inherit",
-    fontSize: 14, lineHeight: 1.5, padding: "8px 10px", resize: "vertical", width: "100%",
-  },
-  failed: { display: "grid", gap: 8, justifyItems: "start" },
-  answerBody: { display: "grid", gap: 6, justifyItems: "start" },
-  // Neutral, no colour (decision §12) — distinguishes "general study answer" from a grounded one by text.
-  notFromLecture: { color: "#4b5563", fontSize: 12, fontWeight: 600, margin: 0 },
-  basis: { fontSize: 12, width: "100%" },
-  basisSummary: { color: "#4b5563", cursor: "pointer", fontSize: 12 },
-  basisText: { color: "#4b5563", fontSize: 12, lineHeight: 1.4, margin: "4px 0 0 0" },
-  bodyText: { color: "#111827", fontSize: 14, lineHeight: 1.5, margin: 0 },
-  muted: { color: "#4b5563", fontSize: 14, fontStyle: "italic", margin: 0 },
-  primaryButton: {
-    background: "#174a63", border: "1px solid #174a63", borderRadius: 6, color: "#ffffff",
-    cursor: "pointer", fontSize: 13, fontWeight: 700, justifySelf: "start", minHeight: 34, padding: "0 14px",
-  },
-  secondaryButton: {
-    background: "#ffffff", border: "1px solid #174a63", borderRadius: 6, color: "#174a63",
-    cursor: "pointer", fontSize: 13, fontWeight: 700, minHeight: 30, padding: "0 12px",
-  },
-  srOnly: {
-    border: 0, clip: "rect(0 0 0 0)", height: 1, margin: -1, overflow: "hidden", padding: 0,
-    position: "absolute", whiteSpace: "nowrap", width: 1,
-  },
-} satisfies Record<string, React.CSSProperties>;
+const classes = {
+  block: "grid gap-3 rounded-lg border border-border bg-surface p-4",
+  blockHeading: "m-0 text-xs font-semibold uppercase text-text",
+  startBlock: "grid justify-items-start gap-2.5",
+  chat: "grid gap-3",
+  messageList: "grid max-h-[420px] gap-2.5 overflow-y-auto pr-1",
+  userRow: "flex justify-end",
+  assistantRow: "flex justify-start",
+  userBubble: "max-w-[85%] whitespace-pre-wrap rounded-lg bg-surface-muted px-3 py-2 text-sm leading-6 text-text",
+  assistantBubble: "max-w-[90%] rounded-lg border border-border bg-surface px-3 py-2 text-sm leading-6 text-text",
+  composer: "grid gap-2",
+  textarea:
+    "min-h-20 w-full resize-y rounded-md border border-border-strong bg-surface px-3 py-2 text-sm leading-6 text-text placeholder:text-text-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2",
+  failed: "grid justify-items-start gap-2",
+  answerBody: "grid justify-items-start gap-1.5",
+  notFromLecture: "m-0 text-xs font-semibold text-text-muted",
+  basis: "w-full text-xs",
+  basisSummary: "cursor-pointer text-xs text-text-muted",
+  basisText: "m-0 mt-1 text-xs leading-5 text-text-muted",
+  bodyText: "m-0 text-sm leading-6 text-text",
+  muted: "m-0 text-sm italic text-text-muted",
+  primaryButton:
+    "min-h-9 justify-self-start rounded-full border border-primary bg-primary px-4 text-sm font-semibold text-on-primary hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-60 focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2",
+  secondaryButton:
+    "min-h-8 rounded-full border border-border-strong bg-surface px-3 text-sm font-semibold text-text hover:bg-surface-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2",
+} as const;

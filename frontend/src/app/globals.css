@@ -1,0 +1,195 @@
+@import "tailwindcss";
+
+/* Stage 4.9a — Tailwind v4 source detection. frontend/ is a standalone npm project so v4 auto-scans
+   from here, but register the component + feature dirs explicitly so the literal-class scanner never
+   misses a directory (the prod-purge footgun — §4.4). */
+@source "../components";
+@source "../features";
+@source "../app";
+
+/* ============================================================================
+   Layer 1 — RAW PALETTE (private). Components NEVER reference these directly;
+   they exist only to be mapped into the Layer-2 semantic roles below.
+   Values: design-plan.md Part 1.2 (Monochrome Apple×Linear, LOCKED 2026-06-15).
+   Warm-gray ramp (near-black ink #1d1d1f, never pure black for text) + functional
+   status raws (green/amber/red: solid-600 + tint-50 + dark text-700). No brand hue.
+   ============================================================================ */
+:root {
+  /* Neutral — warm gray */
+  --palette-white: #ffffff;
+  --palette-gray-50: #fafafa;
+  --palette-gray-100: #f5f5f7;
+  --palette-gray-200: #e8e8ed;
+  --palette-gray-300: #d2d2d7;
+  --palette-gray-400: #a1a1a6;
+  --palette-gray-500: #6e6e73;
+  --palette-gray-600: #48484a;
+  --palette-gray-700: #333336;
+  --palette-gray-800: #1d1d1f;
+  --palette-black: #000000;
+
+  /* Status raws (functional only — solid 600 + light 50 tint + dark 700 text-on-light) */
+  --palette-green-50: #f0fdf4;
+  --palette-green-600: #16a34a;
+  --palette-green-700: #15803d;
+  --palette-amber-50: #fffbeb;
+  --palette-amber-600: #d97706;
+  --palette-amber-700: #b45309;
+  --palette-red-50: #fef2f2;
+  --palette-red-600: #dc2626;
+  --palette-red-700: #b91c1c;
+
+  /* Layering — z-index TOKENS (single source of magic numbers; the .z-* utilities below
+     reference these, so stacking is deterministic: base < dropdown < assistant < modal < toast). */
+  --z-base: 0;
+  --z-dropdown: 1000;
+  --z-assistant: 1100;
+  --z-modal: 1200;
+  --z-toast: 1300;
+
+  /* Motion — duration + easing (the reduced-motion convention is enforced at the bottom). */
+  --motion-duration-fast: 120ms;
+  --motion-duration-base: 200ms;
+  --motion-duration-slow: 320ms;
+  --motion-ease-standard: cubic-bezier(0.2, 0, 0, 1);
+}
+
+/* ============================================================================
+   Layer 2 — SEMANTIC ROLES + scales (the ONLY tokens components consume).
+   In Tailwind v4 these @theme variables ARE the utility classes.
+   ============================================================================ */
+@theme {
+  /* Disable the DEFAULT color namespace — only the semantic colors below resolve as utilities.
+     This makes "components use semantic tokens" compile-impossible-to-violate: bg-blue-500 etc.
+     simply do not exist (§4.1). Only the color namespace is reset; spacing/font/radius/shadow
+     scales are untouched. */
+  --color-*: initial;
+
+  /* Surfaces / text / borders. The PAGE is parchment (surface-muted); content cards are white
+     (surface) — that tone step IS the divider (no resting shadow). */
+  --color-surface: var(--palette-white);
+  --color-surface-muted: var(--palette-gray-100);
+  --color-surface-raised: var(--palette-white);
+  --color-overlay: rgb(29 29 31 / 0.55); /* modal/dialog scrim (gray-800 @ 55%) — composited + validated in check-contrast.mjs */
+  --color-border: var(--palette-gray-200);
+  --color-border-strong: var(--palette-gray-500);
+  --color-text: var(--palette-gray-800);
+  --color-text-muted: var(--palette-gray-500);
+  --color-text-subtle: var(--palette-gray-400); /* hints / disabled — large·UI only, NOT body */
+
+  /* Primary — graphite (the only accent; no brand hue) */
+  --color-primary: var(--palette-gray-800);
+  --color-primary-hover: var(--palette-black);
+  --color-on-primary: var(--palette-white);
+
+  /* Status — solid (on-* white = large/bold/UI only, per the validated AA table) */
+  --color-success: var(--palette-green-600);
+  --color-on-success: var(--palette-white);
+  --color-warning: var(--palette-amber-600);
+  --color-on-warning: var(--palette-white);
+  --color-danger: var(--palette-red-600);
+  --color-on-danger: var(--palette-white);
+  --color-danger-hover: var(--palette-red-700);
+  /* "info" is NEUTRAL graphite — never a 4th hue. The tonal info pair resolves to the neutral
+     surface-muted/text-muted greys, so the `info` Badge/Toast tone renders identical to `neutral`
+     (component APIs unchanged). */
+  --color-info: var(--palette-gray-800);
+  --color-on-info: var(--palette-white);
+
+  /* Status — tonal (badge default: dark -text on light -surface; body-AA-safe) */
+  --color-success-surface: var(--palette-green-50);
+  --color-success-text: var(--palette-green-700);
+  --color-warning-surface: var(--palette-amber-50);
+  --color-warning-text: var(--palette-amber-700);
+  --color-danger-surface: var(--palette-red-50);
+  --color-danger-text: var(--palette-red-700);
+  --color-info-surface: var(--palette-gray-100);
+  --color-info-text: var(--palette-gray-500);
+
+  /* Focus — graphite ring */
+  --color-focus-ring: var(--palette-gray-800);
+
+  /* Type — ONE family, system stack (no web-font request; design-system §3). `--font-display`
+     is aliased to the same stack so existing `font-display` heading usages keep resolving to the
+     single family (no feature-file churn). */
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial,
+    sans-serif;
+  --font-display: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial,
+    sans-serif;
+
+  /* Type — scale (design-system §3 / design-plan 1.2b). Body 17px (Apple cadence), reading 19px.
+     Negative tracking on headings; the generic ladder is monotonic. The 19/1.65 long-form *reading*
+     line-height is applied on the student summary surface (text-lg + leading-[1.65]). */
+  --text-xs: 0.75rem; /* micro 12 */
+  --text-xs--line-height: 1.4;
+  --text-sm: 0.875rem; /* small 14 */
+  --text-sm--line-height: 1.5;
+  --text-base: 1.0625rem; /* body 17 */
+  --text-base--line-height: 1.5;
+  --text-base--letter-spacing: -0.01em;
+  --text-lg: 1.1875rem; /* reading 19 (also serves subheads/h4) */
+  --text-lg--line-height: 1.5;
+  --text-lg--letter-spacing: -0.005em;
+  --text-xl: 1.375rem; /* h3 22 */
+  --text-xl--line-height: 1.3;
+  --text-xl--letter-spacing: -0.01em;
+  --text-2xl: 1.75rem; /* h2 28 */
+  --text-2xl--line-height: 1.2;
+  --text-2xl--letter-spacing: -0.02em;
+  --text-3xl: 2rem; /* 32 */
+  --text-3xl--line-height: 1.15;
+  --text-3xl--letter-spacing: -0.02em;
+  --text-4xl: 2.25rem; /* display 36 */
+  --text-4xl--line-height: 1.1;
+  --text-4xl--letter-spacing: -0.02em;
+
+  /* Radius (design-system §6) — sm 8 (chips) · md 12 (inputs) · lg 16 (cards) · xl 20 (modals).
+     Buttons/badges/toggles use the pill (rounded-full) at the call site. */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+
+  /* Elevation — soft shadow ONLY on overlays (md = popover/toast, lg = modal). No resting-card
+     shadow (cards separate by the parchment→white tone step + hairline). No gradients. */
+  --shadow-md: 0 4px 12px -2px rgb(29 29 31 / 0.1);
+  --shadow-lg: 0 12px 32px -8px rgb(29 29 31 / 0.18);
+}
+
+/* Spacing scale: keep Tailwind v4's default multiplier (ADR-045) — it maps the inline-style
+   migration cleanly in 4.9c (gap: 8 → gap-2, padding: 16 → p-4) with no per-value arithmetic. */
+
+/* ============================================================================
+   Layering utilities — read the --z-* TOKENS (no magic numbers at the call site).
+   ============================================================================ */
+@layer utilities {
+  .z-base {
+    z-index: var(--z-base);
+  }
+  .z-dropdown {
+    z-index: var(--z-dropdown);
+  }
+  .z-assistant {
+    z-index: var(--z-assistant);
+  }
+  .z-modal {
+    z-index: var(--z-modal);
+  }
+  .z-toast {
+    z-index: var(--z-toast);
+  }
+}
+
+/* ============================================================================
+   Reduced-motion convention (design-plan Part 4 / §4.1 motion token).
+   ============================================================================ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

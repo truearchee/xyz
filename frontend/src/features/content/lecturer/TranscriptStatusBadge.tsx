@@ -8,6 +8,7 @@ import {
   type TranscriptProcessingStatus,
 } from "../../../lib/api";
 import { api } from "../../../lib/api/wrapper";
+import { cn } from "../../../components/ui/cn";
 
 // Stage 4.5d: backoff polling, NO hard timeout. The pipeline now runs through summary generation
 // (brief then detailed); detailed + queue wait + provider 429 backoff routinely exceed 60s, so a
@@ -115,12 +116,12 @@ export function TranscriptStatusBadge({
     processingStatus.retryable;
 
   return (
-    <div style={styles.container}>
+    <div className="grid gap-2">
       <p
         aria-live="polite"
         data-testid={`section-transcript-status-${sectionKey}`}
         role="status"
-        style={styles[statusKind]}
+        className={cn(statusBaseClass, STATUS_KIND_CLASS[statusKind])}
       >
         {text}
       </p>
@@ -136,14 +137,19 @@ export function TranscriptStatusBadge({
           data-testid={`section-transcript-retry-${sectionKey}`}
           disabled={isRetrying}
           onClick={() => void onRetry()}
-          style={isRetrying ? styles.disabledButton : styles.retryButton}
+          className={cn(
+            "min-h-[38px] justify-self-start rounded-full border px-3.5 text-sm font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2",
+            isRetrying
+              ? "cursor-not-allowed border-border bg-surface-muted text-text-muted"
+              : "border-primary bg-primary text-on-primary hover:bg-primary-hover",
+          )}
           type="button"
         >
           {isRetrying ? "Retrying…" : "Retry failed processing"}
         </button>
       ) : null}
       {retryError ? (
-        <p role="alert" style={styles.failed}>
+        <p role="alert" className={cn(statusBaseClass, STATUS_KIND_CLASS.failed)}>
           {retryError}
         </p>
       ) : null}
@@ -171,14 +177,17 @@ function StepStates({
   return (
     <ul
       data-testid={`section-transcript-steps-${sectionKey}`}
-      style={styles.steps}
+      className="m-0 flex list-none flex-wrap gap-2 p-0"
     >
       {STEP_LABELS.map(({ key, label }) => {
         const status = steps[key].status;
         return (
-          <li key={key} style={styles.step}>
-            <span style={styles.stepLabel}>{label}</span>
-            <span style={stepStatusStyle(status)}>{stepStatusText(status)}</span>
+          <li
+            key={key}
+            className="flex items-center gap-1.5 rounded-full border border-border bg-surface-muted px-2 py-1 text-xs"
+          >
+            <span className="font-semibold text-text">{label}</span>
+            <span className={cn("font-semibold", stepStatusClass(status))}>{stepStatusText(status)}</span>
           </li>
         );
       })}
@@ -194,11 +203,11 @@ function stepStatusText(status: string): string {
   return "—";
 }
 
-function stepStatusStyle(status: string): React.CSSProperties {
-  if (status === "failed") return styles.stepFailed;
-  if (status === "completed") return styles.stepCompleted;
-  if (status === "running" || status === "queued") return styles.stepActive;
-  return styles.stepIdle;
+function stepStatusClass(status: string): string {
+  if (status === "failed") return "text-danger-text";
+  if (status === "completed") return "text-success-text";
+  if (status === "running" || status === "queued") return "text-info-text";
+  return "text-text-muted";
 }
 
 function errorMessage(caught: unknown): string {
@@ -306,7 +315,7 @@ function transcriptStatusText(status: string): string {
 function statusStyleKind(
   processingStatus: TranscriptProcessingStatus | null,
   fallbackTranscriptStatus: string,
-): keyof typeof styles {
+): keyof typeof STATUS_KIND_CLASS {
   if (
     processingStatus?.overallState === "failed" ||
     fallbackTranscriptStatus === "failed"
@@ -340,86 +349,12 @@ function formatStatusLabel(status: string): string {
     .join(" ");
 }
 
-const statusBase = {
-  borderRadius: 6,
-  fontSize: 14,
-  fontWeight: 700,
-  lineHeight: 1.45,
-  margin: 0,
-  padding: "8px 10px",
-} satisfies React.CSSProperties;
+// Token-based status pill classes (the tonal pairs — AA-safe at body size; status by text label, not
+// color alone). statusBaseClass is the shared shape; STATUS_KIND_CLASS the per-kind tonal tokens.
+const statusBaseClass = "m-0 rounded-md border px-2.5 py-2 text-sm font-semibold leading-snug";
 
-const buttonBase = {
-  borderRadius: 6,
-  fontSize: 14,
-  fontWeight: 700,
-  minHeight: 38,
-  padding: "0 14px",
-} satisfies React.CSSProperties;
-
-const styles = {
-  container: {
-    display: "grid",
-    gap: 8,
-  },
-  completed: {
-    ...statusBase,
-    background: "#ecfdf5",
-    border: "1px solid #a7f3d0",
-    color: "#047857",
-  },
-  failed: {
-    ...statusBase,
-    background: "#fef2f2",
-    border: "1px solid #fecaca",
-    color: "#7f1d1d",
-  },
-  processing: {
-    ...statusBase,
-    background: "#eff6ff",
-    border: "1px solid #bfdbfe",
-    color: "#1d4ed8",
-  },
-  retryButton: {
-    ...buttonBase,
-    background: "#174a63",
-    border: "1px solid #174a63",
-    color: "#ffffff",
-    cursor: "pointer",
-    justifySelf: "start",
-  },
-  disabledButton: {
-    ...buttonBase,
-    background: "#e5e7eb",
-    border: "1px solid #d1d5db",
-    color: "#6b7280",
-    cursor: "not-allowed",
-    justifySelf: "start",
-  },
-  steps: {
-    display: "flex",
-    flexWrap: "wrap",
-    gap: 8,
-    listStyle: "none",
-    margin: 0,
-    padding: 0,
-  },
-  step: {
-    alignItems: "center",
-    background: "#f8fafc",
-    border: "1px solid #e2e8f0",
-    borderRadius: 6,
-    display: "flex",
-    fontSize: 12,
-    gap: 6,
-    padding: "4px 8px",
-  },
-  stepLabel: {
-    color: "#334155",
-    fontWeight: 700,
-  },
-  stepCompleted: { color: "#047857", fontWeight: 700 },
-  stepFailed: { color: "#7f1d1d", fontWeight: 700 },
-  stepActive: { color: "#1d4ed8", fontWeight: 700 },
-  stepIdle: { color: "#94a3b8", fontWeight: 700 },
-} satisfies Record<string, React.CSSProperties>;
+const STATUS_KIND_CLASS = {
+  completed: "bg-success-surface border-success text-success-text",
+  failed: "bg-danger-surface border-danger text-danger-text",
+  processing: "bg-info-surface border-info text-info-text",
+} as const;

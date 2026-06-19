@@ -9,6 +9,13 @@ type SectionPublishControlProps = {
   sectionTitle: string;
 };
 
+const badgeBase =
+  "inline-flex shrink-0 items-center rounded-full border px-2.5 py-1 text-xs font-medium";
+const btnPrimary =
+  "min-h-[38px] rounded-full border border-primary bg-primary px-3.5 text-sm font-medium text-on-primary hover:bg-primary-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2";
+const btnDisabled =
+  "min-h-[38px] cursor-not-allowed rounded-full border border-border bg-surface-muted px-3.5 text-sm font-medium text-text-muted";
+
 export function SectionPublishControl({
   errorMessage,
   isSubmitting,
@@ -21,10 +28,14 @@ export function SectionPublishControl({
   const action = isPublished ? "Unpublish" : "Publish";
 
   return (
-    <div style={styles.shell}>
+    <div className="flex flex-wrap items-center justify-end gap-2.5">
       <span
         data-testid={`section-publish-status-${sectionKey}`}
-        style={isPublished ? styles.publishedBadge : styles.draftBadge}
+        className={
+          isPublished
+            ? `${badgeBase} border-success bg-success-surface text-success-text`
+            : `${badgeBase} border-info bg-info-surface text-info-text`
+        }
       >
         Section visibility: {formatPublishStatus(publishStatus)}
       </span>
@@ -32,13 +43,16 @@ export function SectionPublishControl({
         aria-label={`${action} ${sectionTitle}`}
         disabled={isSubmitting}
         onClick={() => void onToggle()}
-        style={isSubmitting ? styles.disabledButton : styles.button}
+        className={isSubmitting ? btnDisabled : btnPrimary}
         type="button"
       >
         {isSubmitting ? `${action}ing...` : `${action} ${sectionTitle}`}
       </button>
       {errorMessage ? (
-        <p role="alert" style={styles.error}>
+        <p
+          role="alert"
+          className="m-0 basis-full rounded-md border border-danger bg-danger-surface px-2.5 py-2 text-sm leading-snug text-danger-text"
+        >
           {errorMessage}
         </p>
       ) : null}
@@ -55,66 +69,3 @@ export function formatPublishStatus(status: string): string {
   }
   return "Draft";
 }
-
-const badgeBase = {
-  borderRadius: 999,
-  flex: "0 0 auto",
-  fontSize: 13,
-  fontWeight: 800,
-  padding: "4px 10px",
-} satisfies React.CSSProperties;
-
-const buttonBase = {
-  borderRadius: 6,
-  fontSize: 14,
-  fontWeight: 700,
-  minHeight: 38,
-  padding: "0 14px",
-} satisfies React.CSSProperties;
-
-const styles = {
-  shell: {
-    alignItems: "center",
-    display: "flex",
-    flexWrap: "wrap",
-    gap: 10,
-    justifyContent: "flex-end",
-  },
-  draftBadge: {
-    ...badgeBase,
-    background: "#eef2ff",
-    border: "1px solid #c7d2fe",
-    color: "#3730a3",
-  },
-  publishedBadge: {
-    ...badgeBase,
-    background: "#ecfdf5",
-    border: "1px solid #a7f3d0",
-    color: "#047857",
-  },
-  button: {
-    ...buttonBase,
-    background: "#174a63",
-    border: "1px solid #174a63",
-    color: "#ffffff",
-    cursor: "pointer",
-  },
-  disabledButton: {
-    ...buttonBase,
-    background: "#e5e7eb",
-    border: "1px solid #d1d5db",
-    color: "#6b7280",
-    cursor: "not-allowed",
-  },
-  error: {
-    background: "#fef2f2",
-    border: "1px solid #fecaca",
-    borderRadius: 6,
-    color: "#7f1d1d",
-    flexBasis: "100%",
-    fontSize: 14,
-    lineHeight: 1.45,
-    margin: 0,
-    padding: "8px 10px",
-  },
-} satisfies Record<string, React.CSSProperties>;

@@ -21,12 +21,12 @@ export function SectionAssetList({
   onReplace,
 }: SectionAssetListProps) {
   return (
-    <section aria-label={`Assets for ${sectionTitle}`} style={styles.shell}>
-      <h3 style={styles.title}>Files</h3>
+    <section aria-label={`Assets for ${sectionTitle}`} className="grid gap-2.5 border-t border-border pt-3.5">
+      <h3 className="m-0 font-display text-base leading-snug text-text">Files</h3>
       {assets.length === 0 ? (
-        <p style={styles.empty}>No files uploaded</p>
+        <p className="m-0 text-sm text-text-muted">No files uploaded</p>
       ) : (
-        <ul style={styles.list}>
+        <ul className="m-0 grid list-none gap-2.5 p-0">
           {assets.map((asset) => (
             <SectionAssetRow
               asset={asset}
@@ -42,30 +42,3 @@ export function SectionAssetList({
     </section>
   );
 }
-
-const styles = {
-  shell: {
-    borderTop: "1px solid #e5e7eb",
-    display: "grid",
-    gap: 10,
-    paddingTop: 14,
-  },
-  title: {
-    color: "#111827",
-    fontSize: 15,
-    lineHeight: 1.3,
-    margin: 0,
-  },
-  empty: {
-    color: "#4b5563",
-    fontSize: 14,
-    margin: 0,
-  },
-  list: {
-    display: "grid",
-    gap: 10,
-    listStyle: "none",
-    margin: 0,
-    padding: 0,
-  },
-} satisfies Record<string, React.CSSProperties>;

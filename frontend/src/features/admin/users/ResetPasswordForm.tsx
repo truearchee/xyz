@@ -3,7 +3,7 @@
 import { useState, type FormEvent } from "react";
 
 import { api } from "../../../lib/api/wrapper";
-import { errorMessage, panelStyles } from "../shared";
+import { errorMessage, panelClasses } from "../shared";
 
 type ResetPasswordFormProps = {
   email: string;
@@ -41,26 +41,26 @@ export function ResetPasswordForm({ email, onReset, userId }: ResetPasswordFormP
   }
 
   return (
-    <form onSubmit={submit} style={panelStyles.stack}>
-      {error ? <div role="alert" style={panelStyles.alert}>{error}</div> : null}
+    <form onSubmit={submit} className={panelClasses.stack}>
+      {error ? <div role="alert" className={panelClasses.alert}>{error}</div> : null}
       {success ? (
-        <div aria-live="polite" role="status" style={panelStyles.status}>
+        <div aria-live="polite" role="status" className={panelClasses.status}>
           {success}
         </div>
       ) : null}
-      <label style={panelStyles.label}>
+      <label className={panelClasses.label}>
         New password
         <input
           aria-label={`New password for ${email}`}
           minLength={8}
           onChange={(event) => updatePassword(event.target.value)}
           required
-          style={panelStyles.input}
+          className={panelClasses.input}
           type="password"
           value={newPassword}
         />
       </label>
-      <button disabled={isSubmitting} type="submit">
+      <button className={panelClasses.buttonSecondary} disabled={isSubmitting} type="submit">
         {isSubmitting ? "Resetting..." : "Reset password"}
       </button>
     </form>

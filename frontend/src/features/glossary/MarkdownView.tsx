@@ -54,7 +54,7 @@ export function MarkdownView({
 
 const styles = {
   markdown: {
-    color: "#111827",
+    color: "var(--color-text)",
     fontSize: 14,
     lineHeight: 1.55,
   },

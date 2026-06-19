@@ -59,8 +59,8 @@ DONE             — governance stages where no browser gate applies (Stage 0 on
 ✅ Stage 4.5   AI infrastructure + summary generation   FULLY VERIFIED  (gate: 4.5d browser gate + full E2E + real-provider smoke)
 ✅ Stage 4.6   Replacement / retry / supersession       FULLY VERIFIED — live browser gate GREEN (full active suite 9/9); two cross-stage-seam regressions found+fixed (F-4.6c-1, F-4.6b-2)
 ✅ Stage 4.7   Student-facing summaries                   FULLY VERIFIED — gate G1–G9 GREEN; full active suite 11/11 ON MAIN (backend 389); restored Stage 3 visibility E2E; review R1–R3 resolved
-Stage 4.8   First hosted deploy (staging)              NOT STARTED  (new in v3)  ← next
-Stage 4.9   Frontend foundation + platform hygiene     NOT STARTED  (new in v3)
+Stage 4.8   First hosted deploy (staging)              NOT STARTED  (new in v3)
+Stage 4.9   Frontend foundation + platform hygiene     FRONTEND FOUNDATION MERGED — 4.9g imported the Stage 4.9f monochrome frontend design foundation onto current `main`; stale 4.9 backend/platform/deploy changes were intentionally not imported; Stage 5-9 backend/schema/generated-client behavior remains authoritative; verification green in [[steps/stage-04/4.9g-merge-monochrome-redesign]]
 ✅ Stage 5   Shared quiz engine + event spine           FULLY VERIFIED — merged to main; migrations 0014–0020; gate 1 browser GREEN; gate 3 real-provider smoke GREEN; backend 442 pytest; frontend tsc green; ADR-040..046; F-5d-1 resolved
 ✅ Stage 5.5   Module schedule & section metadata       FULLY VERIFIED — gate 5.5e GREEN; reference schedule 28 sections; full active suite 12/12 after reseed; migration chain rebased after Stage 5 main (`0020 -> 0021 -> 0022`)
 ✅ Stage 6   Complete quiz modes                        FULLY VERIFIED — full active Playwright 14/14 + 5d/6d gates + backend 502 + rule-11 real-provider smoke PASS (264.5s, 16Q, model echo OK). 6e corrective gate proofs + F-6e smoke fix (pool trimmed max_tokens 32000→20000 / count 24→16, reasoning timeout 240→330; root cause = ramble-to-cap ≈ max_tokens/73, not the route). See [[steps/stage-06/6d-real-provider-smoke]] (2026-06-18) + ADR-047 F-6e amendment
@@ -88,7 +88,7 @@ Browser-gate assertions pinned to overall terminal state, not steps          →
 Status badge polling model (2.5s / 60s hard timeout)                        → reworked in Stage 4.5d
 week_number / session_date / due_at columns exist but never populated;
 fixed 4-section template instead of schedule-driven generation              → Stage 5.5
-Frontend: zero unit tests, inline styles only                               → Stage 4.9
+Frontend: legacy inline-style surfaces and missing shared primitives         → Stage 4.9g imported the monochrome token/component foundation; remaining platform hygiene stays separate
 httpx ASGI-shortcut deprecation (83 warnings; future upgrade breaks suite)  → Stage 4.9 hygiene batch
 CORS allow_credentials=True unnecessary with pure Bearer auth               → Stage 4.9 hygiene batch
 No client-regen alias in frontend/package.json (F008)                       → Stage 4.9 hygiene batch

@@ -152,19 +152,19 @@ export function SectionTranscriptControl({
     <section
       aria-label={`Transcript upload for ${sectionTitle}`}
       data-testid={`section-transcript-control-${sectionKey}`}
-      style={styles.shell}
+      className="grid gap-2.5 border-t border-border pt-3.5"
     >
-      <div style={styles.header}>
+      <div className="flex items-start justify-between gap-3">
         <div>
-          <h3 style={styles.title}>Transcript</h3>
+          <h3 className="m-0 font-display text-base leading-snug text-text">Transcript</h3>
         </div>
-        {isLoading ? <span style={styles.meta}>Loading status</span> : null}
+        {isLoading ? <span className="shrink-0 text-xs font-medium text-text-muted">Loading status</span> : null}
       </div>
 
       {transcript ? (
-        <div style={styles.current}>
-          <span style={styles.fileName}>{transcript.originalFileName}</span>
-          <span style={styles.fileDetail}>
+        <div className="grid gap-1.5">
+          <span className="break-words text-sm font-semibold text-text">{transcript.originalFileName}</span>
+          <span className="break-words text-xs text-text-muted">
             {transcript.mimeType} · {formatBytes(transcript.fileSize)}
           </span>
           <TranscriptStatusBadge
@@ -178,7 +178,7 @@ export function SectionTranscriptControl({
             <p
               data-testid={`section-transcript-pending-${sectionKey}`}
               role="status"
-              style={styles.pending}
+              className="m-0 rounded-md border border-border bg-info-surface px-2.5 py-2 text-xs font-medium text-info-text"
             >
               New version processing… the current summaries stay until it completes.
             </p>
@@ -191,9 +191,9 @@ export function SectionTranscriptControl({
           />
           <div
             data-testid={`section-transcript-replace-control-${sectionKey}`}
-            style={styles.fields}
+            className={fieldsClass}
           >
-            <label htmlFor={fileInputId} style={styles.label}>
+            <label htmlFor={fileInputId} className={labelClass}>
               Replace transcript for {sectionTitle}
             </label>
             <input
@@ -206,22 +206,22 @@ export function SectionTranscriptControl({
                 selectFile(event.currentTarget.files?.[0] ?? null);
               }}
               ref={inputRef}
-              style={styles.input}
+              className={inputClass}
               type="file"
             />
             {confirmingReplace ? (
-              <div style={styles.confirm}>
-                <p role="status" style={styles.confirmText}>
+              <div className="grid gap-2 [grid-column:1/-1]">
+                <p role="status" className="m-0 text-xs leading-snug text-text-muted">
                   {hasPendingReplacement
                     ? "A replacement is already processing. Uploading a new one will discard the pending version and restart processing."
                     : "Replacing supersedes the current transcript and regenerates its summaries."}
                 </p>
-                <div style={styles.confirmActions}>
+                <div className="flex gap-2">
                   <button
                     data-testid={`section-transcript-replace-confirm-${sectionKey}`}
                     disabled={isUploading}
                     onClick={() => void submitUpload()}
-                    style={isUploading ? styles.disabledButton : styles.button}
+                    className={isUploading ? btnDisabled : btnPrimary}
                     type="button"
                   >
                     {isUploading ? "Replacing..." : "Confirm replace"}
@@ -229,7 +229,7 @@ export function SectionTranscriptControl({
                   <button
                     disabled={isUploading}
                     onClick={() => setConfirmingReplace(false)}
-                    style={styles.secondaryButton}
+                    className={btnSecondary}
                     type="button"
                   >
                     Cancel
@@ -241,32 +241,28 @@ export function SectionTranscriptControl({
                 data-testid={`section-transcript-replace-${sectionKey}`}
                 disabled={disabled || isUploading || !selectedFile}
                 onClick={() => setConfirmingReplace(true)}
-                style={
-                  disabled || isUploading || !selectedFile
-                    ? styles.disabledButton
-                    : styles.button
-                }
+                className={disabled || isUploading || !selectedFile ? btnDisabled : btnPrimary}
                 type="button"
               >
                 Replace transcript
               </button>
             )}
             {selectedFile ? (
-              <p style={styles.selected}>Selected: {selectedFile.name}</p>
+              <p className="m-0 break-words text-xs text-text-muted">Selected: {selectedFile.name}</p>
             ) : null}
           </div>
         </div>
       ) : (
-        <div style={styles.empty}>
+        <div className="grid gap-2">
           <p
             data-testid={`section-transcript-status-${sectionKey}`}
             role="status"
-            style={styles.emptyText}
+            className="m-0 text-sm text-text-muted"
           >
             No transcript uploaded yet.
           </p>
-          <div style={styles.fields}>
-            <label htmlFor={fileInputId} style={styles.label}>
+          <div className={fieldsClass}>
+            <label htmlFor={fileInputId} className={labelClass}>
               Transcript file for {sectionTitle}
             </label>
             <input
@@ -278,16 +274,14 @@ export function SectionTranscriptControl({
                 selectFile(event.currentTarget.files?.[0] ?? null);
               }}
               ref={inputRef}
-              style={styles.input}
+              className={inputClass}
               type="file"
             />
             <button
               disabled={disabled || isLoading || isUploading || !selectedFile}
               onClick={() => void submitUpload()}
-              style={
-                disabled || isLoading || isUploading || !selectedFile
-                  ? styles.disabledButton
-                  : styles.button
+              className={
+                disabled || isLoading || isUploading || !selectedFile ? btnDisabled : btnPrimary
               }
               type="button"
             >
@@ -295,7 +289,7 @@ export function SectionTranscriptControl({
             </button>
           </div>
           {selectedFile ? (
-            <p style={styles.selected}>Selected: {selectedFile.name}</p>
+            <p className="m-0 break-words text-xs text-text-muted">Selected: {selectedFile.name}</p>
           ) : null}
         </div>
       )}
@@ -304,7 +298,7 @@ export function SectionTranscriptControl({
         <p
           data-testid={`section-transcript-error-${sectionKey}`}
           role="alert"
-          style={styles.error}
+          className="m-0 rounded-md border border-danger bg-danger-surface px-2.5 py-2 text-sm leading-snug text-danger-text"
         >
           {error}
         </p>
@@ -312,6 +306,19 @@ export function SectionTranscriptControl({
     </section>
   );
 }
+
+// Token class constants (semantic tokens only). Buttons stay raw <button> to preserve their exact
+// data-testids/names/disabled logic byte-for-byte (lower risk than threading data-testid through Button).
+const fieldsClass = "grid items-end gap-2.5 [grid-template-columns:repeat(auto-fit,minmax(180px,1fr))]";
+const labelClass = "text-xs font-medium text-text-muted [grid-column:1/-1]";
+const inputClass =
+  "min-h-[38px] rounded-md border border-border-strong px-2.5 py-[7px] text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2";
+const btnPrimary =
+  "min-h-[38px] rounded-full border border-primary bg-primary px-3.5 text-sm font-medium text-on-primary hover:bg-primary-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2";
+const btnDisabled =
+  "min-h-[38px] cursor-not-allowed rounded-full border border-border bg-surface-muted px-3.5 text-sm font-medium text-text-muted";
+const btnSecondary =
+  "min-h-[38px] rounded-full border border-border-strong bg-surface px-3.5 text-sm font-medium text-text hover:bg-surface-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2";
 
 function hasAcceptedExtension(fileName: string): boolean {
   const lowerName = fileName.toLowerCase();
@@ -362,143 +369,3 @@ function formatBytes(size: number): string {
   }
   return `${(size / (1024 * 1024)).toFixed(1)} MB`;
 }
-
-const buttonBase = {
-  borderRadius: 6,
-  fontSize: 14,
-  fontWeight: 700,
-  minHeight: 38,
-  padding: "0 14px",
-} satisfies React.CSSProperties;
-
-const styles = {
-  shell: {
-    borderTop: "1px solid #e5e7eb",
-    display: "grid",
-    gap: 10,
-    paddingTop: 14,
-  },
-  header: {
-    alignItems: "flex-start",
-    display: "flex",
-    gap: 12,
-    justifyContent: "space-between",
-  },
-  title: {
-    color: "#111827",
-    fontSize: 16,
-    lineHeight: 1.3,
-    margin: 0,
-  },
-  meta: {
-    color: "#4b5563",
-    flex: "0 0 auto",
-    fontSize: 13,
-    fontWeight: 700,
-  },
-  current: {
-    display: "grid",
-    gap: 6,
-  },
-  fileName: {
-    color: "#111827",
-    fontSize: 14,
-    fontWeight: 700,
-    overflowWrap: "anywhere",
-  },
-  fileDetail: {
-    color: "#4b5563",
-    fontSize: 13,
-    overflowWrap: "anywhere",
-  },
-  empty: {
-    display: "grid",
-    gap: 8,
-  },
-  emptyText: {
-    color: "#4b5563",
-    fontSize: 14,
-    margin: 0,
-  },
-  fields: {
-    alignItems: "end",
-    display: "grid",
-    gap: 10,
-    gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-  },
-  label: {
-    color: "#374151",
-    fontSize: 13,
-    fontWeight: 700,
-    gridColumn: "1 / -1",
-  },
-  input: {
-    border: "1px solid #cbd5e1",
-    borderRadius: 6,
-    fontSize: 14,
-    minHeight: 38,
-    padding: "7px 9px",
-  },
-  button: {
-    ...buttonBase,
-    background: "#174a63",
-    border: "1px solid #174a63",
-    color: "#ffffff",
-    cursor: "pointer",
-  },
-  disabledButton: {
-    ...buttonBase,
-    background: "#e5e7eb",
-    border: "1px solid #d1d5db",
-    color: "#6b7280",
-    cursor: "not-allowed",
-  },
-  secondaryButton: {
-    ...buttonBase,
-    background: "#ffffff",
-    border: "1px solid #cbd5e1",
-    color: "#374151",
-    cursor: "pointer",
-  },
-  pending: {
-    background: "#eff6ff",
-    border: "1px solid #bfdbfe",
-    borderRadius: 6,
-    color: "#1d4ed8",
-    fontSize: 13,
-    fontWeight: 700,
-    margin: 0,
-    padding: "8px 10px",
-  },
-  confirm: {
-    display: "grid",
-    gap: 8,
-    gridColumn: "1 / -1",
-  },
-  confirmText: {
-    color: "#374151",
-    fontSize: 13,
-    lineHeight: 1.45,
-    margin: 0,
-  },
-  confirmActions: {
-    display: "flex",
-    gap: 8,
-  },
-  selected: {
-    color: "#374151",
-    fontSize: 13,
-    margin: 0,
-    overflowWrap: "anywhere",
-  },
-  error: {
-    background: "#fef2f2",
-    border: "1px solid #fecaca",
-    borderRadius: 6,
-    color: "#7f1d1d",
-    fontSize: 14,
-    lineHeight: 1.45,
-    margin: 0,
-    padding: "8px 10px",
-  },
-} satisfies Record<string, React.CSSProperties>;

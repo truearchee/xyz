@@ -174,14 +174,14 @@ export function QuizAttemptPanel({
 
   if (attempt.status === "generating") {
     return (
-      <section aria-label={label} data-testid="quiz-attempt-panel" style={styles.block}>
-        <h2 style={styles.blockHeading}>{label}</h2>
-        <div role="status" data-testid="quiz-generating" style={styles.progressBox}>
-          <p style={styles.bodyText}>
+      <section aria-label={label} data-testid="quiz-attempt-panel" className={classes.block}>
+        <h2 className={classes.blockHeading}>{label}</h2>
+        <div role="status" data-testid="quiz-generating" className={classes.progressBox}>
+          <p className={classes.bodyText}>
             {capped ? "Still preparing - refresh to check." : "Generating your quiz."}
           </p>
-          <div aria-hidden="true" style={styles.progressTrack}>
-            <span style={styles.progressFill} />
+          <div aria-hidden="true" className={classes.progressTrack}>
+            <span className={classes.progressFill} />
           </div>
         </div>
       </section>
@@ -190,16 +190,16 @@ export function QuizAttemptPanel({
 
   if (attempt.status === "failed") {
     return (
-      <section aria-label={label} data-testid="quiz-attempt-panel" style={styles.block}>
-        <h2 style={styles.blockHeading}>{label}</h2>
-        <p role="alert" style={styles.muted}>We could not prepare this quiz.</p>
-        {error ? <p role="alert" style={styles.muted}>{error}</p> : null}
+      <section aria-label={label} data-testid="quiz-attempt-panel" className={classes.block}>
+        <h2 className={classes.blockHeading}>{label}</h2>
+        <p role="alert" className={classes.muted}>We could not prepare this quiz.</p>
+        {error ? <p role="alert" className={classes.muted}>{error}</p> : null}
         <button
           type="button"
           data-testid="quiz-retry-failed"
           disabled={busy}
           onClick={() => void retryFailed()}
-          style={styles.primaryButton}
+          className={classes.primaryButton}
         >
           {busy ? "Retrying..." : "Try again"}
         </button>
@@ -209,8 +209,8 @@ export function QuizAttemptPanel({
 
   if (attempt.status === "completed") {
     return (
-      <section aria-label={label} data-testid="quiz-attempt-panel" style={styles.block}>
-        <h2 style={styles.blockHeading}>{label}</h2>
+      <section aria-label={label} data-testid="quiz-attempt-panel" className={classes.block}>
+        <h2 className={classes.blockHeading}>{label}</h2>
         <QuizResultSummary
           scorePercentage={scoreOf(attempt)}
           correctCount={countAnswers(answers, true)}
@@ -228,16 +228,16 @@ export function QuizAttemptPanel({
   const allAnswered = questions.length > 0 && questions.every((q) => answers[q.id]);
   const prefixCount = attempt.mistakeReviewQuestionCount ?? 0;
   return (
-    <section aria-label={label} data-testid="quiz-attempt-panel" style={styles.block}>
-      <h2 style={styles.blockHeading}>{label}</h2>
+    <section aria-label={label} data-testid="quiz-attempt-panel" className={classes.block}>
+      <h2 className={classes.blockHeading}>{label}</h2>
       {prefixCount > 0 ? (
-        <div data-testid="quiz-retake-prefix-banner" role="status" style={styles.prefixBanner}>
+        <div data-testid="quiz-retake-prefix-banner" role="status" className={classes.prefixBanner}>
           {prefixCount === 1
             ? "1 missed question is first in this retake."
             : `${prefixCount} missed questions are first in this retake.`}
         </div>
       ) : null}
-      <div style={styles.questions}>
+      <div className={classes.questions}>
         {questions.map((q, i) => (
           <MultipleChoiceQuestionCard
             key={q.id}
@@ -251,13 +251,13 @@ export function QuizAttemptPanel({
           />
         ))}
       </div>
-      {error ? <p role="alert" style={styles.muted}>{error}</p> : null}
+      {error ? <p role="alert" className={classes.muted}>{error}</p> : null}
       <button
         type="button"
         data-testid="quiz-complete"
         disabled={!allAnswered || busy}
         onClick={() => void onComplete()}
-        style={styles.primaryButton}
+        className={classes.primaryButton}
       >
         {busy ? "Submitting..." : "See results"}
       </button>
@@ -277,29 +277,16 @@ function scoreOf(attempt: QuizAttemptForStudent): number | null {
   return Math.round((correct / total) * 100 * 100) / 100;
 }
 
-const styles = {
-  block: { border: "1px solid #d7dde8", borderRadius: 8, display: "grid", gap: 12, padding: 16 },
-  blockHeading: {
-    color: "#111827", fontSize: 13, fontWeight: 700, letterSpacing: 0, margin: 0,
-    textTransform: "uppercase",
-  },
-  bodyText: { color: "#111827", fontSize: 14, lineHeight: 1.5, margin: 0 },
-  muted: { color: "#4b5563", fontSize: 14, fontStyle: "italic", margin: 0 },
-  prefixBanner: {
-    background: "#fffbeb", border: "1px solid #facc15", borderRadius: 6, color: "#713f12",
-    fontSize: 14, lineHeight: 1.4, padding: "10px 12px",
-  },
-  progressBox: { display: "grid", gap: 10 },
-  progressTrack: {
-    background: "#e5e7eb", borderRadius: 999, height: 8, overflow: "hidden", width: "100%",
-  },
-  progressFill: {
-    background: "#174a63", borderRadius: 999, display: "block", height: "100%", width: "44%",
-  },
-  questions: { display: "grid", gap: 14 },
-  primaryButton: {
-    background: "#174a63", border: "1px solid #174a63", borderRadius: 6, color: "#ffffff",
-    cursor: "pointer", fontSize: 13, fontWeight: 700, justifySelf: "start", minHeight: 34,
-    padding: "0 14px",
-  },
-} satisfies Record<string, React.CSSProperties>;
+const classes = {
+  block: "grid gap-3 rounded-lg border border-border bg-surface p-4",
+  blockHeading: "m-0 text-xs font-semibold uppercase text-text",
+  bodyText: "m-0 text-sm leading-6 text-text",
+  muted: "m-0 text-sm italic text-text-muted",
+  prefixBanner: "rounded-md border border-warning bg-warning-surface px-3 py-2.5 text-sm leading-6 text-warning-text",
+  progressBox: "grid gap-2.5",
+  progressTrack: "h-2 w-full overflow-hidden rounded-full bg-surface-muted",
+  progressFill: "block h-full w-[44%] rounded-full bg-primary",
+  questions: "grid gap-3.5",
+  primaryButton:
+    "min-h-9 justify-self-start rounded-full border border-primary bg-primary px-4 text-sm font-semibold text-on-primary hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-60 focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2",
+} as const;
