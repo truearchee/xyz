@@ -9,16 +9,17 @@ import {
   type SectionListItem,
   type StudentSectionDetail,
 } from "../../../lib/api";
+import { Badge } from "../../../components/ui/Badge";
 import { ForbiddenError, api } from "../../../lib/api/wrapper";
 import { StudentQuizModesPanel } from "../../quiz/StudentQuizModesPanel";
 import { StudentSectionView } from "./StudentSectionView";
 
 // Coarse per-section summary flag (§8.1) — one batched call, no per-section fan-out.
-const SUMMARY_BADGE: Record<string, { label: string; bg: string; color: string } | null> = {
-  ready: { label: "Summaries ready", bg: "#ecfdf5", color: "#047857" },
-  partial: { label: "Summaries partly ready", bg: "#eff6ff", color: "#1d4ed8" },
-  generating: { label: "Summaries generating", bg: "#eff6ff", color: "#1d4ed8" },
-  none: { label: "No summary yet", bg: "#f3f4f6", color: "#4b5563" },
+const SUMMARY_BADGE: Record<string, { label: string; tone: "neutral" | "info" | "success" } | null> = {
+  ready: { label: "Summaries ready", tone: "success" },
+  partial: { label: "Summaries partly ready", tone: "info" },
+  generating: { label: "Summaries generating", tone: "info" },
+  none: { label: "No summary yet", tone: "neutral" },
   not_applicable: null,
 };
 
@@ -119,8 +120,8 @@ export function StudentModuleDetail({ moduleId }: StudentModuleDetailProps) {
 
   if (isLoading) {
     return (
-      <section aria-busy="true" aria-label="Student module detail" style={styles.statePanel}>
-        <h1 style={styles.stateTitle}>Loading module content</h1>
+      <section aria-busy="true" aria-label="Student module detail" className="rounded-lg border border-border p-6">
+        <h1 className="m-0 font-display text-lg leading-snug text-text">Loading module content</h1>
       </section>
     );
   }
@@ -130,29 +131,33 @@ export function StudentModuleDetail({ moduleId }: StudentModuleDetailProps) {
       <section
         aria-label="Student module detail"
         role={isForbidden ? undefined : "alert"}
-        style={isForbidden ? styles.forbiddenPanel : styles.errorPanel}
+        className={
+          isForbidden
+            ? "rounded-lg border border-warning p-6 text-warning-text"
+            : "rounded-lg border border-danger p-6 text-danger-text"
+        }
       >
-        <h1 style={styles.stateTitle}>
+        <h1 className="m-0 font-display text-lg leading-snug">
           {isForbidden ? "Unauthorized module" : "Unable to load module"}
         </h1>
-        <p style={styles.stateText}>{error}</p>
+        <p className="mt-2 text-sm leading-normal">{error}</p>
       </section>
     );
   }
 
   return (
-    <section aria-labelledby="student-module-title" style={styles.shell}>
-      <header style={styles.header}>
-        <div>
-          <p style={styles.eyebrow}>Student module</p>
-          <h1 id="student-module-title" style={styles.title}>
+    <section aria-labelledby="student-module-title" className="grid gap-5">
+      <header className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <p className="m-0 mb-1.5 text-xs font-medium uppercase text-text-muted">Student module</p>
+          <h1 id="student-module-title" className="m-0 break-words font-display text-2xl leading-tight text-text">
             {module?.title ?? "Module"}
           </h1>
         </div>
         {module ? (
-          <span style={module.isActive ? styles.activeBadge : styles.inactiveBadge}>
+          <Badge tone={module.isActive ? "success" : "neutral"}>
             {module.isActive ? "Active" : "Inactive"}
-          </span>
+          </Badge>
         ) : null}
       </header>
 
@@ -162,9 +167,9 @@ export function StudentModuleDetail({ moduleId }: StudentModuleDetailProps) {
       />
 
       {sortedSections.length === 0 ? (
-        <section aria-label="Published sections" style={styles.emptyPanel}>
-          <h2 style={styles.stateTitle}>No published sections</h2>
-          <p style={styles.stateText}>
+        <section aria-label="Published sections" className="rounded-lg border border-border p-6">
+          <h2 className="m-0 font-display text-lg leading-snug text-text">No published sections</h2>
+          <p className="mt-2 text-sm leading-normal text-text-muted">
             Published content for this module will appear here.
           </p>
         </section>
@@ -172,28 +177,25 @@ export function StudentModuleDetail({ moduleId }: StudentModuleDetailProps) {
         <section
           aria-label="Published sections"
           data-testid="student-section-list"
-          style={styles.sectionList}
+          className="grid gap-3.5"
         >
           {sortedSections.map(({ detail }) => {
             const badge = SUMMARY_BADGE[summaryState.get(detail.id) ?? "none"] ?? null;
             return (
-              <div key={detail.id} style={styles.sectionCard}>
+              <div key={detail.id} className="grid gap-2">
                 <StudentSectionView moduleId={moduleId} section={detail} />
-                <div style={styles.summaryFooter}>
+                <div className="flex flex-wrap items-center justify-between gap-3">
                   {badge ? (
-                    <span
-                      data-testid={`student-section-summary-flag-${detail.id}`}
-                      style={{ ...styles.summaryBadge, background: badge.bg, color: badge.color }}
-                    >
+                    <Badge tone={badge.tone} className="shrink-0" data-testid={`student-section-summary-flag-${detail.id}`}>
                       {badge.label}
-                    </span>
+                    </Badge>
                   ) : (
                     <span />
                   )}
                   <Link
                     href={`/student/modules/${moduleId}/sections/${detail.id}`}
                     data-testid={`student-section-open-${detail.id}`}
-                    style={styles.summaryLink}
+                    className="rounded-full border border-border bg-surface px-3 py-1.5 text-sm font-medium text-text no-underline hover:bg-surface-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
                   >
                     View summaries →
                   </Link>
@@ -206,109 +208,3 @@ export function StudentModuleDetail({ moduleId }: StudentModuleDetailProps) {
     </section>
   );
 }
-
-const badgeBase = {
-  borderRadius: 999,
-  flex: "0 0 auto",
-  fontSize: 13,
-  fontWeight: 700,
-  padding: "4px 10px",
-} satisfies React.CSSProperties;
-
-const styles = {
-  shell: {
-    display: "grid",
-    gap: 18,
-  },
-  header: {
-    alignItems: "flex-start",
-    display: "flex",
-    gap: 16,
-    justifyContent: "space-between",
-  },
-  eyebrow: {
-    color: "#4b5563",
-    fontSize: 13,
-    fontWeight: 700,
-    letterSpacing: 0,
-    margin: "0 0 6px",
-    textTransform: "uppercase",
-  },
-  title: {
-    color: "#111827",
-    fontSize: 26,
-    lineHeight: 1.2,
-    margin: 0,
-    overflowWrap: "anywhere",
-  },
-  activeBadge: {
-    ...badgeBase,
-    background: "#e8f5e9",
-    border: "1px solid #a7d8ad",
-    color: "#1f6f35",
-  },
-  inactiveBadge: {
-    ...badgeBase,
-    background: "#f3f4f6",
-    border: "1px solid #d1d5db",
-    color: "#4b5563",
-  },
-  sectionList: {
-    display: "grid",
-    gap: 14,
-  },
-  sectionCard: {
-    display: "grid",
-    gap: 8,
-  },
-  summaryFooter: {
-    alignItems: "center",
-    display: "flex",
-    gap: 12,
-    justifyContent: "space-between",
-  },
-  summaryBadge: {
-    borderRadius: 999,
-    fontSize: 12,
-    fontWeight: 700,
-    padding: "3px 10px",
-  },
-  summaryLink: {
-    color: "#1d4ed8",
-    fontSize: 13,
-    fontWeight: 700,
-    textDecoration: "none",
-  },
-  emptyPanel: {
-    border: "1px solid #d7dde8",
-    borderRadius: 8,
-    padding: 24,
-  },
-  statePanel: {
-    border: "1px solid #d7dde8",
-    borderRadius: 8,
-    padding: 24,
-  },
-  errorPanel: {
-    border: "1px solid #f0b4b4",
-    borderRadius: 8,
-    color: "#7f1d1d",
-    padding: 24,
-  },
-  forbiddenPanel: {
-    border: "1px solid #fed7aa",
-    borderRadius: 8,
-    color: "#7c2d12",
-    padding: 24,
-  },
-  stateTitle: {
-    fontSize: 18,
-    lineHeight: 1.35,
-    margin: 0,
-  },
-  stateText: {
-    fontSize: 14,
-    lineHeight: 1.5,
-    margin: "8px 0 0",
-  },
-} satisfies Record<string, React.CSSProperties>;

@@ -3,6 +3,8 @@
 import { useState } from 'react';
 
 import { getSupabaseBrowserClient } from '../../lib/supabase/client';
+import { Button } from '../ui/Button';
+import { EmptyState } from '../ui/EmptyState';
 
 type AccessDeniedProps = {
   email?: string;
@@ -30,15 +32,40 @@ export function AccessDenied({ email, reason }: AccessDeniedProps) {
   }
 
   return (
-    <main>
-      <h1>Access denied</h1>
-      <p>You do not have access to this application.</p>
-      {email ? <p>Signed in as: {email}</p> : null}
-      {reason ? <p>{reason}</p> : null}
-      {message ? <p>{message}</p> : null}
-      <button disabled={isSigningOut} onClick={signOut} type="button">
-        Log out
-      </button>
+    <main className="mx-auto flex min-h-dvh max-w-md items-center justify-center px-4">
+      <EmptyState
+        headingLevel={1}
+        title="Access denied"
+        description={
+          <>
+            You do not have access to this application.
+            {email ? (
+              <>
+                <br />
+                Signed in as: {email}
+              </>
+            ) : null}
+            {reason ? (
+              <>
+                <br />
+                {reason}
+              </>
+            ) : null}
+          </>
+        }
+        action={
+          <div className="flex flex-col items-center gap-2">
+            {message ? (
+              <p role="alert" className="text-sm text-danger-text">
+                {message}
+              </p>
+            ) : null}
+            <Button variant="secondary" isLoading={isSigningOut} onClick={signOut}>
+              Log out
+            </Button>
+          </div>
+        }
+      />
     </main>
   );
 }

@@ -92,10 +92,10 @@ export function MultipleChoiceSession({
 const styles = {
   wrap: { display: "grid", gap: 12 },
   primary: {
-    background: "#174a63",
-    border: "1px solid #174a63",
+    background: "var(--color-primary)",
+    border: "1px solid var(--color-primary)",
     borderRadius: 6,
-    color: "#ffffff",
+    color: "var(--color-on-primary)",
     cursor: "pointer",
     fontSize: 13,
     fontWeight: 700,
@@ -104,10 +104,10 @@ const styles = {
     padding: "0 14px",
   },
   secondary: {
-    background: "#ffffff",
-    border: "1px solid #d7dde8",
+    background: "var(--color-surface)",
+    border: "1px solid var(--color-border)",
     borderRadius: 6,
-    color: "#374151",
+    color: "var(--color-text)",
     cursor: "pointer",
     fontSize: 13,
     justifySelf: "start",

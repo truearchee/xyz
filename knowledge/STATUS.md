@@ -1,12 +1,19 @@
 # Status
 
-_Last updated: 2026-06-18 — **Stage 9 My Progress Dashboard is FULLY VERIFIED.** Backend schema/API/forecast/seed work is verified; benchmark privacy is pinned to caller-owned averages plus aggregate class data; frontend type-check is clean; the Stage 9 browser gate and full active Playwright suite both pass against the local E2E stack._
+_Last updated: 2026-06-19 — **Stage 4.9g monochrome redesign merge is complete and verified on top of Stage 9.** Stage 5-9 backend/schema behavior remains preserved from `main`; Alembic remains the single Stage 9 head `0039`; the imported Stage 4.9f monochrome frontend design foundation is active._
 
 ## Current branch
-- Branch: `stage-9`
-- Target branch: `origin/main`
+- Branch: `merge-4.9f-redesign`
+- Target branch: `main`
+- Merge source: `stage/4.9f`
 - Migration block used: `0038-0039` inside the assigned `0038-0043` block.
 - Local runtime: backend `http://localhost:8002`, frontend `http://localhost:3002` via `.context/stage9-compose.override.yml` because host `:8000` is occupied by another workspace.
+
+## Stage 4.9g merge status
+- Merge scope: import Stage 4.9f's monochrome Apple x Linear frontend design foundation while preserving Stage 5-9 backend, migrations, prompts, generated API client, and feature routes from `main`.
+- Backend/migration/prompt/generated-client guard: `backend/**`, `backend/alembic/**`, `backend/prompts/**`, `backend/tests/**`, `backend/openapi.json`, and `frontend/src/lib/api/**` are intentionally kept diff-clean against `main`.
+- Accepted frontend design foundation: Tailwind v4/PostCSS setup, `frontend/src/app/globals.css`, `frontend/src/components/ui/**`, design check scripts, and tokenized restyles for preserved Stage 5-9 surfaces.
+- Verification: backend `578 passed`, frontend `tsc exit 0`, Alembic `0039 (head)`, `git diff --check` clean, backend/generated-client guard diff empty, and `/student/glossary`, `/student/progress`, assistant panel, and quiz modes present.
 
 ## Stage 9 delivered
 - ADR-052 records the single-tenant MVP decision before new tables; Stage 8 already owns ADR-050 and ADR-051.

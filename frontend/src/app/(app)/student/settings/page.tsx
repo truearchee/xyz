@@ -2,8 +2,8 @@ import { LanguagePreference } from "../../../../features/glossary/LanguagePrefer
 
 export default function StudentSettingsPage() {
   return (
-    <section style={{ display: "grid", gap: 16 }}>
-      <h1>Settings</h1>
+    <section className="grid gap-4">
+      <h1 className="m-0 text-2xl font-semibold text-text">Settings</h1>
       <LanguagePreference />
     </section>
   );

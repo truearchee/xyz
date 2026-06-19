@@ -78,14 +78,14 @@ export function TranscriptSummaryPanel({
     <section
       aria-label="Lecture summaries"
       data-testid={`section-summary-panel-${sectionKey}`}
-      style={styles.shell}
+      className="grid gap-3"
     >
-      <div style={styles.block}>
-        <h4 style={styles.heading}>Brief summary</h4>
+      <div className="grid gap-1.5">
+        <h4 className="m-0 text-sm font-semibold uppercase tracking-wide text-text">Brief summary</h4>
         {summaries.brief ? (
           <p
             data-testid={`section-summary-brief-${sectionKey}`}
-            style={styles.briefText}
+            className="m-0 text-sm leading-normal text-text"
           >
             {summaries.brief.text}
           </p>
@@ -100,8 +100,8 @@ export function TranscriptSummaryPanel({
         )}
       </div>
 
-      <div style={styles.block}>
-        <h4 style={styles.heading}>Detailed study summary</h4>
+      <div className="grid gap-1.5">
+        <h4 className="m-0 text-sm font-semibold uppercase tracking-wide text-text">Detailed study summary</h4>
         {summaries.detailed ? (
           <DetailedSummaryView
             detailed={summaries.detailed}
@@ -145,7 +145,11 @@ function SummaryPlaceholder({
     <p
       data-testid={`section-summary-${label}-status-${sectionKey}`}
       role={failed ? "alert" : "status"}
-      style={failed ? styles.failure : styles.placeholder}
+      className={
+        failed
+          ? "m-0 rounded-md border border-danger bg-danger-surface px-2.5 py-2 text-sm leading-snug text-danger-text"
+          : "m-0 text-sm italic text-text-muted"
+      }
     >
       {text}
     </p>
@@ -162,20 +166,20 @@ function DetailedSummaryView({
   return (
     <div
       data-testid={`section-summary-detailed-${sectionKey}`}
-      style={styles.detailed}
+      className="grid gap-3 rounded-lg border border-border p-3"
     >
       <DetailedSection title="Overview">
-        <p style={styles.bodyText}>{detailed.overview}</p>
+        <p className="m-0 text-sm leading-normal text-text">{detailed.overview}</p>
       </DetailedSection>
       <DetailedSection title="Key concepts">
         <BulletList items={detailed.keyConcepts} />
       </DetailedSection>
       <DetailedSection title="Important definitions">
-        <dl style={styles.definitionList}>
+        <dl className="m-0 grid gap-1.5">
           {detailed.importantDefinitions.map((definition, index) => (
-            <div key={index} style={styles.definitionRow}>
-              <dt style={styles.definitionTerm}>{definition.term}</dt>
-              <dd style={styles.definitionBody}>{definition.definition}</dd>
+            <div key={index} className="grid gap-0.5">
+              <dt className="m-0 text-sm font-semibold text-text">{definition.term}</dt>
+              <dd className="m-0 text-sm leading-normal text-text-muted">{definition.definition}</dd>
             </div>
           ))}
         </dl>
@@ -206,8 +210,8 @@ function DetailedSection({
   children: React.ReactNode;
 }) {
   return (
-    <div style={styles.detailedSection}>
-      <h5 style={styles.detailedHeading}>{title}</h5>
+    <div className="grid gap-1">
+      <h5 className="m-0 text-sm font-semibold text-text-muted">{title}</h5>
       {children}
     </div>
   );
@@ -215,9 +219,9 @@ function DetailedSection({
 
 function BulletList({ items }: { items: string[] }) {
   return (
-    <ul style={styles.list}>
+    <ul className="m-0 grid list-disc gap-1 pl-[18px] text-text">
       {items.map((item, index) => (
-        <li key={index} style={styles.bodyText}>
+        <li key={index} className="m-0 text-sm leading-normal text-text">
           {item}
         </li>
       ))}
@@ -239,95 +243,3 @@ function isSettled(summaries: TranscriptSummariesRead): boolean {
   }
   return false;
 }
-
-const styles = {
-  shell: {
-    display: "grid",
-    gap: 12,
-  },
-  block: {
-    display: "grid",
-    gap: 6,
-  },
-  heading: {
-    color: "#111827",
-    fontSize: 14,
-    fontWeight: 700,
-    margin: 0,
-    textTransform: "uppercase",
-    letterSpacing: "0.03em",
-  },
-  briefText: {
-    color: "#111827",
-    fontSize: 14,
-    lineHeight: 1.5,
-    margin: 0,
-  },
-  placeholder: {
-    color: "#4b5563",
-    fontSize: 14,
-    fontStyle: "italic",
-    margin: 0,
-  },
-  failure: {
-    background: "#fef2f2",
-    border: "1px solid #fecaca",
-    borderRadius: 6,
-    color: "#7f1d1d",
-    fontSize: 14,
-    lineHeight: 1.45,
-    margin: 0,
-    padding: "8px 10px",
-  },
-  detailed: {
-    border: "1px solid #d7dde8",
-    borderRadius: 8,
-    display: "grid",
-    gap: 12,
-    padding: 12,
-  },
-  detailedSection: {
-    display: "grid",
-    gap: 4,
-  },
-  detailedHeading: {
-    color: "#374151",
-    fontSize: 13,
-    fontWeight: 700,
-    margin: 0,
-  },
-  bodyText: {
-    color: "#111827",
-    fontSize: 14,
-    lineHeight: 1.5,
-    margin: 0,
-  },
-  list: {
-    color: "#111827",
-    display: "grid",
-    gap: 4,
-    margin: 0,
-    paddingLeft: 18,
-  },
-  definitionList: {
-    display: "grid",
-    gap: 6,
-    margin: 0,
-  },
-  definitionRow: {
-    display: "grid",
-    gap: 2,
-  },
-  definitionTerm: {
-    color: "#111827",
-    fontSize: 14,
-    fontWeight: 700,
-    margin: 0,
-  },
-  definitionBody: {
-    color: "#374151",
-    fontSize: 14,
-    lineHeight: 1.5,
-    margin: 0,
-  },
-} satisfies Record<string, React.CSSProperties>;

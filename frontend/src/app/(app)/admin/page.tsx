@@ -3,8 +3,8 @@ import { AdminUsersPanel } from "../../../features/admin/users/AdminUsersPanel";
 
 export default function AdminPage() {
   return (
-    <section style={{ display: "grid", gap: 24 }}>
-      <h1>Admin</h1>
+    <section className="grid gap-6">
+      <h1 className="m-0 font-display text-2xl font-semibold text-text">Admin</h1>
       <AdminUsersPanel />
       <AdminModulesPanel />
     </section>

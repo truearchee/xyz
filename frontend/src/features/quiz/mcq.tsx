@@ -46,12 +46,12 @@ export function AnswerOptionButton({
   onSelect: (optionId: string) => void;
 }) {
   const state = optionState(option.id, answer);
-  const style =
+  const className =
     state === "selected-correct" || state === "missed-correct"
-      ? styles.optionCorrect
+      ? classes.optionCorrect
       : state === "selected-incorrect"
-        ? styles.optionIncorrect
-        : styles.option;
+        ? classes.optionIncorrect
+        : classes.option;
   return (
     <button
       type="button"
@@ -60,7 +60,7 @@ export function AnswerOptionButton({
       aria-pressed={answer?.selectedOptionId === option.id}
       disabled={disabled}
       onClick={() => onSelect(option.id)}
-      style={style}
+      className={className}
     >
       {option.text}
     </button>
@@ -73,12 +73,12 @@ export function AnswerFeedbackPanel({ answer }: { answer: NonNullable<McqAnswer>
       role="status"
       data-testid="quiz-feedback"
       data-correct={answer.isCorrect}
-      style={answer.isCorrect ? styles.feedbackCorrect : styles.feedbackIncorrect}
+      className={answer.isCorrect ? classes.feedbackCorrect : classes.feedbackIncorrect}
     >
-      <p style={styles.feedbackLabel}>{answer.isCorrect ? "Correct" : "Incorrect"}</p>
-      {answer.explanation ? <p style={styles.feedbackText}>{answer.explanation}</p> : null}
+      <p className={classes.feedbackLabel}>{answer.isCorrect ? "Correct" : "Incorrect"}</p>
+      {answer.explanation ? <p className={classes.feedbackText}>{answer.explanation}</p> : null}
       {answer.mistakeSaved ? (
-        <p data-testid="quiz-mistake-saved" style={styles.mistakeNote}>
+        <p data-testid="quiz-mistake-saved" className={classes.mistakeNote}>
           Saved to your mistakes
         </p>
       ) : null}
@@ -105,12 +105,12 @@ export function MultipleChoiceQuestionCard({
 }) {
   const answered = answer !== null;
   return (
-    <div data-testid="quiz-question-card" data-answered={answered} style={styles.card}>
-      <p style={styles.progress}>
+    <div data-testid="quiz-question-card" data-answered={answered} className={classes.card}>
+      <p className={classes.progress}>
         Question {questionNumber} of {totalQuestions}
       </p>
-      <p style={styles.questionText}>{questionText}</p>
-      <div role="group" aria-label="Answer options" style={styles.options}>
+      <p className={classes.questionText}>{questionText}</p>
+      <div role="group" aria-label="Answer options" className={classes.options}>
         {options.map((option) => (
           <AnswerOptionButton
             key={option.id}
@@ -143,14 +143,14 @@ export function QuizResultSummary({
 }) {
   const mistakes = incorrectCount ?? 0;
   return (
-    <div data-testid="quiz-result" style={styles.result}>
-      <p style={styles.score} data-testid="quiz-score">
-        {scorePercentage === null ? "—" : `${scorePercentage}%`}
+    <div data-testid="quiz-result" className={classes.result}>
+      <p className={classes.score} data-testid="quiz-score">
+        {scorePercentage === null ? "-" : `${scorePercentage}%`}
       </p>
-      <p style={styles.resultDetail}>
+      <p className={classes.resultDetail}>
         {correctCount ?? 0} of {totalQuestions ?? 0} correct
       </p>
-      <p style={styles.resultDetail} data-testid="quiz-mistakes-count">
+      <p className={classes.resultDetail} data-testid="quiz-mistakes-count">
         {mistakes === 1 ? "1 mistake recorded" : `${mistakes} mistakes recorded`}
       </p>
       <button
@@ -158,48 +158,31 @@ export function QuizResultSummary({
         data-testid="quiz-start-over"
         disabled={startingOver}
         onClick={onStartOver}
-        style={styles.primaryButton}
+        className={classes.primaryButton}
       >
-        {startingOver ? "Starting…" : "Start Over"}
+        {startingOver ? "Starting..." : "Start Over"}
       </button>
     </div>
   );
 }
 
-const styles = {
-  card: { border: "1px solid #d7dde8", borderRadius: 8, display: "grid", gap: 12, padding: 16 },
-  progress: { color: "#4b5563", fontSize: 12, fontWeight: 700, margin: 0, textTransform: "uppercase" },
-  questionText: { color: "#111827", fontSize: 16, lineHeight: 1.4, margin: 0 },
-  options: { display: "grid", gap: 8 },
-  option: {
-    background: "#ffffff", border: "1px solid #cbd5e1", borderRadius: 6, color: "#111827",
-    cursor: "pointer", fontSize: 14, padding: "10px 12px", textAlign: "left",
-  },
-  optionCorrect: {
-    background: "#ecfdf5", border: "1px solid #059669", borderRadius: 6, color: "#065f46",
-    fontSize: 14, padding: "10px 12px", textAlign: "left",
-  },
-  optionIncorrect: {
-    background: "#fef2f2", border: "1px solid #b91c1c", borderRadius: 6, color: "#7f1d1d",
-    fontSize: 14, padding: "10px 12px", textAlign: "left",
-  },
-  feedbackCorrect: {
-    background: "#ecfdf5", border: "1px solid #a7f3d0", borderRadius: 6, display: "grid",
-    gap: 4, padding: "10px 12px",
-  },
-  feedbackIncorrect: {
-    background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 6, display: "grid",
-    gap: 4, padding: "10px 12px",
-  },
-  feedbackLabel: { fontSize: 14, fontWeight: 700, margin: 0 },
-  feedbackText: { color: "#374151", fontSize: 14, lineHeight: 1.5, margin: 0 },
-  mistakeNote: { color: "#7f1d1d", fontSize: 13, fontStyle: "italic", margin: 0 },
-  result: { border: "1px solid #d7dde8", borderRadius: 8, display: "grid", gap: 8, padding: 16 },
-  score: { color: "#111827", fontSize: 32, fontWeight: 800, margin: 0 },
-  resultDetail: { color: "#374151", fontSize: 14, margin: 0 },
-  primaryButton: {
-    background: "#174a63", border: "1px solid #174a63", borderRadius: 6, color: "#ffffff",
-    cursor: "pointer", fontSize: 13, fontWeight: 700, justifySelf: "start", minHeight: 34,
-    padding: "0 14px",
-  },
-} satisfies Record<string, React.CSSProperties>;
+const classes = {
+  card: "grid gap-3 rounded-lg border border-border bg-surface p-4",
+  progress: "m-0 text-xs font-semibold uppercase text-text-muted",
+  questionText: "m-0 text-base leading-6 text-text",
+  options: "grid gap-2",
+  option:
+    "rounded-md border border-border bg-surface px-3 py-2.5 text-left text-sm text-text hover:bg-surface-muted disabled:cursor-not-allowed disabled:opacity-80 focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2",
+  optionCorrect: "rounded-md border border-success bg-success-surface px-3 py-2.5 text-left text-sm text-success-text",
+  optionIncorrect: "rounded-md border border-danger bg-danger-surface px-3 py-2.5 text-left text-sm text-danger-text",
+  feedbackCorrect: "grid gap-1 rounded-md border border-success bg-success-surface px-3 py-2.5",
+  feedbackIncorrect: "grid gap-1 rounded-md border border-danger bg-danger-surface px-3 py-2.5",
+  feedbackLabel: "m-0 text-sm font-semibold text-text",
+  feedbackText: "m-0 text-sm leading-6 text-text-muted",
+  mistakeNote: "m-0 text-sm italic text-danger-text",
+  result: "grid gap-2 rounded-lg border border-border bg-surface p-4",
+  score: "m-0 text-3xl font-semibold text-text",
+  resultDetail: "m-0 text-sm text-text-muted",
+  primaryButton:
+    "min-h-9 justify-self-start rounded-full border border-primary bg-primary px-4 text-sm font-semibold text-on-primary hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-60 focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2",
+} as const;

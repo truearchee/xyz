@@ -94,3 +94,6 @@ idempotent complete single event; practice personal-scoping 404).
 - 2026-06-18 — [Session 9] added Stage 9 tables to backend test truncation and advanced the dev reseed
   Alembic head pin to `0039`; glossary practice behavior unchanged. See
   [[steps/stage-09/9-my-progress-dashboard]].
+- 2026-06-19 — [Session 4.9g] visually restyled glossary practice flashcard/MCQ surfaces onto the imported
+  monochrome token system; glossary practice behavior unchanged. See
+  [[steps/stage-04/4.9g-merge-monochrome-redesign]].

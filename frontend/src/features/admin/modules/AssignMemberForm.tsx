@@ -4,7 +4,7 @@ import { useState, type FormEvent } from "react";
 
 import { AssignMemberRequest, type ModuleResponse, type UserResponse } from "../../../lib/api";
 import { api } from "../../../lib/api/wrapper";
-import { errorMessage, panelStyles } from "../shared";
+import { errorMessage, panelClasses } from "../shared";
 
 type AssignMemberFormProps = {
   modules: ModuleResponse[];
@@ -37,19 +37,19 @@ export function AssignMemberForm({ modules, users, onAssigned }: AssignMemberFor
   }
 
   return (
-    <form data-testid="assign-member-form" onSubmit={submit} style={panelStyles.stack}>
-      <h3>Assign member</h3>
-      {error ? <div role="alert" style={panelStyles.alert}>{error}</div> : null}
-      <label style={panelStyles.label}>
+    <form data-testid="assign-member-form" onSubmit={submit} className={panelClasses.stack}>
+      <h3 className="m-0 font-display text-base font-semibold text-text">Assign member</h3>
+      {error ? <div role="alert" className={panelClasses.alert}>{error}</div> : null}
+      <label className={panelClasses.label}>
         Module
-        <select aria-label="Assignment module" onChange={(event) => setModuleId(event.target.value)} required style={panelStyles.input} value={moduleId}>
+        <select aria-label="Assignment module" onChange={(event) => setModuleId(event.target.value)} required className={panelClasses.input} value={moduleId}>
           <option value="">Select module</option>
           {modules.map((module) => (
             <option key={module.id} value={module.id}>{module.title}</option>
           ))}
         </select>
       </label>
-      <label style={panelStyles.label}>
+      <label className={panelClasses.label}>
         Role
         <select
           aria-label="Assignment role"
@@ -58,23 +58,23 @@ export function AssignMemberForm({ modules, users, onAssigned }: AssignMemberFor
             setUserId("");
           }}
           required
-          style={panelStyles.input}
+          className={panelClasses.input}
           value={role}
         >
           <option value={AssignMemberRequest.role.LECTURER}>Lecturer</option>
           <option value={AssignMemberRequest.role.STUDENT}>Student</option>
         </select>
       </label>
-      <label style={panelStyles.label}>
+      <label className={panelClasses.label}>
         User
-        <select aria-label="Assignment user" onChange={(event) => setUserId(event.target.value)} required style={panelStyles.input} value={userId}>
+        <select aria-label="Assignment user" onChange={(event) => setUserId(event.target.value)} required className={panelClasses.input} value={userId}>
           <option value="">Select {role}</option>
           {eligibleUsers.map((user) => (
             <option key={user.id} value={user.id}>{user.fullName} ({user.email})</option>
           ))}
         </select>
       </label>
-      <button disabled={isSubmitting || modules.length === 0 || eligibleUsers.length === 0} type="submit">
+      <button className={panelClasses.button} disabled={isSubmitting || modules.length === 0 || eligibleUsers.length === 0} type="submit">
         {isSubmitting ? "Assigning..." : "Assign member"}
       </button>
     </form>

@@ -119,3 +119,6 @@ E2E suite passed 14/14. See [[steps/stage-07/7bc-glossary-practice]] and [[findi
   fully verified as part of the 7a–7c browser gate.
 - 2026-06-18 11:05 — [Session 7e] added enqueue-failure compensation + duplicate-save retry recovery
   for glossary definitions, and rejected `entry_type` updates to preserve cache-key/provenance consistency.
+- 2026-06-19 — [Session 4.9g] visually restyled glossary entry/preferences/save surfaces onto the imported
+  monochrome token system; glossary API/data behavior unchanged. See
+  [[steps/stage-04/4.9g-merge-monochrome-redesign]].

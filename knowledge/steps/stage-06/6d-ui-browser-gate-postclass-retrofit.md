@@ -198,3 +198,6 @@ Captured by the green 6d browser gate in `knowledge/steps/stage-06/screenshots/`
   assertions. The strengthened gate now proves retake prefix drop + bank persistence, failed-pool retry,
   exam-prep events, and retake no-new-generation reuse; Stage 6 remains open only because the rule-11 smoke
   timed out twice.
+- 2026-06-19 — [Session 4.9g] visually restyled assessment scope, quiz mode, recap/exam-prep, and mistakes-bank
+  surfaces onto the imported monochrome token system; Stage 6 backend and quiz behavior unchanged. See
+  [[steps/stage-04/4.9g-merge-monochrome-redesign]].

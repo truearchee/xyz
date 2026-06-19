@@ -72,11 +72,11 @@ export function LanguagePreference() {
 }
 
 const styles = {
-  block: { border: "1px solid #d7dde8", borderRadius: 8, display: "grid", gap: 8, maxWidth: 420, padding: 16 },
-  heading: { color: "#111827", fontSize: 16, margin: 0 },
-  help: { color: "#4b5563", fontSize: 13, margin: 0 },
-  label: { color: "#374151", display: "grid", fontSize: 13, fontWeight: 700, gap: 4 },
-  input: { border: "1px solid #d7dde8", borderRadius: 6, fontSize: 14, minHeight: 36, padding: "0 10px" },
-  ok: { color: "#065f46", fontSize: 13 },
-  err: { color: "#7f1d1d", fontSize: 13 },
+  block: { border: "1px solid var(--color-border)", borderRadius: 8, display: "grid", gap: 8, maxWidth: 420, padding: 16 },
+  heading: { color: "var(--color-text)", fontSize: 16, margin: 0 },
+  help: { color: "var(--color-text-muted)", fontSize: 13, margin: 0 },
+  label: { color: "var(--color-text)", display: "grid", fontSize: 13, fontWeight: 700, gap: 4 },
+  input: { border: "1px solid var(--color-border)", borderRadius: 6, fontSize: 14, minHeight: 36, padding: "0 10px" },
+  ok: { color: "var(--color-success-text)", fontSize: 13 },
+  err: { color: "var(--color-danger-text)", fontSize: 13 },
 } satisfies Record<string, React.CSSProperties>;

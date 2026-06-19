@@ -312,7 +312,7 @@ export function PostClassQuizPanel({ sectionId }: { sectionId: string }) {
     }
     // No active attempt → availability-driven.
     if (availability === null) {
-      return <p style={styles.muted}>Loading quiz…</p>;
+      return <p style={styles.muted}>Loading quiz...</p>;
     }
     if (availability.availability !== "available") {
       return (
@@ -327,7 +327,7 @@ export function PostClassQuizPanel({ sectionId }: { sectionId: string }) {
       <div style={styles.startBlock}>
         <p style={styles.bodyText}>Check your understanding with a short quiz.</p>
         <button type="button" data-testid="quiz-start" disabled={busy} onClick={() => void onStart()} style={styles.primaryButton}>
-          {busy ? "Starting…" : "Start quiz"}
+          {busy ? "Starting..." : "Start quiz"}
         </button>
         {error ? <p role="alert" style={styles.muted}>{error}</p> : null}
       </div>
@@ -358,19 +358,26 @@ function scoreOf(attempt: QuizAttemptForStudent): number | null {
 }
 
 const styles = {
-  block: { border: "1px solid #d7dde8", borderRadius: 8, display: "grid", gap: 12, padding: 16 },
+  block: {
+    background: "var(--color-surface)",
+    border: "1px solid var(--color-border)",
+    borderRadius: "var(--radius-lg)",
+    display: "grid",
+    gap: 12,
+    padding: 16,
+  },
   blockHeading: {
-    color: "#111827", fontSize: 13, fontWeight: 700, letterSpacing: "0.03em", margin: 0,
+    color: "var(--color-text)", fontSize: 13, fontWeight: 600, letterSpacing: 0, margin: 0,
     textTransform: "uppercase",
   },
   startBlock: { display: "grid", gap: 10, justifyItems: "start" },
   questions: { display: "grid", gap: 14 },
   failed: { display: "grid", gap: 10, justifyItems: "start" },
-  bodyText: { color: "#111827", fontSize: 14, lineHeight: 1.5, margin: 0 },
-  muted: { color: "#4b5563", fontSize: 14, fontStyle: "italic", margin: 0 },
-  history: { color: "#4b5563", fontSize: 13, margin: 0 },
+  bodyText: { color: "var(--color-text)", fontSize: 14, lineHeight: 1.5, margin: 0 },
+  muted: { color: "var(--color-text-muted)", fontSize: 14, fontStyle: "italic", margin: 0 },
+  history: { color: "var(--color-text-muted)", fontSize: 13, margin: 0 },
   primaryButton: {
-    background: "#174a63", border: "1px solid #174a63", borderRadius: 6, color: "#ffffff",
+    background: "var(--color-primary)", border: "1px solid var(--color-primary)", borderRadius: 999, color: "var(--color-on-primary)",
     cursor: "pointer", fontSize: 13, fontWeight: 700, minHeight: 34, padding: "0 14px",
   },
 } satisfies Record<string, React.CSSProperties>;
