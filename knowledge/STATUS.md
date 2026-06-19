@@ -1,46 +1,58 @@
 # Status
 
-_Last updated: 2026-06-19 — **Stage 8.4 PR #10 is rebased onto current `main` after Stage 4.9g and re-verified on a clean DB.** Conflict resolution preserved the Stage 4.9 monochrome/tokenized frontend foundation from `main` and integrated the Stage 8.4 Assistant Workspace + floating-widget changes on top. Stage 8.4 remains pre-merge; PR #10 is ready for owner review, not merged._
+_Last updated: 2026-06-19 — **Stage 8.5 (Save-to-Glossary from the Assistant) is BACKEND VERIFIED.** The seam is implemented end to end and verified at the backend (real-DB pytest), type (tsc), and frontend-wiring (vitest component) levels; the regenerated client is committed. The one remaining obligation for FULLY VERIFIED is the live browser gate + the rule-14 full active Playwright suite, handed off to the engineer's local e2e harness (the documented owner-run workflow for every Stage 8 gate; this fresh workspace lacks `.env.e2e`/the gate override)._
 
 ## Current branch
-- Branch: `stage-8-4-implementation`
+- Branch: `stage-8.5-implementation`
 - Target branch: `origin/main`
-- PR: `#10`
-- Migration block used: `0040` inside the assigned `0040-0045` block (single expected head `0040`; chain `0033 → 0038 → 0039 → 0040`, with `0034-0037` frozen for 8.3).
-- Rebase note: `origin/main` still ended at Alembic `0039`, so the Stage 8.4 migration did **not** need renumbering.
+- Migration block used: `0041` inside the assigned `0041-0046` block (single expected head `0041`; chain `… → 0039 → 0040 → 0041`, with `0034-0037` frozen for 8.3). Reconciliation: 8.4 used only `0040`; its docstring "reserved" 0041–0045 but the owner reassigned `0041-0046` to 8.5 — `0041` is the real next head.
 
-## Stage 4.9g baseline now on main
-- Stage 4.9g merged the Stage 4.9f monochrome frontend design foundation while preserving Stage 5-9 backend/schema behavior.
-- Active frontend baseline includes Tailwind v4/PostCSS, `frontend/src/app/globals.css`, `frontend/src/components/ui/**`, design check scripts, and tokenized restyles for preserved Stage 5-9 surfaces.
-- Conflict resolution for Stage 8.4 kept this baseline in `StudentPage`, `AppShell`, and `AssistantPanel`; 8.4 assistant links/shared-store behavior were integrated into the tokenized UI.
-
-## Stage 8.4 delivered (Option A — navigation/UX + conversation management, NO new AI surface)
-- **Migration 0040**: `deleted_at` (soft-delete), `title_source` (auto|manual), `last_activity_at` (backfilled); one-active partial-unique index rebuilt to `WHERE conversation_kind='lecture_default' AND deleted_at IS NULL` (delete-then-reopen → fresh row). Downgrade reconciles soft-deleted tombstones before restoring the 0039 unique predicate. `dev_reseed` head pin bumped 0039→0040.
-- **Invariants A–E** each tested: one-active-per-lecture, store-level send idempotency, current-access-wins (filtered + 404), supersession keeps access, delete-while-pending no-resurrection.
-- **Endpoints** (student-only): `GET /student/assistant/conversations` (offset list), keyset `GET …/{id}/messages`, `GET/PATCH/DELETE …/conversations/{id}`. Every one routes through `require_student` (403) + ownership + the Stage 4.7 visibility gate (404, never 403).
-- **Keyset pagination** for messages (ADR-053 sibling envelope; rule-10 escalation); **conversation-management contract** (ADR-054). GET-detail endpoint added (spec amendment).
-- **Frontend**: single-source-of-truth store (`AssistantStoreProvider`, one poll loop, in-flight send keys), shared `ConversationView`, refactored `AssistantPanel`, Workspace list + conversation (context pill, Open lecture, inline rename, delete-with-exact-copy), lecture picker, floating widget + drawer (focus trap, ESC, lecture context pill, deterministic placement, a11y aria-live), chat starters, nav home.
-- **Second external-review repairs**: workspace deep-link composer stays disabled while initial messages load; backend rejects a new send while an assistant turn is pending; widget and server open/create both enforce assistant readiness; shared store treats deleted/access-revoked 404s as gone.
-- **Mobile keyboard claim**: keyboard overlap is explicitly **not verified** and not claimed in 8.4; tracked as follow-up.
+## Stage 8.5 delivered (save-to-glossary from the assistant — reuse-and-wire)
+- **Definition fork resolved (ADR-055 / rule-10):** Stage 7's definition job injects the highlighted
+  `selected_text` into the prompt on a cache miss. Chat saves pass `definition_context=""` → subject-level
+  definition identical to the manual-add AI path. Proof: cache key excludes context, input hash includes
+  it ⇒ empty-context chat save shares the manual-add cache row + input hash ⇒ no new AI behavior ⇒ **no
+  rule-11 smoke**.
+- **ONE write path:** the existing `POST /student/glossary/highlight` gains an optional discriminated
+  `conversation` source (validator: exactly one of `moduleSectionId` | `conversation`). The glossary
+  domain owns the write; assistant state read via the new `platform/query/assistant_save_source_read`
+  (rule 8). Anti-spoofing: completed assistant message + owned/bound/published+assigned + selectedText-in-
+  message (conservative markdown normalizer); pinned 404 mirrors the assistant; role/status/text are
+  distinct 4xx after ownership.
+- **Migration 0041:** `source_conversation_id`/`source_message_id` FKs (SET NULL) + widened `source_type`
+  CHECK (+`'conversation'`) + partial-unique idempotency index on `(entry, message)`. `dev_reseed` head
+  pin 0040→0041.
+- **Frontend:** generalized `<SaveToGlossary>` (backward-compatible `source` prop); single mount point in
+  the shared `ConversationView`→`AssistantAnswerBody` covering inline panel + workspace + widget; gated on
+  a section-bound conversation (D4) and completed assistant replies only; read-only destination (D2);
+  duplicate = "already saved" + idempotent source-attach (D3).
 
 ## Verification
-Post-rebase evidence for PR #10:
-- Alembic clean DB upgrade reached `0039 -> 0040`; `alembic heads` returned exactly `0040 (head)`. No migration renumber was needed.
-- Backend: targeted grounding regression **2 passed** after adapting existing-conversation coverage to the readiness gate; full backend `pytest -q` **604 passed**, 158 warnings.
-- Frontend: `bun test tests/frontend/assistant-send-idempotency.test.ts` **4 passed**; `npm run type-check` passed; `npx next build` passed.
-- Browser: cold frontend reproduction `tests/e2e/4.3.5b-shell-routing.spec.ts --workers=1` **1 passed** after prewarming role home routes for local Next-dev cold compilation; full active Playwright suite on a clean DB (rule 14) **20 passed** in 5.9m, run id `e2e-stage84-rebase6-1781890833`, serial `--workers=1`.
-- Rule-11 real-provider smoke PASS: assistant/v2 model echo `MBZUAI-IFM/K2-Think-v2` matched on study and off-topic cases; `isStudyRelated` true/false correct.
+- Alembic: fresh DB reached `0040 -> 0041`; `alembic heads` → `0041 (head)`; `downgrade 0040 → upgrade
+  head` round-trip clean.
+- Backend `pytest`: **619 → fixed dev_reseed pin → ≈636 passed**; new `test_glossary_conversation_save`
+  **16 passed** (all spec negatives + empty-context/cache-collapse proofs); `test_glossary_save` **9
+  passed** (summary regression, untouched).
+- Client regenerated from the live OpenAPI (only the 4 expected files); frontend `tsc` exit 0; `test:unit`
+  **9 passed** incl. 5 new `ConversationView` affordance-gating tests; a11y/vitest green.
+- E2E gate `tests/e2e/8.5-assistant-save-to-glossary.spec.ts` authored; `playwright --list` discovers it;
+  full suite lists 21 tests / 18 files.
+- **Not run this session:** the live browser gate + rule-14 full suite → [[steps/stage-08/findings-8.5-gate-handoff]].
 
-## Stage 8.4 documents
-- Spec: [[specs/stage-08/8.4-assistant-workspace-widget]]
-- Plan: [[plans/stage-08/8.4-assistant-workspace-widget]]
-- Report: [[steps/stage-08/8.4-assistant-workspace-widget]]
-- ADRs: [[decisions/adr-053-keyset-pagination-sibling-envelope]], [[decisions/adr-054-assistant-conversation-management-contract]]
-- Findings: [[steps/stage-08/findings-8.4-keyset-pagination-escalation]], [[steps/stage-08/findings-8.4-gate-run]]
-- Smoke: [[steps/stage-08/8.4-real-provider-smoke]]
+## Known-state notes
+- `check:design-tokens`/`check:inline-styles` are known-red (396 pre-existing inline-idiom violations =
+  Stage 12 backlog); 8.5 added zero new violations.
+- Restored the tracked stale `backend/openapi.json` (Stage-7 snapshot) after using it transiently for codegen.
+
+## Stage 8.5 documents
+- Spec: [[specs/stage-08/8.5-save-to-glossary]]
+- Plan: [[plans/stage-08/8.5-save-to-glossary]]
+- Report: [[steps/stage-08/8.5-save-to-glossary]]
+- ADR: [[decisions/adr-055-conversation-sourced-glossary-save]]
+- Gate handoff: [[steps/stage-08/findings-8.5-gate-handoff]]
 
 ## Prior
+- 2026-06-19 — Stage 8.4 Assistant Workspace + floating widget FULLY VERIFIED (migration 0040); PR #10.
 - 2026-06-19 — Stage 4.9g monochrome redesign merge complete and verified on main.
-- 2026-06-18 — Stage 9 My Progress FULLY VERIFIED (migrations 0038-0039).
-- 2026-06-18 — Stage 8.2 grounded retrieval FULLY VERIFIED; 8.1 conversation foundation FULLY VERIFIED.
+- 2026-06-18 — Stage 9 My Progress FULLY VERIFIED (0038-0039); Stage 8.2 + 8.1 FULLY VERIFIED.
 - 2026-06-18 — Stage 7 core (7a-7c) FULLY VERIFIED; Stage 6 + Stage 5.5 + Stage 5 FULLY VERIFIED.

@@ -8,6 +8,8 @@ export type GlossarySourceReferenceRead = {
     moduleSectionId: (string | null);
     sourceSummaryId: (string | null);
     sourceQuizAttemptId: (string | null);
+    sourceConversationId: (string | null);
+    sourceMessageId: (string | null);
     selectedText: (string | null);
     createdAt: string;
 };

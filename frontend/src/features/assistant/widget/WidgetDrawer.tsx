@@ -113,6 +113,8 @@ export function WidgetDrawer({ mode, conversationId, lectureStatus, moduleId, se
               onRetry={conv.retry}
               onLoadOlder={conv.loadOlder}
               onDraftChange={conv.setDraft}
+              conversationId={conversationId}
+              saveSectionId={detail?.attachedSectionId ?? sectionId}
               header={
                 <LectureContextHeader
                   detail={detail}

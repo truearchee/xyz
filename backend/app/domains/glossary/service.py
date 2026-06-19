@@ -15,12 +15,17 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domains.glossary.policy import (
+    CONVERSATION_SOURCE_NOT_FOUND,
     ENTRY_NOT_FOUND,
     ENTRY_TYPE_IMMUTABLE,
     FOLDER_NAME_EXISTS,
     FOLDER_NOT_FOUND,
     FOLDER_SYSTEM_IMMUTABLE,
     SECTION_NOT_FOUND,
+    SELECTED_TEXT_NOT_IN_MESSAGE,
+    SELECTED_TEXT_REQUIRED,
+    SOURCE_MESSAGE_NOT_COMPLETED,
+    SOURCE_NOT_ASSISTANT_MESSAGE,
     SUBJECT_NOT_FOUND,
     conflict,
     not_found,
@@ -29,6 +34,7 @@ from app.domains.glossary.policy import (
 )
 from app.domains.glossary.save_service import ensure_unsorted_folder, save_term
 from app.domains.glossary.schemas import (
+    ConversationSaveSource,
     GlossaryEntryDetail,
     GlossaryEntryRead,
     GlossaryFolderRead,
@@ -38,8 +44,11 @@ from app.domains.glossary.schemas import (
     SaveResponse,
     UpdateEntryRequest,
 )
+from app.domains.glossary.snippet import selected_text_in_message
+from app.domains.glossary.specs import CONTEXT_CHAR_CAP
 from app.platform.auth.context import CurrentUserContext
 from app.platform.db.models import GlossaryEntry, GlossaryFolder, ModuleSection
+from app.platform.query.assistant_save_source_read import get_conversation_save_source
 from app.platform.query.glossary_read import (
     get_entry_sources,
     get_glossary_entry,
@@ -69,6 +78,12 @@ async def save_from_highlight(
     db: AsyncSession, *, current_user: CurrentUserContext, payload: SaveHighlightRequest
 ) -> SaveResponse:
     require_student(current_user.role)
+    if payload.conversation is not None:
+        # Stage 8.5 — highlight in an assistant reply. Server-verified, subject resolved from the
+        # conversation's bound section. The summary branch below is left byte-for-byte (regression-safe).
+        return await _save_from_conversation(
+            db, current_user=current_user, payload=payload, conversation=payload.conversation
+        )
     section = await db.get(ModuleSection, payload.module_section_id)
     if section is None:
         raise not_found(SECTION_NOT_FOUND)
@@ -87,6 +102,57 @@ async def save_from_highlight(
         module_section_id=payload.module_section_id,
         source_type="summary",
         selected_text=payload.selected_text,
+    )
+    return await _save_response(
+        db, current_user=current_user, entry_id=outcome.entry_id, duplicate=outcome.duplicate
+    )
+
+
+async def _save_from_conversation(
+    db: AsyncSession,
+    *,
+    current_user: CurrentUserContext,
+    payload: SaveHighlightRequest,
+    conversation: ConversationSaveSource,
+) -> SaveResponse:
+    """Stage 8.5 — save a term highlighted in a completed assistant reply.
+
+    Anti-spoofing: the server resolves+verifies the source (owner + bound + visible message), confirms the
+    highlighted text actually occurs in the assistant message, derives the subject from the bound section,
+    and feeds NO chat text to the definition prompt (subject-level definition, ADR-055). The 404 family is
+    pinned (ownership/existence/binding/visibility — matches the assistant); role/status/text are distinct
+    4xx that only fire after ownership is proven (no info leak)."""
+    selected = (payload.selected_text or "").strip()
+    if not selected:
+        raise validation_error(SELECTED_TEXT_REQUIRED)
+    resolved = await get_conversation_save_source(
+        db,
+        student_id=current_user.user_id,
+        conversation_id=conversation.conversation_id,
+        message_id=conversation.message_id,
+    )
+    if resolved is None:
+        raise not_found(CONVERSATION_SOURCE_NOT_FOUND)
+    if resolved.message_role != "assistant":
+        raise validation_error(SOURCE_NOT_ASSISTANT_MESSAGE)
+    if resolved.message_status != "completed":
+        raise conflict(SOURCE_MESSAGE_NOT_COMPLETED)
+    if not selected_text_in_message(selected, resolved.message_content):
+        raise validation_error(SELECTED_TEXT_NOT_IN_MESSAGE)
+    outcome = await save_term(
+        db,
+        student_id=current_user.user_id,
+        subject_id=resolved.course_module_id,
+        term=payload.term,
+        language=current_user.preferred_language,
+        entry_type=payload.entry_type,
+        folder_id=None,
+        module_section_id=resolved.section_id,
+        source_type="conversation",
+        selected_text=selected[:CONTEXT_CHAR_CAP],  # provenance snippet only (capped)
+        source_conversation_id=conversation.conversation_id,
+        source_message_id=conversation.message_id,
+        definition_context="",  # ADR-055: no chat text in the prompt → subject-level definition
     )
     return await _save_response(
         db, current_user=current_user, entry_id=outcome.entry_id, duplicate=outcome.duplicate

@@ -4,20 +4,28 @@ import { useCallback, useRef, useState } from "react";
 
 import { api } from "../../lib/api/wrapper";
 
-// Stage 7a: the shared <SaveToGlossary> affordance. It wraps selectable content (a summary in 7a; a
-// quiz answer-review surface in 7d) and, when the student has selected text WITHIN that content, offers
-// to save it. subjectId is derived server-side from the source (the section's module). The save is
+// Stage 7a: the shared <SaveToGlossary> affordance. It wraps selectable content (a summary in 7a; an
+// assistant reply in 8.5; a quiz answer-review surface in 7d) and, when the student has selected text
+// WITHIN that content, offers to save it. subjectId/folder are derived server-side from the source — a
+// section (summary) or a completed assistant message in a section-bound conversation (8.5). The save is
 // non-blocking — the entry appears in the glossary in a "generating…" state and the definition fills
 // in asynchronously; this component just reports save / duplicate / error.
+//
+// Pass EXACTLY ONE source: `moduleSectionId` (summary/section) OR `source` (assistant conversation). The
+// server resolves the destination and verifies the selection; the component sends only the highlighted
+// text and the source discriminator.
 
 type SaveState = "idle" | "saving" | "saved" | "duplicate" | "error";
+type ConversationSource = { conversationId: string; messageId: string };
 const MAX_TERM = 200;
 
 export function SaveToGlossary({
   moduleSectionId,
+  source,
   children,
 }: {
-  moduleSectionId: string;
+  moduleSectionId?: string;
+  source?: ConversationSource;
   children: React.ReactNode;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -42,16 +50,16 @@ export function SaveToGlossary({
     if (!selected) return;
     setState("saving");
     try {
-      const result = await api.glossary.saveHighlight({
-        moduleSectionId,
-        term: selected,
-        selectedText: selected,
-      });
+      const result = await api.glossary.saveHighlight(
+        source
+          ? { conversation: source, term: selected, selectedText: selected }
+          : { moduleSectionId, term: selected, selectedText: selected },
+      );
       setState(result.duplicate ? "duplicate" : "saved");
     } catch {
       setState("error");
     }
-  }, [moduleSectionId, selected]);
+  }, [moduleSectionId, source, selected]);
 
   return (
     <div style={styles.wrap}>

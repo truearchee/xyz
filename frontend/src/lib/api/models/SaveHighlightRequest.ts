@@ -2,8 +2,10 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { ConversationSaveSource } from './ConversationSaveSource';
 export type SaveHighlightRequest = {
-    moduleSectionId: string;
+    moduleSectionId?: (string | null);
+    conversation?: (ConversationSaveSource | null);
     term: string;
     selectedText?: (string | null);
     entryType?: SaveHighlightRequest.entryType;
