@@ -40,6 +40,7 @@ from app.platform.auth.context import CurrentUserContext
 from app.platform.db.models import (
     AIRequestLog,
     AppUser,
+    AssistantConversation,
     AssistantMessage,
     CourseMembership,
     CourseModule,
@@ -243,14 +244,25 @@ async def _add_raw_segment_only(
 
 
 async def _run_turn(
-    db_session: AsyncSession, seed, question: str, *, provider=None, limiter=None, key: str | None = None
+    db_session: AsyncSession,
+    seed,
+    question: str,
+    *,
+    provider=None,
+    limiter=None,
+    key: str | None = None,
+    conversation_id=None,
 ):
     """Send a question and synchronously drive the worker. Returns (assistant_message_id, factory)."""
     factory = _factory(db_session)
     ctx = _ctx(seed.student)
-    conv = await service.open_or_create_conversation(db_session, current_user=ctx, section_id=seed.section.id)
+    if conversation_id is None:
+        conv = await service.open_or_create_conversation(db_session, current_user=ctx, section_id=seed.section.id)
+        conv_id = conv.id
+    else:
+        conv_id = conversation_id
     sent = await service.send_message(
-        db_session, current_user=ctx, conversation_id=conv.id,
+        db_session, current_user=ctx, conversation_id=conv_id,
         payload=SendMessageRequest(content=question, client_idempotency_key=key or f"k-{uuid4()}"),
     )
     gateway = LLMGateway(
@@ -259,7 +271,25 @@ async def _run_turn(
         session_factory=factory,
     )
     await generate_assistant_answer_async(sent.assistant_message.id, gateway=gateway, session_factory=factory)
-    return sent.assistant_message.id, conv.id, factory
+    return sent.assistant_message.id, conv_id, factory
+
+
+async def _create_existing_conversation(db_session: AsyncSession, seed) -> AssistantConversation:
+    """Seed a conversation that predates readiness gating.
+
+    Stage 8.4 correctly blocks *new* conversations while transcript context is still processing, but the
+    worker still needs coverage for an existing conversation whose context is unavailable at generation or
+    retry time.
+    """
+    conv = AssistantConversation(
+        student_id=seed.student.id,
+        conversation_kind="lecture_default",
+        attached_section_id=seed.section.id,
+        last_activity_at=_now(),
+    )
+    db_session.add(conv)
+    await db_session.commit()
+    return conv
 
 
 async def _get_msg(factory, message_id) -> AssistantMessage:
@@ -414,7 +444,8 @@ async def test_exactly_one_airequestlog_row_per_answered_turn(db_session, captur
 # ── context_unavailable: no embedded transcript → no gateway call → NO AIRequestLog row (review #11) ─
 async def test_context_unavailable_writes_no_airequestlog_row(db_session, captured_enqueue):
     seed = await _seed(db_session, with_transcript=True)  # transcript exists but no embedded chunks
-    mid, _c, factory = await _run_turn(db_session, seed, "what is on the exam?")
+    conv = await _create_existing_conversation(db_session, seed)
+    mid, _c, factory = await _run_turn(db_session, seed, "what is on the exam?", conversation_id=conv.id)
     msg = await _get_msg(factory, mid)
     assert msg.status == "completed"
     assert msg.grounding_status == CONTEXT_UNAVAILABLE
@@ -598,7 +629,14 @@ async def test_grounding_uses_stored_section_not_any_client_input(db_session, ca
 async def test_retry_recomputes_grounding_freshly(db_session, captured_enqueue):
     # 1) No embedded chunk yet → context_unavailable.
     seed = await _seed(db_session, with_transcript=True)
-    mid, _conv, factory = await _run_turn(db_session, seed, "glycolysis breaks down glucose", key="kr")
+    conv = await _create_existing_conversation(db_session, seed)
+    mid, _conv, factory = await _run_turn(
+        db_session,
+        seed,
+        "glycolysis breaks down glucose",
+        key="kr",
+        conversation_id=conv.id,
+    )
     msg = await _get_msg(factory, mid)
     assert msg.grounding_status == CONTEXT_UNAVAILABLE
 

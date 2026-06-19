@@ -554,6 +554,25 @@ def _build_snapshot(
     }
 
 
+async def _bump_conversation_activity(
+    session: AsyncSession, *, conversation_id: UUID, when: datetime
+) -> None:
+    """Bump the conversation's ``last_activity_at`` on a successful assistant completion (8.4 — orders
+    the Workspace list). Guarded by ``deleted_at IS NULL``: a worker that finishes AFTER the student
+    soft-deleted the conversation must NEVER resurrect it or re-surface it in the list (invariant E)."""
+    conv = (
+        await session.execute(
+            select(AssistantConversation)
+            .where(AssistantConversation.id == conversation_id)
+            .with_for_update()
+        )
+    ).scalar_one_or_none()
+    if conv is None or conv.deleted_at is not None:
+        return
+    conv.last_activity_at = when
+    conv.updated_at = when
+
+
 async def _persist_grounded_answer(
     factory: async_sessionmaker[AsyncSession],
     *,
@@ -601,6 +620,9 @@ async def _persist_grounded_answer(
             msg.failure_message_sanitized = None
             msg.retryable = False
             msg.updated_at = now
+            await _bump_conversation_activity(
+                session, conversation_id=context.conversation_id, when=now
+            )
 
 
 async def _complete_without_gateway(
@@ -636,6 +658,13 @@ async def _complete_without_gateway(
             msg.retryable = retryable
             msg.generated_at = now
             msg.updated_at = now
+            # context_unavailable produces visible text (a completion the student reads) → bump activity;
+            # access_denied (content is None) is a terminal "no access" and must not reorder. A failed
+            # turn never reaches here. The bump itself is resurrection-proof (deleted_at guard).
+            if content is not None:
+                await _bump_conversation_activity(
+                    session, conversation_id=msg.conversation_id, when=now
+                )
 
 
 async def _mark_message_failed(

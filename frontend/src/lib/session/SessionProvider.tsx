@@ -7,6 +7,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from 'react';
@@ -44,14 +45,27 @@ function forbiddenState(reason: string, session: Session): SessionState {
 export function SessionProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [state, setState] = useState<SessionState>({ status: 'loading' });
+  const loadVersionRef = useRef(0);
 
-  const loadApplicationSession = useCallback(async (nextSession: Session) => {
+  const loadApplicationSession = useCallback(async (nextSession: Session, version: number) => {
+    if (version !== loadVersionRef.current) {
+      return;
+    }
+
     setSession(nextSession);
 
     try {
       const currentUser = await api.me.get();
+      if (version !== loadVersionRef.current) {
+        return;
+      }
+
       setState({ status: 'authenticated', user: currentUser });
     } catch (caught) {
+      if (version !== loadVersionRef.current) {
+        return;
+      }
+
       if (caught instanceof AuthRequiredError) {
         setSession(null);
         setState({ status: 'unauthenticated' });
@@ -71,6 +85,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const refreshSession = useCallback(async () => {
+    const version = loadVersionRef.current + 1;
+    loadVersionRef.current = version;
+
     const supabase = getSupabaseBrowserClient();
     const { data, error: sessionError } = await supabase.auth.getSession();
     if (sessionError) {
@@ -78,12 +95,16 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     }
 
     if (!data.session) {
+      if (version !== loadVersionRef.current) {
+        return;
+      }
+
       setSession(null);
       setState({ status: 'unauthenticated' });
       return;
     }
 
-    await loadApplicationSession(data.session);
+    await loadApplicationSession(data.session, version);
   }, [loadApplicationSession]);
 
   useEffect(() => {
@@ -100,6 +121,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       const supabase = getSupabaseBrowserClient();
       const { data } = supabase.auth.onAuthStateChange((event: AuthChangeEvent, nextSession) => {
         if (event === 'SIGNED_OUT') {
+          loadVersionRef.current += 1;
           setSession(null);
           setState({ status: 'unauthenticated' });
           window.location.assign('/login');
@@ -112,7 +134,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         }
 
         if (event === 'SIGNED_IN' && nextSession) {
-          void loadApplicationSession(nextSession).catch((caught) => {
+          const version = loadVersionRef.current + 1;
+          loadVersionRef.current = version;
+
+          void loadApplicationSession(nextSession, version).catch((caught) => {
             console.error('Unable to load application session', caught);
             setSession(null);
             setState({ status: 'unauthenticated' });
@@ -129,7 +154,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     return () => {
       unsubscribe?.();
     };
-  }, [refreshSession]);
+  }, [loadApplicationSession, refreshSession]);
 
   const value = useMemo<SessionContextValue>(
     () => ({

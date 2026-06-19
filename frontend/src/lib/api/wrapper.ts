@@ -11,9 +11,12 @@ import {
   type AssignMemberRequest,
   type AssistantAvailabilityResponse,
   AssistantService,
+  type ConversationListItem,
   type ConversationRead,
+  type KeysetPage_MessageRead_,
   type MessageRead,
-  type PaginatedResponse_MessageRead_,
+  type PaginatedResponse_ConversationListItem_,
+  type RenameConversationRequest,
   type SendMessageRequest,
   type SendMessageResponse,
   ContentService,
@@ -536,13 +539,24 @@ export const api = {
       withAuthRecovery(() =>
         AssistantService.openStudentAssistantConversation(sectionId),
       ),
+    listConversations: (
+      limit = 30,
+      offset = 0,
+    ): Promise<PaginatedResponse_ConversationListItem_> =>
+      withAuthRecovery(() =>
+        AssistantService.listStudentAssistantConversations(limit, offset),
+      ),
+    getConversation: (conversationId: string): Promise<ConversationListItem> =>
+      withAuthRecovery(() =>
+        AssistantService.getStudentAssistantConversation(conversationId),
+      ),
     listMessages: (
       conversationId: string,
-      limit = 50,
-      offset = 0,
-    ): Promise<PaginatedResponse_MessageRead_> =>
+      before?: string,
+      limit = 30,
+    ): Promise<KeysetPage_MessageRead_> =>
       withAuthRecovery(() =>
-        AssistantService.listStudentAssistantMessages(conversationId, limit, offset),
+        AssistantService.listStudentAssistantMessages(conversationId, limit, before),
       ),
     send: (
       conversationId: string,
@@ -554,6 +568,17 @@ export const api = {
     retry: (messageId: string): Promise<MessageRead> =>
       withAuthRecovery(() =>
         AssistantService.retryStudentAssistantMessage(messageId),
+      ),
+    rename: (
+      conversationId: string,
+      requestBody: RenameConversationRequest,
+    ): Promise<ConversationRead> =>
+      withAuthRecovery(() =>
+        AssistantService.renameStudentAssistantConversation(conversationId, requestBody),
+      ),
+    deleteConversation: (conversationId: string): Promise<void> =>
+      withAuthRecovery(() =>
+        AssistantService.deleteStudentAssistantConversation(conversationId),
       ),
   },
   studentSummaries: {

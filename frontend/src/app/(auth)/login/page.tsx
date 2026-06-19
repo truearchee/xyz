@@ -52,6 +52,8 @@ export default function LoginPage() {
       }
 
       await refreshSession();
+      const currentUser = await api.me.get();
+      router.replace(roleHomePath(currentUser.role));
       setMessage('signed in');
     } catch (caught) {
       setMessage(caught instanceof Error ? caught.message : 'sign-in failed');

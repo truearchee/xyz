@@ -6,6 +6,9 @@ export type ConversationRead = {
     id: string;
     conversationKind: string;
     attachedSectionId: (string | null);
+    title?: (string | null);
+    titleSource?: string;
+    lastActivityAt?: (string | null);
     createdAt: string;
     updatedAt: string;
 };

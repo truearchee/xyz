@@ -15,11 +15,13 @@ from dataclasses import dataclass
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domains.transcripts.summary_eligibility import is_summary_eligible
 from app.platform.db.models import (
+    AssistantConversation,
+    AssistantMessage,
     CourseMembership,
     CourseModule,
     GeneratedLectureSummary,
@@ -350,16 +352,160 @@ async def get_visible_student_section_list(
     return out
 
 
+# ---- Workspace conversation list (Stage 8.4 — same 4.7 gate, batched, no per-row fan-out) -----------
+@dataclass(frozen=True)
+class StudentConversationListRow:
+    id: UUID
+    title: str | None
+    title_source: str
+    attached_section_id: UUID
+    module_id: UUID
+    module_title: str
+    section_title: str
+    section_type: str
+    last_activity_at: datetime
+    message_count: int
+    last_message_preview: str | None
+
+
+_PREVIEW_MAX_CHARS = 140
+
+
+def _conversation_preview(content: str | None) -> str | None:
+    """A short, whitespace-collapsed preview of the latest content-bearing message (presentation
+    shaping only — no policy). Titles/previews render as escaped plain text in the UI."""
+    if content is None:
+        return None
+    collapsed = " ".join(content.split())
+    if not collapsed:
+        return None
+    if len(collapsed) <= _PREVIEW_MAX_CHARS:
+        return collapsed
+    return collapsed[: _PREVIEW_MAX_CHARS - 1].rstrip() + "…"
+
+
+async def get_visible_student_conversation_list(
+    db: AsyncSession,
+    *,
+    student_id: UUID,
+    limit: int,
+    offset: int,
+) -> tuple[list[StudentConversationListRow], int]:
+    """The Workspace conversation list. Returns the student's OWN, non-soft-deleted conversations whose
+    attached section is STILL visible — the SAME published+active-module+active-membership predicate as
+    ``get_visible_student_section``, so a list row exists iff a direct open would succeed (invariant C is
+    STRUCTURAL, not a parallel filter that could drift). Newest-activity-first; ``message_count`` and the
+    last-message preview are batched (no per-row fan-out). Read model only (rule 8)."""
+    last_activity = func.coalesce(
+        AssistantConversation.last_activity_at, AssistantConversation.updated_at
+    )
+    visibility = (
+        AssistantConversation.student_id == student_id,
+        AssistantConversation.deleted_at.is_(None),
+        ModuleSection.publish_status == "published",
+        ModuleSection.status == "active",
+        CourseModule.is_active.is_(True),
+        CourseMembership.user_id == student_id,
+        CourseMembership.role == "student",
+        CourseMembership.status == "active",
+    )
+
+    total = (
+        await db.execute(
+            select(func.count())
+            .select_from(AssistantConversation)
+            .join(ModuleSection, ModuleSection.id == AssistantConversation.attached_section_id)
+            .join(CourseModule, CourseModule.id == ModuleSection.course_module_id)
+            .join(CourseMembership, CourseMembership.module_id == CourseModule.id)
+            .where(*visibility)
+        )
+    ).scalar_one()
+
+    rows = (
+        await db.execute(
+            select(
+                AssistantConversation.id,
+                AssistantConversation.title,
+                AssistantConversation.title_source,
+                AssistantConversation.attached_section_id,
+                CourseModule.id,
+                CourseModule.title,
+                ModuleSection.title,
+                ModuleSection.type,
+                last_activity.label("last_activity_at"),
+            )
+            .join(ModuleSection, ModuleSection.id == AssistantConversation.attached_section_id)
+            .join(CourseModule, CourseModule.id == ModuleSection.course_module_id)
+            .join(CourseMembership, CourseMembership.module_id == CourseModule.id)
+            .where(*visibility)
+            .order_by(last_activity.desc(), AssistantConversation.id.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+    ).all()
+    if not rows:
+        return [], int(total)
+
+    conv_ids = [r[0] for r in rows]
+    counts = dict(
+        (
+            await db.execute(
+                select(AssistantMessage.conversation_id, func.count())
+                .where(AssistantMessage.conversation_id.in_(conv_ids))
+                .group_by(AssistantMessage.conversation_id)
+            )
+        ).all()
+    )
+    # latest content-bearing message per conversation (a pending assistant turn has content=NULL and is
+    # skipped, so the preview falls back to the last user/assistant message that actually has text).
+    preview_by_conv: dict[UUID, str | None] = {}
+    for cid, content in (
+        await db.execute(
+            select(AssistantMessage.conversation_id, AssistantMessage.content)
+            .where(
+                AssistantMessage.conversation_id.in_(conv_ids),
+                AssistantMessage.content.is_not(None),
+            )
+            .order_by(
+                AssistantMessage.conversation_id,
+                AssistantMessage.created_at.desc(),
+                AssistantMessage.id.desc(),
+            )
+            .distinct(AssistantMessage.conversation_id)
+        )
+    ).all():
+        preview_by_conv[cid] = _conversation_preview(content)
+
+    return [
+        StudentConversationListRow(
+            id=r[0],
+            title=r[1],
+            title_source=r[2],
+            attached_section_id=r[3],
+            module_id=r[4],
+            module_title=r[5],
+            section_title=r[6],
+            section_type=r[7],
+            last_activity_at=r[8],
+            message_count=int(counts.get(r[0], 0)),
+            last_message_preview=preview_by_conv.get(r[0]),
+        )
+        for r in rows
+    ], int(total)
+
+
 # re-export for the service's step-key iteration
 __all__ = [
     "VisibleStudentSection",
     "StudentMaterialRow",
     "SectionSummaryInputs",
     "StudentSectionListRow",
+    "StudentConversationListRow",
     "resolve_single_active",
     "get_visible_student_section",
     "get_student_section_materials",
     "get_section_summary_inputs",
     "get_visible_student_section_list",
+    "get_visible_student_conversation_list",
     "SUMMARY_STEP_KEYS",
 ]

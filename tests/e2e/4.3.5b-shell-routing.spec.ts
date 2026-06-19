@@ -38,13 +38,20 @@ async function waitForHooks(page: Page) {
   await page.waitForFunction(() => typeof window.__xyzE2E !== 'undefined');
 }
 
+async function prewarmRoute(page: Page, path: string) {
+  const baseUrl = process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:3000';
+  const response = await page.request.get(new URL(path, baseUrl).toString());
+  expect(response.status()).toBeLessThan(500);
+}
+
 async function signIn(page: Page, email: string, expectedPath: string) {
+  await prewarmRoute(page, expectedPath);
   await page.goto('/login');
   await waitForHooks(page);
   await page.getByLabel('Email').fill(email);
   await page.getByLabel('Password').fill(PASSWORD);
   await page.getByRole('button', { name: 'Sign in' }).click();
-  await expect(page).toHaveURL(new RegExp(`${expectedPath}$`));
+  await expect(page).toHaveURL(new RegExp(`${expectedPath}$`), { timeout: 30_000 });
   await waitForHooks(page);
 }
 
