@@ -131,10 +131,16 @@ function conversationSourcesForEntry(entryId: string): Array<{ conversationId: s
   ) as unknown as Array<{ conversationId: string | null; messageId: string | null; sectionId: string | null }>;
 }
 
-/** Select `substring` inside the element with `testId` and fire a bubbling mouseup so SaveToGlossary captures it. */
-async function selectTextIn(page: Page, testId: string, substring: string) {
-  const ok = await page.evaluate(({ testId, substring }) => {
-    const root = document.querySelector(`[data-testid="${testId}"]`);
+// The lecture page renders summary SaveToGlossary wrappers AND the assistant chat's, all sharing the
+// save-to-glossary testids — so every chat-save interaction must be scoped to the completed assistant
+// reply, never page-wide.
+const ASSISTANT_SAVE_CONTENT =
+  '[data-testid="assistant-message-assistant"][data-state="completed"] [data-testid="save-to-glossary-content"]';
+
+/** Select `substring` inside the element matching `selector` and fire a bubbling mouseup so SaveToGlossary captures it. */
+async function selectTextIn(page: Page, selector: string, substring: string) {
+  const ok = await page.evaluate(({ selector, substring }) => {
+    const root = document.querySelector(selector);
     if (!root) return false;
     const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
     let node: Node | null;
@@ -152,8 +158,8 @@ async function selectTextIn(page: Page, testId: string, substring: string) {
       }
     }
     return false;
-  }, { testId, substring });
-  expect(ok, `selectable "${substring}" in ${testId}`).toBe(true);
+  }, { selector, substring });
+  expect(ok, `selectable "${substring}" in ${selector}`).toBe(true);
 }
 
 async function createModule(runId: string, adminContext: APIRequestContext, title: string) {
@@ -242,11 +248,11 @@ test('8.5 assistant save-to-glossary browser gate', async ({ browser }) => {
     // a completed assistant reply DOES carry exactly one save affordance
     await expect(answer.locator('[data-testid="save-to-glossary"]')).toHaveCount(1);
 
-    // ── highlight a term in the assistant reply → save ──
-    await selectTextIn(page, 'save-to-glossary-content', HIGHLIGHT_TERM);
-    await expect(page.getByTestId('save-to-glossary')).toBeEnabled();
-    await page.getByTestId('save-to-glossary').click();
-    await expect(page.getByTestId('save-to-glossary-status')).toHaveAttribute('data-status', 'saved');
+    // ── highlight a term in the assistant reply → save (scoped to THIS reply, not the summary's) ──
+    await selectTextIn(page, ASSISTANT_SAVE_CONTENT, HIGHLIGHT_TERM);
+    await expect(answer.getByTestId('save-to-glossary')).toBeEnabled();
+    await answer.getByTestId('save-to-glossary').click();
+    await expect(answer.getByTestId('save-to-glossary-status')).toHaveAttribute('data-status', 'saved');
 
     // ── entry appears in the student's glossary, subject = THIS lecture; definition fills in async ──
     await expect.poll(() => entryByNormalizedTerm(studentId, HIGHLIGHT_TERM)?.subjectId ?? null, { timeout: 15_000 }).toBe(moduleId);
@@ -275,10 +281,11 @@ test('8.5 assistant save-to-glossary browser gate', async ({ browser }) => {
     // ── duplicate save: same term + same chat → "already saved", no second entry, source attached once ──
     await page.goto(`/student/modules/${moduleId}/sections/${section.id}`);
     await startChat(page);
-    await expect(page.locator('[data-testid="assistant-message-assistant"][data-state="completed"]').first()).toContainText(ANSWER_MARKER);
-    await selectTextIn(page, 'save-to-glossary-content', HIGHLIGHT_TERM);
-    await page.getByTestId('save-to-glossary').click();
-    await expect(page.getByTestId('save-to-glossary-status')).toHaveAttribute('data-status', 'duplicate');
+    const answer2 = page.locator('[data-testid="assistant-message-assistant"][data-state="completed"]').first();
+    await expect(answer2).toContainText(ANSWER_MARKER);
+    await selectTextIn(page, ASSISTANT_SAVE_CONTENT, HIGHLIGHT_TERM);
+    await answer2.getByTestId('save-to-glossary').click();
+    await expect(answer2.getByTestId('save-to-glossary-status')).toHaveAttribute('data-status', 'duplicate');
     expect(countActiveEntries(studentId)).toBe(1);
     expect(conversationSourcesForEntry(entry.id)).toHaveLength(1); // idempotent — chat not attached twice
 
