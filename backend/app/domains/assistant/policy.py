@@ -18,6 +18,7 @@ from fastapi import HTTPException, status
 ASSISTANT_FORBIDDEN = "ASSISTANT_FORBIDDEN"
 SECTION_NOT_FOUND = "SECTION_NOT_FOUND"
 MODULE_NOT_FOUND = "MODULE_NOT_FOUND"  # 8.6a: homework binds a module; a non-visible module → pinned 404
+SCOPE_NOT_FOUND = "SCOPE_NOT_FOUND"  # 8.6b: exam-prep binds a scope; a non-visible scope → pinned 404
 CONVERSATION_NOT_FOUND = "CONVERSATION_NOT_FOUND"
 MESSAGE_NOT_FOUND = "MESSAGE_NOT_FOUND"
 

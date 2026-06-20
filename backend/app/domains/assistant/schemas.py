@@ -38,6 +38,7 @@ class ConversationRead(CamelModel):
     conversation_kind: str
     attached_section_id: UUID | None
     attached_module_id: UUID | None = None  # 8.6a: set for a homework_help conversation (module binding)
+    attached_assessment_scope_id: UUID | None = None  # 8.6b: set for an exam_prep conversation
     title: str | None = None  # raw stored title (manual rename); null while title_source = 'auto'
     title_source: str = "auto"  # 'auto' | 'manual' — a manual rename is never overwritten (rule 15: no AI titles)
     last_activity_at: datetime | None = None
@@ -70,7 +71,11 @@ class ConversationListItem(CamelModel):
     module_title: str
     attached_section_id: UUID | None = None
     section_title: str | None = None
-    section_type: str | None = None  # 'lecture' | 'lab' | None (module-bound homework)
+    section_type: str | None = None  # 'lecture' | 'lab' | None (module-bound homework / exam-prep)
+    # 8.6b: set for an exam_prep conversation (read-only scope context for the conversation surface).
+    assessment_scope_id: UUID | None = None
+    assessment_scope_name: str | None = None
+    covered_weeks: list[int] | None = None
     last_message_preview: str | None = None
     last_activity_at: datetime
     message_count: int

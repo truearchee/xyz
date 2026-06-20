@@ -39,10 +39,10 @@ class AssistantConversation(Base):
     __tablename__ = "assistant_conversations"
     __table_args__ = (
         CheckConstraint(
-            # 8.6a (migration 0042) widened this to admit 'homework_help'; 8.6b/8.6c add the other two
-            # mode kinds. The four original kinds all map to the existing general-chat path.
+            # 8.6a (0042) added 'homework_help'; 8.6b (0043) added 'exam_prep'; 8.6c adds 'time_management'.
+            # The four original kinds all map to the existing general-chat path.
             "conversation_kind IN "
-            "('lecture_default', 'manual', 'floating_widget', 'workspace', 'homework_help')",
+            "('lecture_default', 'manual', 'floating_widget', 'workspace', 'homework_help', 'exam_prep')",
             name="ck_assistant_conversations_kind",
         ),
         CheckConstraint(
@@ -83,6 +83,16 @@ class AssistantConversation(Base):
                 "AND attached_section_id IS NULL AND deleted_at IS NULL"
             ),
         ),
+        # 8.6b resume-or-create (D2): one active exam-prep conversation per (student, assessment_scope).
+        Index(
+            "uq_assistant_conversations_one_exam_prep",
+            "student_id",
+            "attached_assessment_scope_id",
+            unique=True,
+            postgresql_where=text(
+                "conversation_kind = 'exam_prep' AND deleted_at IS NULL"
+            ),
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(
@@ -101,10 +111,17 @@ class AssistantConversation(Base):
         ForeignKey("module_sections.id", ondelete="CASCADE"),
     )
     # 8.6a: the module a homework_help conversation is bound to (homework binds a module; the optional
-    # attached_section_id narrows retrieval to one lecture/lab). NULL for the section-bound legacy kinds.
+    # attached_section_id narrows retrieval to one lecture/lab). For 8.6b exam_prep it is set to the bound
+    # scope's module. NULL for the section-bound legacy kinds.
     attached_module_id: Mapped[UUID | None] = mapped_column(
         PostgresUUID(as_uuid=True),
         ForeignKey("course_modules.id", ondelete="CASCADE"),
+    )
+    # 8.6b: the named AssessmentScope an exam_prep conversation is bound to (its covered weeks drive the
+    # grounded summaries). NULL for every other kind.
+    attached_assessment_scope_id: Mapped[UUID | None] = mapped_column(
+        PostgresUUID(as_uuid=True),
+        ForeignKey("assessment_scopes.id", ondelete="CASCADE"),
     )
     title: Mapped[str | None] = mapped_column(Text)
     # 8.4: 'auto' (title derived-on-read from the lecture) until a manual rename flips it to 'manual';

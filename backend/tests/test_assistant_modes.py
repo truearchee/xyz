@@ -31,15 +31,18 @@ from app.domains.assistant.grounding import (
     GENERAL_NOT_FROM_LECTURE,
     LECTURE_GROUNDED,
 )
+from app.platform.llm.models.assistant import ASSISTANT_LATEST_QUESTION_MARKER
 from app.domains.assistant.schemas import CreateConversationRequest, SendMessageRequest
 from app.platform.auth.context import CurrentUserContext
 from app.platform.db.models import (
     AIRequestLog,
     AppUser,
+    AssessmentScope,
     AssistantConversation,
     AssistantMessage,
     CourseMembership,
     CourseModule,
+    GeneratedLectureSummary,
     ModuleSection,
     Transcript,
     TranscriptChunk,
@@ -453,3 +456,184 @@ async def test_homework_guardrail_survives_injected_user_content(db_session, cap
     # the turn still completes (the mode is wired; real refusal is the rule-11 smoke, not the double)
     msg = await _get_msg(factory, mid)
     assert msg.status == "completed"
+
+
+# ── exam-prep (8.6b) ────────────────────────────────────────────────────────────────────────────────
+async def _add_ready_detailed_summary(db_session: AsyncSession, *, transcript: Transcript, section: ModuleSection):
+    log = AIRequestLog(
+        ingestion_job_id=None, feature="summary_detailed", model_id="m", prompt_version="v1",
+        prompt_content_hash=f"h-{uuid4()}", rendered_prompt_hash=f"rh-{uuid4()}",
+        input_content_hash=f"ih-{uuid4()}", status="succeeded",
+    )
+    db_session.add(log)
+    await db_session.flush()
+    db_session.add(
+        GeneratedLectureSummary(
+            transcript_id=transcript.id, module_section_id=section.id, summary_type="detailed_study",
+            content_json={
+                "overview": f"Overview of {section.title}.", "keyConcepts": ["c"],
+                "importantDefinitions": [{"term": "T", "definition": "D"}],
+                "mainExplanations": ["x"], "examples": ["e"], "examRelevantPoints": ["p"],
+            },
+            content_schema_version="detailed-v1", model_id="m", prompt_version="v1",
+            prompt_content_hash="h", backend_used="nvidia", source_transcript_checksum=transcript.checksum,
+            input_hash=f"ih-{uuid4()}", ai_request_log_id=log.id,
+        )
+    )
+    await db_session.commit()
+
+
+async def _seed_exam_scope(
+    db_session: AsyncSession, *, name: str = "Midterm", week: int = 1, chunk_text: str = "exam concept alpha"
+) -> SimpleNamespace:
+    """A module + student + one READY covered section (week, published transcript + detailed summary +
+    embedded chunk) + an AssessmentScope covering that week."""
+    seed = await _seed(db_session, module_title="Calculus", section_title="Week 1", section_type="lecture")
+    section = await db_session.get(ModuleSection, seed.section.id)
+    section.week_number = week
+    from datetime import date
+    section.session_date = date(2026, 5, 4 + week)
+    await db_session.flush()
+    await _add_chunk(db_session, transcript=seed.transcript, index=0, text=chunk_text)
+    await _add_ready_detailed_summary(db_session, transcript=seed.transcript, section=section)
+    scope = AssessmentScope(
+        module_id=seed.module.id, name=name, covered_weeks=[week],
+        created_by_user_id=seed.lecturer.id, status="active",
+    )
+    db_session.add(scope)
+    await db_session.commit()
+    seed.scope = scope
+    return seed
+
+
+async def _create_exam_prep(db_session, ctx, *, scope_id) -> object:
+    return await service.create_conversation(
+        db_session, current_user=ctx,
+        payload=CreateConversationRequest(conversation_kind="exam_prep", assessment_scope_id=scope_id),
+    )
+
+
+async def _run_exam_prep_turn(db_session, seed, question, *, conversation_id, provider=None, limiter=None):
+    factory = _factory(db_session)
+    ctx = _ctx(seed.student)
+    sent = await service.send_message(
+        db_session, current_user=ctx, conversation_id=conversation_id,
+        payload=SendMessageRequest(content=question, client_idempotency_key=f"k-{uuid4()}"),
+    )
+    gateway = LLMGateway(
+        provider=provider or _RecordingProvider(), limiter=limiter or _RecordingLimiter(),
+        session_factory=factory,
+    )
+    await generate_assistant_answer_async(sent.assistant_message.id, gateway=gateway, session_factory=factory)
+    return sent.assistant_message.id, factory
+
+
+async def test_create_exam_prep_requires_scope_and_forbids_module(db_session):
+    seed = await _seed(db_session)
+    ctx = _ctx(seed.student)
+    with pytest.raises(HTTPException) as no_scope:
+        await service.create_conversation(
+            db_session, current_user=ctx,
+            payload=CreateConversationRequest(conversation_kind="exam_prep"),
+        )
+    assert no_scope.value.status_code == 422
+    with pytest.raises(HTTPException) as with_module:
+        await service.create_conversation(
+            db_session, current_user=ctx,
+            payload=CreateConversationRequest(
+                conversation_kind="exam_prep", assessment_scope_id=uuid4(), module_id=seed.module.id
+            ),
+        )
+    assert with_module.value.status_code == 422
+
+
+async def test_create_exam_prep_scope_not_visible_is_404(db_session):
+    seed = await _seed_exam_scope(db_session)
+    other = await _seed(db_session)  # a different student, not a member of the scope's module
+    with pytest.raises(HTTPException) as exc:
+        await _create_exam_prep(db_session, _ctx(other.student), scope_id=seed.scope.id)
+    assert exc.value.status_code == 404
+
+
+async def test_create_exam_prep_succeeds_and_binds_module(db_session):
+    seed = await _seed_exam_scope(db_session)
+    conv = await _create_exam_prep(db_session, _ctx(seed.student), scope_id=seed.scope.id)
+    assert conv.conversation_kind == "exam_prep"
+    assert conv.attached_assessment_scope_id == seed.scope.id
+    assert conv.attached_module_id == seed.module.id
+    assert conv.attached_section_id is None
+
+
+async def test_exam_prep_is_resume_or_create(db_session):
+    seed = await _seed_exam_scope(db_session)
+    ctx = _ctx(seed.student)
+    a = await _create_exam_prep(db_session, ctx, scope_id=seed.scope.id)
+    b = await _create_exam_prep(db_session, ctx, scope_id=seed.scope.id)
+    assert a.id == b.id  # one active exam-prep conversation per (student, scope)
+
+
+async def test_exam_prep_kind_is_immutable_across_rename(db_session):
+    seed = await _seed_exam_scope(db_session)
+    ctx = _ctx(seed.student)
+    conv = await _create_exam_prep(db_session, ctx, scope_id=seed.scope.id)
+    await service.rename_conversation(db_session, current_user=ctx, conversation_id=conv.id, title="My exam")
+    row = await db_session.get(AssistantConversation, conv.id)
+    assert row.conversation_kind == "exam_prep"
+
+
+async def test_exam_prep_turn_grounds_on_scope_with_basis(db_session, captured_enqueue):
+    chunk_text = "exam concept alpha beta"
+    seed = await _seed_exam_scope(db_session, name="Final", week=1, chunk_text=chunk_text)
+    conv = await _create_exam_prep(db_session, _ctx(seed.student), scope_id=seed.scope.id)
+    provider = _RecordingProvider()
+    limiter = _RecordingLimiter()
+    mid, factory = await _run_exam_prep_turn(
+        db_session, seed, chunk_text, conversation_id=conv.id, provider=provider, limiter=limiter
+    )
+    msg = await _get_msg(factory, mid)
+    assert msg.status == "completed"
+    assert msg.grounding_status == LECTURE_GROUNDED
+    snap = msg.context_snapshot
+    assert snap["mode"] == "exam_prep"
+    assert snap["assessmentScopeId"] == str(seed.scope.id)
+    assert snap["coveredWeeks"] == [1]
+    assert str(seed.section.id) in snap["resolvedSectionIds"]
+    assert service._to_message_read(msg).answer_basis.startswith("Based on this exam's covered-week material")
+    assert limiter.priorities == ["interactive"]  # rule 15
+    assert provider.last_backend == "cerebras"  # exam-prep route (rule-11-smoke-confirmed)
+    assert await _count_logs(factory) == 1  # feature="assistant"
+    # the exam-prep prompt + the covered material reached the model
+    assert "EXAM SCOPE: Final" in (provider.last_prompt or "")
+    assert chunk_text in (provider.last_prompt or "")
+
+
+async def test_exam_prep_excludes_uncovered_section(db_session, captured_enqueue):
+    # The scope covers week 1; a DIFFERENT published+ready section in week 5 (out of scope) must never
+    # ground an exam-prep turn even when the question matches its chunk verbatim.
+    seed = await _seed_exam_scope(db_session, week=1, chunk_text="in scope week one content")
+    out_section = ModuleSection(
+        course_module_id=seed.module.id, title="Week 5", type="lecture", order_index=1,
+        publish_status="published", status="active", week_number=5,
+    )
+    db_session.add(out_section)
+    await db_session.flush()
+    out_t = Transcript(
+        module_section_id=out_section.id, source_type="manual_upload", original_file_name="o.vtt",
+        storage_key=f"m/x/{uuid4()}/o.vtt", mime_type="text/vtt", file_size=10,
+        checksum=hashlib.sha256(f"o-{uuid4()}".encode()).hexdigest(), status="completed",
+        uploaded_by_user_id=seed.lecturer.id, lifecycle_state="active",
+    )
+    db_session.add(out_t)
+    await db_session.flush()
+    secret = "OUT OF SCOPE week five secret"
+    await _add_chunk(db_session, transcript=out_t, index=0, text=secret)
+    await _add_ready_detailed_summary(db_session, transcript=out_t, section=out_section)
+
+    conv = await _create_exam_prep(db_session, _ctx(seed.student), scope_id=seed.scope.id)
+    provider = _RecordingProvider()
+    mid, factory = await _run_exam_prep_turn(db_session, seed, secret, conversation_id=conv.id, provider=provider)
+    msg = await _get_msg(factory, mid)
+    # the out-of-scope week-5 chunk is never a candidate → no relevant chunk → general, not grounded
+    assert msg.grounding_status == GENERAL_NOT_FROM_LECTURE
+    assert str(out_section.id) not in (msg.context_snapshot.get("resolvedSectionIds") or [])
+    assert secret not in (provider.last_prompt or "").split(ASSISTANT_LATEST_QUESTION_MARKER)[0]

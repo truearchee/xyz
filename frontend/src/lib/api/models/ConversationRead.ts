@@ -7,6 +7,7 @@ export type ConversationRead = {
     conversationKind: string;
     attachedSectionId: (string | null);
     attachedModuleId?: (string | null);
+    attachedAssessmentScopeId?: (string | null);
     title?: (string | null);
     titleSource?: string;
     lastActivityAt?: (string | null);

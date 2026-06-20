@@ -28,10 +28,16 @@ emit the final answer / a full worked solution, even under direct or adversarial
    Homework coaching (hints + a guiding question over the provided context, with a behavioral guardrail) is
    a focused WRITING task, not deep reasoning — V2 is the empirically-correct route, matching the existing
    chat. The spec's "Think, 128k *(confirm vs the routing table)*" hedge anticipated this confirmation.
-2. **(Recorded for later) Time management → V2 / Cerebras / 32k LOCK (8.6c).** Conversational over a small
+2. **Exam prep (8.6b) → V2 / Cerebras / 32k** (`exam_prep/v1.yaml` `backend: cerebras`). Built 2026-06-20:
+   it has the SAME compact `{answer, isStudyRelated}` output contract as the chat/homework, so the 8.6a
+   Think→Cerebras lesson applies directly — the rule-11 exam-prep smoke confirmed cerebras (clean JSON,
+   model-ID echo, correct `isStudyRelated`; the answer summarised the scope + referenced the student's weak
+   area without generating a quiz). Did not re-test Think (8.6a established it returns `not_json` for this
+   interactive-JSON-turn shape).
+3. **(Recorded for later) Time management → V2 / Cerebras / 32k LOCK (8.6c).** Conversational over a small
    compacted structured payload; Think invites planner-like behavior + latency. Upgrading off V2 is a future
-   ADR. Exam prep (8.6b) → Think/Nvidia/128k like homework. *(8.6b/8.6c not built this session.)*
-3. **Homework guardrail is multi-layer, not prompt-only:**
+   ADR. *(8.6c not built this session.)*
+4. **Homework guardrail is multi-layer, not prompt-only:**
    - **L1 Prompt** (`homework_help/v1`): forbids the final answer / full worked solution / full code;
      Socratic hints + concept/method only; critique the student's OWN attempt, never confirm a bare guess;
      carries the stable sentinel `HOMEWORK_GUARDRAIL_V1`.

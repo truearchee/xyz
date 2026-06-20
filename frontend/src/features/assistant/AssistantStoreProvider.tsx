@@ -68,7 +68,7 @@ type StoreValue = {
   ensureOpenForSection: (sectionId: string) => Promise<string>;
   ensureOpenForMode: (
     conversationKind: string,
-    opts: { moduleId?: string; sectionId?: string },
+    opts: { moduleId?: string; sectionId?: string; assessmentScopeId?: string },
   ) => Promise<string>;
   loadInitial: (conversationId: string) => Promise<void>;
   loadOlder: (conversationId: string) => Promise<void>;
@@ -187,9 +187,9 @@ export function AssistantStoreProvider({ children }: { children: ReactNode }) {
   const ensureOpenForMode = useCallback(
     async (
       conversationKind: string,
-      opts: { moduleId?: string; sectionId?: string },
+      opts: { moduleId?: string; sectionId?: string; assessmentScopeId?: string },
     ): Promise<string> => {
-      const key = `mode:${conversationKind}:${opts.moduleId ?? ""}:${opts.sectionId ?? ""}`;
+      const key = `mode:${conversationKind}:${opts.moduleId ?? ""}:${opts.sectionId ?? ""}:${opts.assessmentScopeId ?? ""}`;
       const pending = openInFlight.current[key];
       if (pending) return pending;
       const promise = (async () => {
@@ -197,6 +197,7 @@ export function AssistantStoreProvider({ children }: { children: ReactNode }) {
           conversationKind,
           moduleId: opts.moduleId ?? null,
           sectionId: opts.sectionId ?? null,
+          assessmentScopeId: opts.assessmentScopeId ?? null,
         });
         deletedConversationIds.current.delete(conv.id);
         setConvs((prev) => (prev[conv.id] ? prev : { ...prev, [conv.id]: { ...EMPTY } }));

@@ -13,6 +13,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { type ConversationListItem } from "../../../lib/api";
 import { api } from "../../../lib/api/wrapper";
+import { ExamPrepPicker } from "./ExamPrepPicker";
 import { HomeworkPicker } from "./HomeworkPicker";
 import { LecturePicker } from "./LecturePicker";
 
@@ -25,9 +26,10 @@ export function AssistantWorkspace() {
   const [status, setStatus] = useState<"loading" | "loaded" | "error">("loading");
   const [loadingMore, setLoadingMore] = useState(false);
   const [picking, setPicking] = useState(searchParams.get("new") === "1");
-  // 8.6a: homework mode entry — a separate starter so the 8.4 lecture-chat flow (New chat → LecturePicker)
-  // is unchanged. Only one picker panel is open at a time.
+  // 8.6a/8.6b: mode entries — separate starters so the 8.4 lecture-chat flow (New chat → LecturePicker) is
+  // unchanged. Only one picker panel is open at a time.
   const [pickingHomework, setPickingHomework] = useState(false);
+  const [pickingExamPrep, setPickingExamPrep] = useState(false);
 
   const load = useCallback(async () => {
     setStatus("loading");
@@ -70,10 +72,23 @@ export function AssistantWorkspace() {
         <div style={styles.headerActions}>
           <button
             type="button"
+            data-testid="assistant-new-examprep"
+            onClick={() => {
+              setPickingExamPrep((v) => !v);
+              setPicking(false);
+              setPickingHomework(false);
+            }}
+            style={styles.secondaryButton}
+          >
+            {pickingExamPrep ? "Close" : "Exam prep"}
+          </button>
+          <button
+            type="button"
             data-testid="assistant-new-homework"
             onClick={() => {
               setPickingHomework((v) => !v);
               setPicking(false);
+              setPickingExamPrep(false);
             }}
             style={styles.secondaryButton}
           >
@@ -85,6 +100,7 @@ export function AssistantWorkspace() {
             onClick={() => {
               setPicking((v) => !v);
               setPickingHomework(false);
+              setPickingExamPrep(false);
             }}
             style={styles.primaryButton}
           >
@@ -95,6 +111,7 @@ export function AssistantWorkspace() {
 
       {picking ? <LecturePicker onClose={() => setPicking(false)} /> : null}
       {pickingHomework ? <HomeworkPicker onClose={() => setPickingHomework(false)} /> : null}
+      {pickingExamPrep ? <ExamPrepPicker onClose={() => setPickingExamPrep(false)} /> : null}
 
       {status === "loading" ? (
         <ul aria-busy="true" style={styles.list}>

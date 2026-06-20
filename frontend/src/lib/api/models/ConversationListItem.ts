@@ -19,6 +19,9 @@ export type ConversationListItem = {
     attachedSectionId?: (string | null);
     sectionTitle?: (string | null);
     sectionType?: (string | null);
+    assessmentScopeId?: (string | null);
+    assessmentScopeName?: (string | null);
+    coveredWeeks?: (Array<number> | null);
     lastMessagePreview?: (string | null);
     lastActivityAt: string;
     messageCount: number;
