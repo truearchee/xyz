@@ -216,6 +216,8 @@ export function AssistantWorkspaceConversation({ conversationId }: { conversatio
         onRetry={conv.retry}
         onLoadOlder={conv.loadOlder}
         onDraftChange={conv.setDraft}
+        conversationId={conversationId}
+        saveSectionId={detail?.attachedSectionId ?? null}
         starters={<StarterChips scope="workspace" onPick={conv.setDraft} />}
       />
     </section>

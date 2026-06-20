@@ -96,6 +96,44 @@ async def _resolve_folder(db: AsyncSession, *, student_id: UUID, folder_id: UUID
     return await ensure_unsorted_folder(db, student_id=student_id)
 
 
+async def _add_source_reference(
+    db: AsyncSession,
+    *,
+    glossary_entry_id: UUID,
+    source_type: str,
+    module_section_id: UUID | None,
+    source_summary_id: UUID | None,
+    source_quiz_attempt_id: UUID | None,
+    source_conversation_id: UUID | None,
+    source_message_id: UUID | None,
+    selected_text: str | None,
+) -> None:
+    """Attach a source reference. The conversation source (8.5) is IDEMPOTENT — the partial-unique index
+    on (entry, message) drops a re-submit of the same chat as a no-op (D3); summary/manual/quiz keep the
+    existing always-attach behavior (a duplicate summary save records a second source, by design)."""
+    values = {
+        "glossary_entry_id": glossary_entry_id,
+        "source_type": source_type,
+        "module_section_id": module_section_id,
+        "source_summary_id": source_summary_id,
+        "source_quiz_attempt_id": source_quiz_attempt_id,
+        "source_conversation_id": source_conversation_id,
+        "source_message_id": source_message_id,
+        "selected_text": selected_text,
+    }
+    if source_type == "conversation" and source_message_id is not None:
+        await db.execute(
+            pg_insert(GlossarySourceReference)
+            .values(id=uuid7(), **values)
+            .on_conflict_do_nothing(
+                index_elements=["glossary_entry_id", "source_message_id"],
+                index_where=text("source_type = 'conversation' AND source_message_id IS NOT NULL"),
+            )
+        )
+    else:
+        db.add(GlossarySourceReference(**values))
+
+
 async def save_term(
     db: AsyncSession,
     *,
@@ -110,6 +148,9 @@ async def save_term(
     selected_text: str | None,
     source_summary_id: UUID | None = None,
     source_quiz_attempt_id: UUID | None = None,
+    source_conversation_id: UUID | None = None,
+    source_message_id: UUID | None = None,
+    definition_context: str | None = None,
 ) -> SaveOutcome:
     normalized = normalize_term(term)
     cache_key = definition_cache_key(
@@ -161,15 +202,16 @@ async def save_term(
                 )
             )
         ).scalar_one()
-        db.add(
-            GlossarySourceReference(
-                glossary_entry_id=existing.id,
-                source_type=source_type,
-                module_section_id=module_section_id,
-                source_summary_id=source_summary_id,
-                source_quiz_attempt_id=source_quiz_attempt_id,
-                selected_text=selected_text,
-            )
+        await _add_source_reference(
+            db,
+            glossary_entry_id=existing.id,
+            source_type=source_type,
+            module_section_id=module_section_id,
+            source_summary_id=source_summary_id,
+            source_quiz_attempt_id=source_quiz_attempt_id,
+            source_conversation_id=source_conversation_id,
+            source_message_id=source_message_id,
+            selected_text=selected_text,
         )
         cache_row_id_to_enqueue = await _recover_failed_definition(db, cache_key=existing.cache_key)
         await db.commit()
@@ -178,15 +220,16 @@ async def save_term(
         return SaveOutcome(entry_id=existing.id, duplicate=True)
 
     # New entry. Record its source reference.
-    db.add(
-        GlossarySourceReference(
-            glossary_entry_id=entry_id,
-            source_type=source_type,
-            module_section_id=module_section_id,
-            source_summary_id=source_summary_id,
-            source_quiz_attempt_id=source_quiz_attempt_id,
-            selected_text=selected_text,
-        )
+    await _add_source_reference(
+        db,
+        glossary_entry_id=entry_id,
+        source_type=source_type,
+        module_section_id=module_section_id,
+        source_summary_id=source_summary_id,
+        source_quiz_attempt_id=source_quiz_attempt_id,
+        source_conversation_id=source_conversation_id,
+        source_message_id=source_message_id,
+        selected_text=selected_text,
     )
 
     # --- cache check / concurrent-miss collapse ---
@@ -200,6 +243,7 @@ async def save_term(
         language=language,
         term=term,
         selected_text=selected_text,
+        definition_context=definition_context,
     )
 
     # --- glossary_term_saved in the SAME transaction as the save (rule 7) ---
@@ -295,10 +339,17 @@ async def _resolve_definition(
     language: str,
     term: str,
     selected_text: str | None,
+    definition_context: str | None = None,
 ) -> UUID | None:
     """Apply the shared cache to the new entry. Returns the cache row id to enqueue (winner of a miss),
-    or None (cache hit, or an in-flight job already owns the generation)."""
-    context_text = (selected_text or "").strip()[:CONTEXT_CHAR_CAP]
+    or None (cache hit, or an in-flight job already owns the generation).
+
+    ``definition_context`` decouples the prompt context from the stored ``selected_text``: when None
+    (summary/manual/quiz) the prompt context falls back to ``selected_text`` (unchanged behavior); a
+    conversation save passes ``""`` so NO chat text reaches the prompt (ADR-055) — yielding a
+    subject-level definition whose cache key + input hash match a manual add of the same term."""
+    source_for_context = selected_text if definition_context is None else definition_context
+    context_text = (source_for_context or "").strip()[:CONTEXT_CHAR_CAP]
     cache_row_id = uuid7()
     inserted_cache_id = (
         await db.execute(

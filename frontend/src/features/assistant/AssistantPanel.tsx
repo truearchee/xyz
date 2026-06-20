@@ -133,6 +133,8 @@ export function AssistantPanel({ sectionId }: { sectionId: string }) {
         onRetry={conv.retry}
         onLoadOlder={conv.loadOlder}
         onDraftChange={conv.setDraft}
+        conversationId={conversationId}
+        saveSectionId={sectionId}
         starters={<StarterChips scope="assistant" onPick={conv.setDraft} />}
       />
     );

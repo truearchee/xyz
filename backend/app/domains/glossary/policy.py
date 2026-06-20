@@ -20,6 +20,20 @@ FOLDER_NAME_EXISTS = "GLOSSARY_FOLDER_NAME_EXISTS"
 FOLDER_SYSTEM_IMMUTABLE = "GLOSSARY_FOLDER_SYSTEM_IMMUTABLE"
 ENTRY_TYPE_IMMUTABLE = "GLOSSARY_ENTRY_TYPE_IMMUTABLE"
 
+# Stage 8.5 — conversation-sourced save. The 404 mirrors the assistant's pinned-404 detail string
+# ("CONVERSATION_NOT_FOUND") without importing assistant policy: anything an outsider could use to probe
+# another student's conversation (ownership / existence / binding / visibility) collapses to this 404.
+# Role / status / text errors fire only after ownership is proven, so a distinct 4xx leaks nothing.
+CONVERSATION_SOURCE_NOT_FOUND = "CONVERSATION_NOT_FOUND"
+SOURCE_NOT_ASSISTANT_MESSAGE = "GLOSSARY_SOURCE_NOT_ASSISTANT_MESSAGE"
+SOURCE_MESSAGE_NOT_COMPLETED = "GLOSSARY_SOURCE_MESSAGE_NOT_COMPLETED"
+SELECTED_TEXT_NOT_IN_MESSAGE = "GLOSSARY_SELECTED_TEXT_NOT_IN_MESSAGE"
+SELECTED_TEXT_REQUIRED = "GLOSSARY_SELECTED_TEXT_REQUIRED"
+# The PERSISTED headword must also be from the message (not just the snippet) — anti-spoofing closes the
+# "real selectedText + arbitrary term" gap so a conversation-sourced entry can't carry a term the
+# assistant never said (review finding; the UI sends term == selectedText, so real flows never trip it).
+TERM_NOT_IN_MESSAGE = "GLOSSARY_TERM_NOT_IN_MESSAGE"
+
 
 def require_student(role: str) -> None:
     if role != "student":

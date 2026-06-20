@@ -13,6 +13,7 @@ import { useCallback, useEffect, useRef, type ReactNode } from "react";
 
 import { type MessageRead } from "../../lib/api";
 import { SummaryMarkdown } from "../content/student/SummaryMarkdown";
+import { SaveToGlossary } from "../glossary/SaveToGlossary";
 
 const STICK_THRESHOLD_PX = 80;
 
@@ -37,6 +38,10 @@ type ConversationViewProps = {
   placeholder?: string;
   inputLabel?: string;
   emptyHint?: string;
+  // Stage 8.5 — when both are set (a section-bound conversation), completed assistant replies get the
+  // <SaveToGlossary> highlight affordance. Omitted/null in unbound conversations → affordance hidden (D4).
+  conversationId?: string;
+  saveSectionId?: string | null;
 };
 
 export function ConversationView({
@@ -60,6 +65,8 @@ export function ConversationView({
   placeholder = "Ask about this lecture…",
   inputLabel = "Ask a question about this lecture",
   emptyHint = "No messages yet — ask your first question below.",
+  conversationId,
+  saveSectionId,
 }: ConversationViewProps) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -130,7 +137,15 @@ export function ConversationView({
           </p>
         ) : !gone && !loading ? (
           messages.map((m) => (
-            <MessageBubble key={m.id} message={m} scope={scope} capped={capped} onRetry={onRetry} />
+            <MessageBubble
+              key={m.id}
+              message={m}
+              scope={scope}
+              capped={capped}
+              onRetry={onRetry}
+              conversationId={conversationId}
+              saveSectionId={saveSectionId}
+            />
           ))
         ) : null}
       </div>
@@ -175,11 +190,15 @@ function MessageBubble({
   scope,
   capped,
   onRetry,
+  conversationId,
+  saveSectionId,
 }: {
   message: MessageRead;
   scope: string;
   capped: boolean;
   onRetry: (messageId: string) => void | Promise<void>;
+  conversationId?: string;
+  saveSectionId?: string | null;
 }) {
   if (message.role === "user") {
     return (
@@ -210,7 +229,13 @@ function MessageBubble({
             </button>
           </div>
         ) : (
-          <AssistantAnswerBody message={message} scope={scope} onRetry={onRetry} />
+          <AssistantAnswerBody
+            message={message}
+            scope={scope}
+            onRetry={onRetry}
+            conversationId={conversationId}
+            saveSectionId={saveSectionId}
+          />
         )}
       </div>
     </div>
@@ -224,13 +249,21 @@ function AssistantAnswerBody({
   message,
   scope,
   onRetry,
+  conversationId,
+  saveSectionId,
 }: {
   message: MessageRead;
   scope: string;
   onRetry: (messageId: string) => void | Promise<void>;
+  conversationId?: string;
+  saveSectionId?: string | null;
 }) {
   const isGeneral = message.groundingStatus === "general_not_from_lecture";
   const isUnavailable = message.groundingStatus === "context_unavailable";
+  // Stage 8.5 — a completed assistant reply in a section-bound conversation is saveable to the glossary
+  // (highlight → save). Hidden in unbound conversations (no resolvable subject) and never on user
+  // messages (handled by MessageBubble) or pending/failed replies (this body renders only on completed).
+  const canSave = Boolean(saveSectionId && conversationId);
   return (
     <div style={styles.answerBody}>
       {isGeneral ? (
@@ -239,7 +272,13 @@ function AssistantAnswerBody({
         </p>
       ) : null}
       {message.content ? (
-        <SummaryMarkdown content={message.content} testId={`${scope}-answer-${message.id}`} />
+        canSave ? (
+          <SaveToGlossary source={{ conversationId: conversationId!, messageId: message.id }}>
+            <SummaryMarkdown content={message.content} testId={`${scope}-answer-${message.id}`} />
+          </SaveToGlossary>
+        ) : (
+          <SummaryMarkdown content={message.content} testId={`${scope}-answer-${message.id}`} />
+        )
       ) : (
         <p style={styles.muted}>No answer.</p>
       )}

@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic.alias_generators import to_camel
 
 EntryType = Literal["term", "concept", "formula"]
@@ -46,6 +46,8 @@ class GlossarySourceReferenceRead(CamelModel):
     module_section_id: UUID | None
     source_summary_id: UUID | None
     source_quiz_attempt_id: UUID | None
+    source_conversation_id: UUID | None
+    source_message_id: UUID | None
     selected_text: str | None
     created_at: datetime
 
@@ -69,11 +71,30 @@ class SaveResponse(CamelModel):
 
 
 # ── writes ──
+class ConversationSaveSource(CamelModel):
+    """Stage 8.5 — the discriminated assistant-chat save source. The student highlighted the term in a
+    completed assistant reply; the server verifies the message and derives subject/folder from the
+    conversation's bound section (never trusted from the client)."""
+
+    conversation_id: UUID
+    message_id: UUID
+
+
 class SaveHighlightRequest(CamelModel):
-    module_section_id: UUID
+    # Exactly one source: the summary/section path (flat ``module_section_id``, Stage 7) OR the
+    # assistant-chat path (``conversation``, Stage 8.5). ``module_section_id`` is now optional so the
+    # conversation path can omit it — the server resolves the section from the conversation instead.
+    module_section_id: UUID | None = None
+    conversation: ConversationSaveSource | None = None
     term: str = Field(min_length=1, max_length=200)
     selected_text: str | None = Field(default=None, max_length=2000)
     entry_type: EntryType = "term"
+
+    @model_validator(mode="after")
+    def _exactly_one_source(self) -> SaveHighlightRequest:
+        if (self.module_section_id is not None) == (self.conversation is not None):
+            raise ValueError("provide exactly one of moduleSectionId or conversation")
+        return self
 
 
 class ManualEntryRequest(CamelModel):

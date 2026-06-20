@@ -20,6 +20,7 @@ export type { BenchmarkRead } from './models/BenchmarkRead';
 export type { BriefSummaryContent } from './models/BriefSummaryContent';
 export type { ConversationListItem } from './models/ConversationListItem';
 export type { ConversationRead } from './models/ConversationRead';
+export type { ConversationSaveSource } from './models/ConversationSaveSource';
 export type { CreateAssessmentScopeRequest } from './models/CreateAssessmentScopeRequest';
 export type { CreateModuleRequest } from './models/CreateModuleRequest';
 export { CreateUserRequest } from './models/CreateUserRequest';

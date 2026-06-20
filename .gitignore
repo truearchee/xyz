@@ -28,3 +28,6 @@ knowledge/.obsidian/appearance.json
 knowledge/.obsidian/hotkeys.json
 knowledge/.obsidian/cache/
 knowledge/.obsidian/plugins/*/data.json
+
+# gstack local artifacts (security reports, analytics) — keep local
+.gstack/

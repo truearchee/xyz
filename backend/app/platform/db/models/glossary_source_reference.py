@@ -23,17 +23,29 @@ class GlossarySourceReference(Base):
 
     On a confirmed duplicate save the system attaches a NEW source reference to the existing entry
     rather than creating a second entry (Slice 6). ``source_type='quiz'`` is allowed from 7a so the
-    7d quiz-highlight integration needs no migration. FKs are ``SET NULL`` so a deleted source does
-    not destroy the entry's provenance trail.
+    7d quiz-highlight integration needs no migration. ``source_type='conversation'`` (Stage 8.5) adds
+    the assistant-chat origin — ``source_conversation_id`` + ``source_message_id`` point at the
+    completed assistant reply the term was highlighted in. FKs are ``SET NULL`` so a deleted source
+    does not destroy the entry's provenance trail. The partial-unique index makes the duplicate-save
+    "attach the chat as another source" path IDEMPOTENT (same entry + same message never twice, 8.5 D3).
     """
 
     __tablename__ = "glossary_source_references"
     __table_args__ = (
         CheckConstraint(
-            "source_type IN ('summary', 'manual', 'quiz')",
+            "source_type IN ('summary', 'manual', 'quiz', 'conversation')",
             name="ck_glossary_source_references_source_type",
         ),
         Index("ix_glossary_source_references_entry", "glossary_entry_id"),
+        Index(
+            "uq_glossary_source_references_conversation_message",
+            "glossary_entry_id",
+            "source_message_id",
+            unique=True,
+            postgresql_where=text(
+                "source_type = 'conversation' AND source_message_id IS NOT NULL"
+            ),
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(
@@ -59,6 +71,17 @@ class GlossarySourceReference(Base):
     source_quiz_attempt_id: Mapped[UUID | None] = mapped_column(
         PostgresUUID(as_uuid=True),
         ForeignKey("quiz_attempts.id", ondelete="SET NULL"),
+    )
+    # Set by the Stage 8.5 assistant save: the conversation + completed assistant message a term was
+    # highlighted in. ``selected_text`` carries the server-verified, ≤500-char snippet (provenance only —
+    # it is NOT fed to the definition prompt; chat saves get a subject-level definition, ADR-055).
+    source_conversation_id: Mapped[UUID | None] = mapped_column(
+        PostgresUUID(as_uuid=True),
+        ForeignKey("assistant_conversations.id", ondelete="SET NULL"),
+    )
+    source_message_id: Mapped[UUID | None] = mapped_column(
+        PostgresUUID(as_uuid=True),
+        ForeignKey("assistant_messages.id", ondelete="SET NULL"),
     )
     selected_text: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(
