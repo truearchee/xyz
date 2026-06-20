@@ -1,6 +1,6 @@
 # Status
 
-_Last updated: 2026-06-19 — **Stage 8.5 (Save-to-Glossary from the Assistant) is BACKEND VERIFIED.** The seam is implemented end to end and verified at the backend (real-DB pytest), type (tsc), and frontend-wiring (vitest component) levels; the regenerated client is committed. The one remaining obligation for FULLY VERIFIED is the live browser gate + the rule-14 full active Playwright suite, handed off to the engineer's local e2e harness (the documented owner-run workflow for every Stage 8 gate; this fresh workspace lacks `.env.e2e`/the gate override)._
+_Last updated: 2026-06-20 — **Stage 8.5 (Save-to-Glossary from the Assistant) is FULLY VERIFIED.** Implemented end to end and verified at the backend (625 real-DB pytest), type (tsc), frontend-wiring (vitest component), and live-browser levels. The 8.5 browser gate + the **rule-14 full active Playwright suite ran GREEN (21/21) on a clean DB** locally (non-disruptive alt-port stack :8005/:3005, local Supabase :54321, deterministic LLM adapter); **/cso CLEAN**, **/review** cross-model (one anti-spoofing hardening), **/qa** real-browser save-from-chat drive CLEAN. Not merged — ready for owner review/merge._
 
 ## Current branch
 - Branch: `stage-8.5-implementation`
@@ -37,7 +37,7 @@ _Last updated: 2026-06-19 — **Stage 8.5 (Save-to-Glossary from the Assistant) 
   **9 passed** incl. 5 new `ConversationView` affordance-gating tests; a11y/vitest green.
 - E2E gate `tests/e2e/8.5-assistant-save-to-glossary.spec.ts` authored; `playwright --list` discovers it;
   full suite lists 21 tests / 18 files.
-- **Not run this session:** the live browser gate + rule-14 full suite → [[steps/stage-08/findings-8.5-gate-handoff]].
+- **Live gates GREEN (ran LOCALLY, clean DB):** 8.5 browser gate `tests/e2e/8.5-assistant-save-to-glossary.spec.ts` passed; **full active Playwright 21/21** (rule 14, serial, run id `e2e-mqlw0xei-9d1e2ebc`, 11.4m). /cso CLEAN; /review (Claude + Codex gpt-5.5) → term-in-message hardening; /qa real-browser drive CLEAN (0 bugs, no console errors). Stack: alt-port :8005/:3005 via `.context/8.5-gate.override.yml`, `kyiv-frontend` node:20 container, local Supabase :54321, deterministic adapter. The gate caught one test-wiring fix (selector scoping, commit `011a635`). → [[steps/stage-08/findings-8.5-gate-handoff]].
 
 ## Known-state notes
 - `check:design-tokens`/`check:inline-styles` are known-red (396 pre-existing inline-idiom violations =

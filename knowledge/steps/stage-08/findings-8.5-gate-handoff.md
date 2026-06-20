@@ -1,9 +1,18 @@
 ---
 stage: "8.5"
 title: 8.5 browser-gate handoff — run recipe + what is already verified
-status: open
-updated: 2026-06-19
+status: resolved
+updated: 2026-06-20
 ---
+
+> **RESOLVED 2026-06-20 — the gate RAN GREEN.** The owner delivered the local creds (`.env` + `.env.e2e`
+> copied disk-to-disk from the `kyiv` sibling; auth identical across all siblings, proven-current from the
+> 8.4 gate). The recipe below was followed (alt-port stack `:8005`/`:3005` via
+> `.context/8.5-gate.override.yml`, `kyiv-frontend` node:20 container + worcester source, local Supabase
+> `:54321`, deterministic LLM adapter, clean DB). Result: 8.5 browser gate PASSED + **full active suite
+> 21/21** (run id `e2e-mqlw0xei-9d1e2ebc`) + `/qa` clean. As predicted, the only finding was thin UI
+> wiring (selector scoping, commit `011a635`); product code unchanged. 8.5 is FULLY VERIFIED. See
+> [[steps/stage-08/8.5-save-to-glossary]] "Live gate — GREEN".
 
 # Findings — Stage 8.5 browser-gate handoff (rule 10)
 
