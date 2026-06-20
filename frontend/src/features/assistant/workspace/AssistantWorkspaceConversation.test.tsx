@@ -10,13 +10,19 @@ import { AssistantWorkspaceConversation } from "./AssistantWorkspaceConversation
 
 const getConversation = vi.fn();
 const listExamPrepScopes = vi.fn();
+const loadInitial = vi.fn();
+const markDeleted = vi.fn();
+const send = vi.fn();
+const retry = vi.fn();
+const loadOlder = vi.fn();
+const setDraft = vi.fn();
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
 }));
 
 vi.mock("../AssistantStoreProvider", () => ({
-  useAssistantStore: () => ({ loadInitial: vi.fn(), markDeleted: vi.fn() }),
+  useAssistantStore: () => ({ loadInitial, markDeleted }),
   useAssistantConversation: () => ({
     messages: [],
     loading: false,
@@ -28,10 +34,10 @@ vi.mock("../AssistantStoreProvider", () => ({
     draft: "",
     hasMore: false,
     loadingOlder: false,
-    send: vi.fn(),
-    retry: vi.fn(),
-    loadOlder: vi.fn(),
-    setDraft: vi.fn(),
+    send,
+    retry,
+    loadOlder,
+    setDraft,
   }),
 }));
 
@@ -69,6 +75,12 @@ function scope(over: { available: boolean; reasonCode: string | null }) {
 beforeEach(() => {
   getConversation.mockReset();
   listExamPrepScopes.mockReset();
+  loadInitial.mockReset();
+  markDeleted.mockReset();
+  send.mockReset();
+  retry.mockReset();
+  loadOlder.mockReset();
+  setDraft.mockReset();
   getConversation.mockResolvedValue(examPrepDetail());
 });
 
@@ -104,5 +116,28 @@ describe("AssistantWorkspaceConversation — exam-prep quiz pointer (8.6b, all t
     const state = await screen.findByTestId("assistant-examprep-quiz-state");
     expect(state.textContent).toBe("Practice quiz not available yet");
     expect(screen.queryByTestId("assistant-examprep-quiz-cta")).toBeNull();
+  });
+});
+
+describe("AssistantWorkspaceConversation — time-management mode (8.6c)", () => {
+  it("renders structured-data context and time-management starters", async () => {
+    getConversation.mockResolvedValue({
+      id: "tm1",
+      conversationKind: "time_management",
+      displayTitle: "Time management",
+      groundingChip: "Time management",
+      moduleId: null,
+      moduleTitle: null,
+      attachedSectionId: null,
+      sectionTitle: null,
+      sectionType: null,
+      lastActivityAt: new Date().toISOString(),
+      messageCount: 0,
+    });
+    render(<AssistantWorkspaceConversation conversationId="tm1" />);
+    expect((await screen.findByTestId("assistant-mode-label")).textContent).toBe("Time management");
+    expect(screen.getByTestId("assistant-context-pill").textContent).toContain("Your deadlines and progress");
+    expect(screen.getByTestId("workspace-time-management-starters")).toBeTruthy();
+    expect(screen.queryByTestId("assistant-open-lecture")).toBeNull();
   });
 });

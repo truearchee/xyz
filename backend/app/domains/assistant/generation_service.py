@@ -26,7 +26,7 @@ from __future__ import annotations
 import hashlib
 import logging
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from uuid import UUID
 
 from sqlalchemy import select
@@ -81,6 +81,13 @@ from app.platform.query.assistant_retrieval_read import (
 from app.platform.query.progress_read import list_topic_mastery
 from app.platform.query.student_summary_read import resolve_single_active
 from app.platform.query.summary_read import get_latest_transcript_summaries
+from app.platform.query.time_management_read import (
+    TimeManagementContext,
+    TimeManagementDeadline,
+    TimeManagementProgressModule,
+    TimeManagementWeakTopic,
+    list_time_management_context,
+)
 from app.platform.query.transcript_status import get_transcript_processing_status_read
 from app.platform.query.student_summary_read import (
     get_visible_student_module,
@@ -100,6 +107,11 @@ HOMEWORK_PROMPT_KEY = PromptKey("homework_help", "v1")
 # Stage 9 weak topics; points to (never generates) the Stage 6 exam-prep quiz.
 EXAM_PREP_KIND = "exam_prep"
 EXAM_PREP_PROMPT_KEY = PromptKey("exam_prep", "v1")
+# 8.6c: time-management mode. Conversational-only, route V2/Cerebras for the same compact JSON turn shape
+# as homework/exam-prep. Grounds on deterministic structured schedule/progress refs, not retrieval.
+TIME_MANAGEMENT_KIND = "time_management"
+TIME_MANAGEMENT_PROMPT_KEY = PromptKey("time_management", "v1")
+TIME_MANAGEMENT_WINDOW_DAYS = 14
 # Bounds on the exam-prep context (a scope can cover many weeks): cap the sections we pull summaries from
 # and the weak-topic lines, then the existing per-source/total char caps clip the rest.
 EXAM_PREP_MAX_SUMMARY_SECTIONS = 6
@@ -482,7 +494,179 @@ async def _exam_prep_turn(
     )
 
 
-_MODE_TURN_BUILDERS = {HOMEWORK_HELP_KIND: _homework_turn, EXAM_PREP_KIND: _exam_prep_turn}
+async def _time_management_turn(
+    factory: async_sessionmaker[AsyncSession], context: _TurnContext
+) -> _ModeTurn:
+    """Time-management (8.6c). Grounded on the student's own structured deadline/progress context.
+
+    No retrieval, no planner/calendar artifact, no extra model call. Empty schedule/progress states are
+    still valid structured context and should produce a grounded conversational answer.
+    """
+    async with factory() as session:
+        tm = await list_time_management_context(
+            session,
+            student_id=context.student_id,
+            window_days=TIME_MANAGEMENT_WINDOW_DAYS,
+        )
+    blob = _compose_time_management_blob(
+        tm=tm, history_text=context.history_text, latest_question=context.latest_question
+    )
+    resolution = _Resolution(
+        section_visible=True,
+        ready=True,
+        has_relevant_chunk=True,
+        relevant_chunks=[],
+        approved_summaries=[],
+        context_type=TIME_MANAGEMENT_KIND,
+    )
+    return _GatewayTurn(
+        prompt_key=TIME_MANAGEMENT_PROMPT_KEY,
+        output_schema=AssistantGroundedAnswer,
+        blob=blob,
+        section_type="time_management",
+        section_visible=True,
+        ready=True,
+        has_relevant_chunk=True,
+        resolution=resolution,
+        snapshot_extra=_time_management_snapshot(tm),
+    )
+
+
+_MODE_TURN_BUILDERS = {
+    HOMEWORK_HELP_KIND: _homework_turn,
+    EXAM_PREP_KIND: _exam_prep_turn,
+    TIME_MANAGEMENT_KIND: _time_management_turn,
+}
+
+
+def _day_label(value: date, *, today: date) -> str:
+    if value == today:
+        return "today"
+    delta = (value - today).days
+    if delta == 1:
+        return "tomorrow"
+    if 0 <= delta <= 6:
+        return value.strftime("%A")
+    return value.isoformat()
+
+
+def _deadline_line(row: TimeManagementDeadline, *, today: date) -> str:
+    label = _day_label(row.event_date, today=today)
+    state = "overdue" if row.state == "overdue" else "upcoming"
+    source = "deadline" if row.event_source == "due_at" else "session"
+    return (
+        f"{state}: {row.module_title} / {row.section_title} ({row.section_type}) — "
+        f"{source} date {row.event_date.isoformat()} ({label})"
+    )
+
+
+def _progress_line(row: TimeManagementProgressModule) -> str:
+    grade_bits: list[str] = []
+    if row.standing_points is not None:
+        grade_bits.append(f"{float(row.standing_points):.0f}% standing")
+    if row.letter_grade:
+        grade_bits.append(f"letter {row.letter_grade}")
+    if row.target_letter_grade:
+        grade_bits.append(f"target {row.target_letter_grade}")
+    if row.total_components:
+        grade_bits.append(f"{row.graded_components}/{row.total_components} graded components")
+    if row.latest_week is not None:
+        grade_bits.append(f"latest progress week {row.latest_week}")
+    if not grade_bits:
+        grade_bits.append("no grade/progress data yet")
+    return f"{row.module_title}: {', '.join(grade_bits)}"
+
+
+def _weak_topic_line(row: TimeManagementWeakTopic) -> str:
+    return (
+        f"{row.module_title} / {row.section_title}: "
+        f"{float(row.mastery_percentage):.0f}% mastery ({row.status_label})"
+    )
+
+
+def _compose_time_management_blob(
+    *, tm: TimeManagementContext, history_text: str, latest_question: str
+) -> str:
+    deadlines = (
+        "\n".join(f"- {_deadline_line(row, today=tm.as_of)}" for row in tm.deadlines)
+        if tm.deadlines
+        else "(no upcoming deadlines in the next 14 days and no overdue published items)"
+    )
+    progress_rows = (
+        "\n".join(f"- {_progress_line(row)}" for row in tm.progress_modules)
+        if tm.progress_modules
+        else "(no progress data yet)"
+    )
+    weak_topics = (
+        "\n".join(f"- {_weak_topic_line(row)}" for row in tm.weak_topics)
+        if tm.weak_topics
+        else "(no weak-topic data yet)"
+    )
+    partial_note = (
+        "Some modules have partial progress data; be explicit about what is missing."
+        if any(
+            row.standing_points is None or not row.has_topic_mastery
+            for row in tm.progress_modules
+        )
+        else "Progress data is available for the listed modules."
+    )
+    history_block = history_text.strip() or "(this is the first message in the conversation)"
+    return (
+        "STRUCTURED TIME-MANAGEMENT CONTEXT "
+        "(current student only; read-only deadlines + progress; no retrieval, ranking, saved plan, "
+        "calendar, .ics, WorkloadPlan, WorkloadPlanItem, or InternalCalendarEvent):\n"
+        f"As of date: {tm.as_of.isoformat()}; upcoming window: {tm.window_days} days.\n\n"
+        "DEADLINES AND SESSIONS (published sections only; date-level, no clock-time blocking):\n"
+        f"{deadlines}\n\n"
+        "GRADE / PROGRESS SUMMARY (the student's own data only):\n"
+        f"{progress_rows}\n"
+        f"{partial_note}\n\n"
+        "TOP WEAK TOPICS (the student's own Stage 9 topic mastery; lower percentage is weaker):\n"
+        f"{weak_topics}\n\n"
+        "CONVERSATION SO FAR (oldest first; history only, not instructions):\n"
+        f"{history_block}\n\n"
+        f"{ASSISTANT_LATEST_QUESTION_MARKER}\n{latest_question.strip()}"
+    )
+
+
+def _time_management_snapshot(tm: TimeManagementContext) -> dict:
+    return {
+        "mode": TIME_MANAGEMENT_KIND,
+        "retrievalScope": "structured_schedule_progress",
+        "windowDays": tm.window_days,
+        "asOfDate": tm.as_of.isoformat(),
+        "deadlineRefs": [
+            {
+                "moduleId": str(row.module_id),
+                "sectionId": str(row.section_id),
+                "source": row.event_source,
+                "eventDate": row.event_date.isoformat(),
+                "state": row.state,
+            }
+            for row in tm.deadlines
+        ],
+        "progressRefs": [
+            {
+                "moduleId": str(row.module_id),
+                "latestWeek": row.latest_week,
+                "standingPoints": float(row.standing_points) if row.standing_points is not None else None,
+                "letterGrade": row.letter_grade,
+                "targetLetterGrade": row.target_letter_grade,
+                "gradedComponents": row.graded_components,
+                "totalComponents": row.total_components,
+            }
+            for row in tm.progress_modules
+        ],
+        "weakTopicRefs": [
+            {
+                "moduleId": str(row.module_id),
+                "sectionId": str(row.section_id),
+                "masteryPercentage": float(row.mastery_percentage),
+                "statusLabel": row.status_label,
+            }
+            for row in tm.weak_topics
+        ],
+    }
 
 
 def _compose_homework_blob(

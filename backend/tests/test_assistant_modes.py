@@ -11,7 +11,8 @@ gateway payload — the seam, not model judgment).
 from __future__ import annotations
 
 import hashlib
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -41,9 +42,16 @@ from app.platform.db.models import (
     AssistantConversation,
     AssistantMessage,
     CourseMembership,
+    CourseGradeScheme,
     CourseModule,
+    GradeBoundary,
+    GradeComponent,
     GeneratedLectureSummary,
     ModuleSection,
+    StudentGradeRecord,
+    StudentProgressSnapshot,
+    StudentTargetGradeGoal,
+    StudentTopicMasterySnapshot,
     Transcript,
     TranscriptChunk,
     TranscriptSegment,
@@ -236,7 +244,7 @@ async def test_create_homework_rejects_assessment_scope(db_session):
     assert exc.value.status_code == 422
 
 
-@pytest.mark.parametrize("kind", ["lecture_default", "exam_prep", "time_management", "workspace"])
+@pytest.mark.parametrize("kind", ["lecture_default", "workspace"])
 async def test_create_rejects_non_homework_kind(db_session, kind):
     seed = await _seed(db_session)
     with pytest.raises(HTTPException) as exc:
@@ -637,3 +645,173 @@ async def test_exam_prep_excludes_uncovered_section(db_session, captured_enqueue
     assert msg.grounding_status == GENERAL_NOT_FROM_LECTURE
     assert str(out_section.id) not in (msg.context_snapshot.get("resolvedSectionIds") or [])
     assert secret not in (provider.last_prompt or "").split(ASSISTANT_LATEST_QUESTION_MARKER)[0]
+
+
+# ── time-management (8.6c) ────────────────────────────────────────────────────────────────────────
+async def _create_time_management(db_session, ctx) -> object:
+    return await service.create_conversation(
+        db_session,
+        current_user=ctx,
+        payload=CreateConversationRequest(conversation_kind="time_management"),
+    )
+
+
+async def _run_time_management_turn(db_session, seed, question, *, conversation_id, provider=None, limiter=None):
+    factory = _factory(db_session)
+    ctx = _ctx(seed.student)
+    sent = await service.send_message(
+        db_session, current_user=ctx, conversation_id=conversation_id,
+        payload=SendMessageRequest(content=question, client_idempotency_key=f"k-{uuid4()}"),
+    )
+    gateway = LLMGateway(
+        provider=provider or _RecordingProvider(), limiter=limiter or _RecordingLimiter(),
+        session_factory=factory,
+    )
+    await generate_assistant_answer_async(sent.assistant_message.id, gateway=gateway, session_factory=factory)
+    return sent.assistant_message.id, factory
+
+
+async def _add_time_management_progress(db_session: AsyncSession, *, seed) -> None:
+    section = await db_session.get(ModuleSection, seed.section.id)
+    today = date.today()
+    section.session_date = today + timedelta(days=2)
+    section.due_at = datetime(today.year, today.month, today.day, tzinfo=UTC) + timedelta(days=3)
+    section.week_number = 1
+    scheme = CourseGradeScheme(module_id=seed.module.id, name="Default", on_track_max=Decimal("70.00"), at_risk_max=Decimal("85.00"), benchmark_min_cohort=5)
+    db_session.add(scheme)
+    await db_session.flush()
+    db_session.add_all(
+        [
+            GradeBoundary(scheme_id=scheme.id, letter_grade="A", lower_bound=Decimal("80.00"), sort_order=1),
+            GradeBoundary(scheme_id=scheme.id, letter_grade="B", lower_bound=Decimal("70.00"), sort_order=2),
+            GradeBoundary(scheme_id=scheme.id, letter_grade="C", lower_bound=Decimal("60.00"), sort_order=3),
+        ]
+    )
+    component = GradeComponent(
+        scheme_id=scheme.id,
+        name="Coursework",
+        weight=Decimal("0.5000"),
+        sort_order=1,
+        component_kind="assignment",
+        module_section_id=seed.section.id,
+    )
+    db_session.add(component)
+    await db_session.flush()
+    db_session.add_all(
+        [
+            StudentGradeRecord(
+                student_id=seed.student.id,
+                grade_component_id=component.id,
+                percentage_score=Decimal("62.00"),
+                source="e2e",
+            ),
+            StudentProgressSnapshot(
+                student_id=seed.student.id,
+                module_id=seed.module.id,
+                week_number=1,
+                snapshot_date=today,
+                standing_points=Decimal("62.00"),
+                source_metrics={"source": "test"},
+            ),
+            StudentTargetGradeGoal(
+                student_id=seed.student.id,
+                module_id=seed.module.id,
+                target_letter_grade="B",
+                status="active",
+            ),
+            StudentTopicMasterySnapshot(
+                student_id=seed.student.id,
+                module_id=seed.module.id,
+                module_section_id=seed.section.id,
+                mastery_percentage=Decimal("48.00"),
+                status_label="needs_attention",
+                source_metrics={"source": "test"},
+            ),
+        ]
+    )
+    await db_session.commit()
+
+
+async def test_create_time_management_forbids_bindings_and_is_resume_or_create(db_session):
+    seed = await _seed(db_session)
+    ctx = _ctx(seed.student)
+    for payload in (
+        CreateConversationRequest(conversation_kind="time_management", module_id=seed.module.id),
+        CreateConversationRequest(conversation_kind="time_management", section_id=seed.section.id),
+        CreateConversationRequest(conversation_kind="time_management", assessment_scope_id=uuid4()),
+    ):
+        with pytest.raises(HTTPException) as exc:
+            await service.create_conversation(db_session, current_user=ctx, payload=payload)
+        assert exc.value.status_code == 422
+
+    a = await _create_time_management(db_session, ctx)
+    b = await _create_time_management(db_session, ctx)
+    assert a.id == b.id
+    assert a.conversation_kind == "time_management"
+    assert a.attached_module_id is None
+    assert a.attached_section_id is None
+    assert a.attached_assessment_scope_id is None
+
+
+async def test_time_management_grounds_on_own_deadlines_and_progress_only(db_session, captured_enqueue):
+    seed = await _seed(db_session, module_title="Algorithms", section_title="Dynamic Programming")
+    await _add_time_management_progress(db_session, seed=seed)
+    other = await _seed(
+        db_session,
+        module_title="OTHER_STUDENT_PRIVATE_MODULE",
+        section_title="OTHER_STUDENT_DEADLINE_SENTINEL",
+    )
+    other_section = await db_session.get(ModuleSection, other.section.id)
+    other_section.session_date = date.today() + timedelta(days=1)
+    other_section.due_at = datetime.now(UTC) + timedelta(days=1)
+    await db_session.commit()
+
+    conv = await _create_time_management(db_session, _ctx(seed.student))
+    provider = _RecordingProvider()
+    limiter = _RecordingLimiter()
+    mid, factory = await _run_time_management_turn(
+        db_session,
+        seed,
+        "What should I prioritize today?",
+        conversation_id=conv.id,
+        provider=provider,
+        limiter=limiter,
+    )
+    msg = await _get_msg(factory, mid)
+    assert msg.status == "completed"
+    assert msg.grounding_status == LECTURE_GROUNDED
+    snap = msg.context_snapshot
+    assert snap["mode"] == "time_management"
+    assert snap["retrievalScope"] == "structured_schedule_progress"
+    assert snap["windowDays"] == 14
+    assert [r["sectionId"] for r in snap["deadlineRefs"]] == [str(seed.section.id)]
+    assert [r["moduleId"] for r in snap["progressRefs"]] == [str(seed.module.id)]
+    assert [r["sectionId"] for r in snap["weakTopicRefs"]] == [str(seed.section.id)]
+    assert service._to_message_read(msg).answer_basis == "Based on your upcoming deadlines and progress data"
+    assert limiter.priorities == ["interactive"]
+    assert provider.last_backend == "cerebras"
+    payload = provider.last_prompt or ""
+    assert "STRUCTURED TIME-MANAGEMENT CONTEXT" in payload
+    assert "Dynamic Programming" in payload
+    assert "OTHER_STUDENT_DEADLINE_SENTINEL" not in payload
+    assert "OTHER_STUDENT_PRIVATE_MODULE" not in payload
+    assert await _count_logs(factory) == 1
+
+
+async def test_time_management_empty_state_still_completes_with_structured_basis(db_session, captured_enqueue):
+    seed = await _seed(db_session, module_title="No Progress", with_transcript=False)
+    conv = await _create_time_management(db_session, _ctx(seed.student))
+    provider = _RecordingProvider()
+    mid, factory = await _run_time_management_turn(
+        db_session,
+        seed,
+        "Can you help me plan this weekend?",
+        conversation_id=conv.id,
+        provider=provider,
+    )
+    msg = await _get_msg(factory, mid)
+    assert msg.status == "completed"
+    assert msg.grounding_status == LECTURE_GROUNDED
+    assert msg.context_snapshot["deadlineRefs"] == []
+    assert msg.context_snapshot["weakTopicRefs"] == []
+    assert "no grade/progress data yet" in (provider.last_prompt or "")

@@ -46,14 +46,15 @@ class ConversationRead(CamelModel):
     updated_at: datetime
 
 
-# 8.6a — mode entry. Each mode is a conversation_kind; binding requirements differ per kind. The handler
-# validates the kind→binding matrix (homework: module required, section optional). Creation is idempotent
-# (resume-or-create on the natural key), so a double-clicked starter never makes a duplicate.
+# 8.6a-c — mode entry. Each mode is a conversation_kind; binding requirements differ per kind. The
+# handler validates the kind→binding matrix (homework: module required; exam-prep: scope required; time
+# management: no binding). Creation is idempotent (resume-or-create on the natural key), so a
+# double-clicked starter never makes a duplicate.
 class CreateConversationRequest(CamelModel):
-    conversation_kind: str  # 8.6a: only 'homework_help' is accepted; others → 422 (8.6b/8.6c add more)
+    conversation_kind: str
     module_id: UUID | None = None
     section_id: UUID | None = None
-    assessment_scope_id: UUID | None = None  # reserved for exam_prep (8.6b)
+    assessment_scope_id: UUID | None = None
 
 
 class ConversationListItem(CamelModel):
@@ -61,14 +62,14 @@ class ConversationListItem(CamelModel):
     manual title when set, else the lecture/lab title, else a mode-derived fallback) so old null-title rows
     render with no backfill; ``grounding_chip`` is "Lecture grounded" for the lecture chat and a mode label
     otherwise. Excludes soft-deleted AND access-revoked conversations (invariant C) — the list query is the
-    4.7 gate. 8.6a: a module-bound homework conversation has NO section, so the section fields are nullable
-    and ``module_id``/``module_title`` are always present."""
+    4.7 gate. 8.6c: time-management has no module/section/scope binding, so ``module_id`` and
+    ``module_title`` are nullable for that mode only."""
 
     id: UUID
     conversation_kind: str
     display_title: str
-    module_id: UUID
-    module_title: str
+    module_id: UUID | None = None
+    module_title: str | None = None
     attached_section_id: UUID | None = None
     section_title: str | None = None
     section_type: str | None = None  # 'lecture' | 'lab' | None (module-bound homework / exam-prep)

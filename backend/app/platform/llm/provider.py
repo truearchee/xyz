@@ -436,7 +436,7 @@ class DeterministicTestProvider:
         # 8.6a modes reuse the grounded {answer, isStudyRelated} fixture (same schema, same grounding
         # pipeline). The mode behavior (e.g. the homework no-answer guardrail) is asserted at the prompt
         # /payload layer (Layer 2/3) + the rule-11 real-model smoke — NOT by the deterministic double.
-        if name in ("homework_help", "exam_prep"):
+        if name in ("homework_help", "exam_prep", "time_management"):
             return self._assistant_grounded_fixture(rendered, forced_invalid)
         raise ValueError(f"deterministic provider has no canned output for prompt {name!r}")
 

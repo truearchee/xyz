@@ -1,6 +1,6 @@
 # Status
 
-_Last updated: 2026-06-20 — **Stage 8.6b (Assistant Exam-prep mode) is FULLY VERIFIED**, stacked on 8.6a on `stage-8.6-assistant-modes` and rebased over the Stage 10 mainline state. 8.6b lets a student pick a named AssessmentScope and opens an `exam_prep` conversation that discusses only that scope using covered weeks' permitted summaries, Stage 9 weak topics, and read-only `platform/query` helpers. It points to the Stage 6 quiz with all three precise states live-verified: ready CTA, processing "being prepared", and none "not available yet", but never generates a quiz. Routed V2/Cerebras. Verified: backend mode pytest, prompt drift, frontend `tsc` + vitest **19**, updated 8.6b browser gate **2/2**, full active Playwright **24/24**, and rule-11 exam-prep smoke. Stage 10 Gamification is already merged to `main`; its Alembic head is `0081`, so `dev_reseed` remains pinned to the higher merged head during this branch rebase._
+_Last updated: 2026-06-20 — **Stage 8.6c (Assistant Time-management mode) is FULLY VERIFIED**, stacked on 8.6a/8.6b on `stage-8.6-assistant-modes` and rebased over the Stage 10 mainline state. 8.6c adds a conversational-only time-management chat: one active conversation per student, grounded on the student's own structured deadlines/progress via read-only `platform/query`, with deterministic context compaction (overdue + next 14 days + weak topics + grade/progress summary), day-level advice only, and no saved plan/calendar/.ics/Stage 11 artifact. Route is V2/Cerebras. Verification GREEN: backend mode pytest 32, dev-reseed pytest 3, prompt drift OK, ruff + py_compile, frontend `tsc` + vitest 20, fresh DB upgrade + `0044<->0043<->0044` round-trip, standalone 8.6c browser gate, full active Playwright **25/25**, and rule-11 time-management smoke. Stage 10 Gamification is already merged to `main`; its Alembic head is `0081`, so `dev_reseed` remains pinned to the higher merged head during this branch rebase._
 
 _(8.6a, earlier on this branch: Mode Coordinator + Homework help — FULLY VERIFIED; full active Playwright 22/22 + rule-11 homework smoke.)_
 
@@ -8,15 +8,30 @@ _(8.6a, earlier on this branch: Mode Coordinator + Homework help — FULLY VERIF
 - Branch: `stage-8.6-assistant-modes`
 - Target branch: `origin/main`
 - Base branch includes Stage 10 Gamification merged to `main` with Alembic head `0081`.
-- Stage 8.6 migrations currently applied on this branch: `0042` (homework) and `0043` (exam-prep); later
-  stacked commits add `0044` for time management.
+- Stage 8.6 migrations currently applied on this branch: `0042` (homework), `0043` (exam-prep), and `0044`
+  (time management).
 - Gate harness (workspace-local, gitignored): `.context/8.6a-gate.override.yml` runs the stack on
   :8005/:3005 with a unique image tag `dallas-stage86-gate` plus a production frontend.
+- Full-suite fault specs must run with
+  `E2E_COMPOSE_FILES='-f docker-compose.yml -f .context/8.6a-gate.override.yml -f docker-compose.fault.yml'`
+  so in-suite worker recreates keep the alt override/image.
 
 ## Stage 10 delivered on main
 - Stage 10 Gamification is FULLY VERIFIED and merged to `main`.
 - Migration block `0080-0081` is on main; expected merged Alembic head is `0081`.
 - The Stage 10 report and log entries remain the source for the full gamification verification record.
+
+## Stage 8.6c delivered (Time management)
+- **Conversation contract.** `time_management` is moduleless/scope-less, immutable, and resume-or-create:
+  one active conversation per student via the 0044 partial unique index. Bindings are rejected.
+- **Grounding contract.** The turn builder compacts only structured current-student data: overdue + next-14-day
+  `due_at`/`session_date`, module progress/grade summaries, and top weak topics. Snapshot/basis label it as
+  structured schedule/progress data, not retrieval.
+- **Boundaries held.** No saved plan/calendar/.ics, no `WorkloadPlan`/`WorkloadPlanItem`/`InternalCalendarEvent`,
+  no planner/analytics imports, no exact clock-time blocking, no extra model call.
+- **UI.** Workspace "Time management" entry, mode label, context pill, and day-level starter chips.
+- **Verification.** Standalone 8.6c browser gate passed; full active Playwright **25/25** (`e2e-86c-full3`,
+  5.3m); rule-11 smoke PASS on Cerebras/V2.
 
 ## Stage 8.6b delivered (Exam prep)
 - **Conversation contract.** `exam_prep` conversations bind to a named AssessmentScope and resume-or-create
@@ -25,9 +40,8 @@ _(8.6a, earlier on this branch: Mode Coordinator + Homework help — FULLY VERIF
   retrieval, and Stage 9 weak topics. It does not import quiz-domain code and does not generate quiz content.
 - **Quiz pointer.** The frontend points to the Stage 6 exam-prep quiz with ready/processing/not-available
   states sourced from the quiz surface.
-- **Routing.** V2/Cerebras route follows the 8.6a smoke lesson.
-- **Verification.** Backend mode tests, prompt drift, frontend type/unit tests, updated browser gate **2/2**,
-  full active Playwright **24/24**, and rule-11 exam-prep smoke passed in the final 8.6b gate.
+- **Verification.** Updated browser gate **2/2**, full active Playwright **24/24**, and rule-11 exam-prep
+  smoke passed in the final 8.6b gate.
 
 ## Stage 8.6a delivered (mode foundation + Homework help)
 - **Mode = `conversation_kind` + a strategy coordinator (ADR-056).** `generate_assistant_answer_async`
@@ -37,8 +51,6 @@ _(8.6a, earlier on this branch: Mode Coordinator + Homework help — FULLY VERIF
   narrowed section, and always coaches rather than giving direct answers.
 - **Resume-or-create.** Migration 0042 adds one-active homework partial-unique indexes for module and
   optional-section bindings.
-- **Frontend.** Workspace homework entry, picker, starters, mode label, context pills, and shared
-  `ConversationView` support.
 
 ## Known-state notes
 - `dev_reseed.EXPECTED_ALEMBIC_VERSION` stays on the higher merged mainline pin `0081` while this branch is
@@ -59,6 +71,13 @@ _(8.6a, earlier on this branch: Mode Coordinator + Homework help — FULLY VERIF
 - Spec: [[specs/stage-08/8.6b-exam-prep-mode]]
 - Plan: [[plans/stage-08/8.6b-exam-prep-mode]]
 - Report: [[steps/stage-08/8.6b-exam-prep-mode]]
+- Smoke: [[steps/stage-08/8.6-real-provider-smoke]]
+
+## Stage 8.6c documents
+- Spec: [[specs/stage-08/8.6c-time-management-mode]]
+- Plan: [[plans/stage-08/8.6c-time-management-mode]]
+- Report: [[steps/stage-08/8.6c-time-management-mode]]
+- ADRs: [[decisions/adr-056-assistant-mode-coordinator]], [[decisions/adr-057-assistant-mode-routing-budget]]
 - Smoke: [[steps/stage-08/8.6-real-provider-smoke]]
 
 ## Stage 10 documents

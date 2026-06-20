@@ -202,6 +202,12 @@ async function uploadTranscriptThroughUi(page: Page, section: SectionRow, fileNa
   return getActiveTranscriptForSection(section.id).id;
 }
 
+function composeCommand(): string {
+  return process.env.E2E_COMPOSE_FILES
+    ? `docker compose ${process.env.E2E_COMPOSE_FILES}`
+    : 'docker compose -f docker-compose.yml -f docker-compose.fault.yml';
+}
+
 // Recreate the embedding_worker with (or without) the pipeline fault — the only way to do
 // inject→fail→clear→retry in one run (global worker env can't mix). Documented in 4.5d. BLOCKS until
 // the new worker is listening: its boot (model-snapshot validation) must not eat into the post-retry
@@ -212,7 +218,7 @@ function recreateEmbeddingWorker(fault: 'embed' | null) {
     PIPELINE_FAULT_INJECTION_ENABLED: fault ? 'true' : 'false',
     PIPELINE_FAULT_INJECTION: fault ?? '',
   };
-  const compose = 'docker compose -f docker-compose.yml -f docker-compose.fault.yml';
+  const compose = composeCommand();
   execSync(`${compose} up -d --force-recreate embedding_worker`, { env, stdio: 'inherit' });
   const deadline = Date.now() + 120_000;
   for (;;) {

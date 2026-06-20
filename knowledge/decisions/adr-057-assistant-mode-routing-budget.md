@@ -1,6 +1,6 @@
 # ADR-057 — Per-mode assistant routing & budget (homework → Think/Nvidia/128k); the homework no-answer guardrail
 
-- **Status:** Accepted (Stage 8.6a, 2026-06-20)
+- **Status:** Accepted (Stage 8.6a; amended through 8.6c, 2026-06-20)
 - **Relates to:** [[adr-056-assistant-mode-coordinator]]; the routing table from Stage 4.5
   ([[adr-028-llm-gateway-provider-separation]] context) and rule 15 (interactive priority, one call/turn).
 - **Number note:** claimed at 8.6a commit time; renumber on collision with parallel Stages 10/11.
@@ -34,9 +34,12 @@ emit the final answer / a full worked solution, even under direct or adversarial
    model-ID echo, correct `isStudyRelated`; the answer summarised the scope + referenced the student's weak
    area without generating a quiz). Did not re-test Think (8.6a established it returns `not_json` for this
    interactive-JSON-turn shape).
-3. **(Recorded for later) Time management → V2 / Cerebras / 32k LOCK (8.6c).** Conversational over a small
-   compacted structured payload; Think invites planner-like behavior + latency. Upgrading off V2 is a future
-   ADR. *(8.6c not built this session.)*
+3. **Time management (8.6c) → V2 / Cerebras / 32k** (`time_management/v1.yaml` `backend: cerebras`).
+   Built 2026-06-20: conversational over a small compacted structured schedule/progress payload. Think is
+   explicitly avoided for this interactive JSON turn after the 8.6a/8.6b rule-11 evidence that K2-Think-v2
+   on the reasoning route does not reliably emit compact JSON. The 8.6c rule-11 smoke confirmed cerebras:
+   model-ID echo matched `MBZUAI-IFM/K2-Think-v2`, `finish_reason='stop'`, both study/off-topic turns parsed
+   as `AssistantGroundedAnswer`, and `isStudyRelated` was correct both ways.
 4. **Homework guardrail is multi-layer, not prompt-only:**
    - **L1 Prompt** (`homework_help/v1`): forbids the final answer / full worked solution / full code;
      Socratic hints + concept/method only; critique the student's OWN attempt, never confirm a bare guess;

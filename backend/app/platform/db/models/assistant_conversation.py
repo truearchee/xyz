@@ -39,10 +39,12 @@ class AssistantConversation(Base):
     __tablename__ = "assistant_conversations"
     __table_args__ = (
         CheckConstraint(
-            # 8.6a (0042) added 'homework_help'; 8.6b (0043) added 'exam_prep'; 8.6c adds 'time_management'.
+            # 8.6a (0042) added 'homework_help'; 8.6b (0043) added 'exam_prep'; 8.6c added
+            # 'time_management'.
             # The four original kinds all map to the existing general-chat path.
             "conversation_kind IN "
-            "('lecture_default', 'manual', 'floating_widget', 'workspace', 'homework_help', 'exam_prep')",
+            "('lecture_default', 'manual', 'floating_widget', 'workspace', 'homework_help', "
+            "'exam_prep', 'time_management')",
             name="ck_assistant_conversations_kind",
         ),
         CheckConstraint(
@@ -91,6 +93,16 @@ class AssistantConversation(Base):
             unique=True,
             postgresql_where=text(
                 "conversation_kind = 'exam_prep' AND deleted_at IS NULL"
+            ),
+        ),
+        # 8.6c resume-or-create (D2): one active time-management conversation per student. It has no
+        # module/section/scope binding and creates no saved plan/calendar artifact.
+        Index(
+            "uq_assistant_conversations_one_time_management",
+            "student_id",
+            unique=True,
+            postgresql_where=text(
+                "conversation_kind = 'time_management' AND deleted_at IS NULL"
             ),
         ),
     )

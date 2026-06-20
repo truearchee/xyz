@@ -5,7 +5,7 @@ session: "6d"
 slug: ui-browser-gate-postclass-retrofit
 status: blocked-at-real-provider-smoke
 created: 2026-06-17
-updated: 2026-06-17
+updated: 2026-06-20
 spec: knowledge/specs/stage-06/6d-ui-browser-gate-postclass-retrofit.md
 plan: knowledge/plans/stage-06/6d-ui-browser-gate-postclass-retrofit.md
 ---
@@ -201,3 +201,6 @@ Captured by the green 6d browser gate in `knowledge/steps/stage-06/screenshots/`
 - 2026-06-19 — [Session 4.9g] visually restyled assessment scope, quiz mode, recap/exam-prep, and mistakes-bank
   surfaces onto the imported monochrome token system; Stage 6 backend and quiz behavior unchanged. See
   [[steps/stage-04/4.9g-merge-monochrome-redesign]].
+- 2026-06-20 — [Session 8.6c] `tests/e2e/6d-quiz-modes-browser-gate.spec.ts` no longer rewrites committed
+  screenshot PNGs during default full-suite runs; screenshots are captured only when `STAGE6_SCREENSHOT_DIR`
+  is explicitly set. Stage 6 quiz behavior unchanged.

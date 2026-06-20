@@ -391,11 +391,11 @@ class StudentConversationListRow:
     conversation_kind: str
     title: str | None
     title_source: str
-    # 8.6a: section fields are NULL for a module-bound (sectionless) homework conversation; module is
-    # always present (a homework conversation binds a module, a lecture conversation's section has one).
+    # 8.6a: section fields are NULL for a module-bound conversation. 8.6c: time-management has no module
+    # binding, so module fields are NULL for that mode only.
     attached_section_id: UUID | None
-    module_id: UUID
-    module_title: str
+    module_id: UUID | None
+    module_title: str | None
     section_title: str | None
     section_type: str | None
     last_activity_at: datetime
@@ -433,19 +433,18 @@ async def get_visible_student_conversation_list(
     last-message preview are batched (no per-row fan-out). Read model only (rule 8).
 
     8.6a: a conversation may be SECTION-bound (lecture chat — visibility via the section) or MODULE-bound
-    (homework, no section — visibility via ``attached_module_id``). The section is LEFT-joined and the
-    effective module is ``COALESCE(section.course_module_id, attached_module_id)``; the visibility
-    predicate keeps the section-bound case BYTE-IDENTICAL (section must be published+active) and adds the
-    module-bound case (section NULL + module bound). Module-active + active-membership apply to both."""
+    (homework/exam-prep, no section — visibility via ``attached_module_id``). 8.6c adds a global
+    per-student time-management conversation with no module binding; its visibility is just ownership +
+    non-deleted, because every data read in the generation path is independently scoped to the student."""
     last_activity = func.coalesce(
         AssistantConversation.last_activity_at, AssistantConversation.updated_at
     )
     effective_module_id = func.coalesce(
         ModuleSection.course_module_id, AssistantConversation.attached_module_id
     )
-    # Either the section is bound AND published+active (lecture chat), or it is a module-bound homework
+    # Either the section is bound AND published+active (lecture chat), or it is a module-bound mode
     # conversation (no section). The module + membership predicate below applies to both.
-    bound_and_visible = or_(
+    module_bound_and_visible = or_(
         and_(
             AssistantConversation.attached_section_id.is_not(None),
             ModuleSection.publish_status == "published",
@@ -456,14 +455,23 @@ async def get_visible_student_conversation_list(
             AssistantConversation.attached_module_id.is_not(None),
         ),
     )
-    visibility = (
-        AssistantConversation.student_id == student_id,
-        AssistantConversation.deleted_at.is_(None),
-        bound_and_visible,
+    module_visibility = and_(
+        module_bound_and_visible,
         CourseModule.is_active.is_(True),
         CourseMembership.user_id == student_id,
         CourseMembership.role == "student",
         CourseMembership.status == "active",
+    )
+    time_management_visibility = and_(
+        AssistantConversation.conversation_kind == "time_management",
+        AssistantConversation.attached_section_id.is_(None),
+        AssistantConversation.attached_module_id.is_(None),
+        AssistantConversation.attached_assessment_scope_id.is_(None),
+    )
+    visibility = (
+        AssistantConversation.student_id == student_id,
+        AssistantConversation.deleted_at.is_(None),
+        or_(module_visibility, time_management_visibility),
     )
 
     total = (
@@ -473,8 +481,8 @@ async def get_visible_student_conversation_list(
             .outerjoin(
                 ModuleSection, ModuleSection.id == AssistantConversation.attached_section_id
             )
-            .join(CourseModule, CourseModule.id == effective_module_id)
-            .join(CourseMembership, CourseMembership.module_id == CourseModule.id)
+            .outerjoin(CourseModule, CourseModule.id == effective_module_id)
+            .outerjoin(CourseMembership, CourseMembership.module_id == CourseModule.id)
             .where(*visibility)
         )
     ).scalar_one()
@@ -496,8 +504,8 @@ async def get_visible_student_conversation_list(
             .outerjoin(
                 ModuleSection, ModuleSection.id == AssistantConversation.attached_section_id
             )
-            .join(CourseModule, CourseModule.id == effective_module_id)
-            .join(CourseMembership, CourseMembership.module_id == CourseModule.id)
+            .outerjoin(CourseModule, CourseModule.id == effective_module_id)
+            .outerjoin(CourseMembership, CourseMembership.module_id == CourseModule.id)
             .where(*visibility)
             .order_by(last_activity.desc(), AssistantConversation.id.desc())
             .limit(limit)

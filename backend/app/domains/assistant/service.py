@@ -55,11 +55,12 @@ from app.workers.queues import enqueue_generate_assistant_answer
 LECTURE_DEFAULT = "lecture_default"
 HOMEWORK_HELP = "homework_help"
 EXAM_PREP = "exam_prep"
+TIME_MANAGEMENT = "time_management"
 TITLE_MAX_CHARS = 120
 
-# 8.6a/8.6b: per-kind chip label for the Workspace list + conversation detail (the non-editable "mode"
+# 8.6a-c: per-kind chip label for the Workspace list + conversation detail (the non-editable "mode"
 # badge). The four legacy kinds are all lecture-grounded general chat → "Lecture grounded" (8.4 preserved).
-_MODE_CHIP = {HOMEWORK_HELP: "Homework help", EXAM_PREP: "Exam prep"}
+_MODE_CHIP = {HOMEWORK_HELP: "Homework help", EXAM_PREP: "Exam prep", TIME_MANAGEMENT: "Time management"}
 
 
 def _grounding_chip(conversation_kind: str) -> str:
@@ -104,6 +105,8 @@ def _display_title(
         return f"Homework help · {module_title}"
     if conversation_kind == EXAM_PREP and module_title:
         return f"Exam prep · {module_title}"
+    if conversation_kind == TIME_MANAGEMENT:
+        return "Time management"
     return "Untitled chat"
 
 
@@ -155,6 +158,8 @@ def _compose_answer_basis(msg: AssistantMessage) -> str | None:
             if module_title:
                 return f"Based on this exam's covered-week material: {module_title}"
             return "Based on this exam's covered-week material"
+        if snapshot.get("mode") == TIME_MANAGEMENT:
+            return "Based on your upcoming deadlines and progress data"
         # 8.6a: a module-scoped homework turn grounds on the module's material with no single section.
         if snapshot.get("retrievalScope") == "module":
             if module_title:
@@ -312,12 +317,16 @@ async def create_conversation(
     is set ONCE here and is never mutated afterwards (immutability). Creation is idempotent (D2): a
     double-click resumes the one active conversation for the natural key — the partial-unique indexes make
     the race safe (re-read the winner on IntegrityError). ``lecture_default`` keeps its own section
-    endpoint; ``time_management`` arrives in 8.6c."""
+    endpoint."""
     require_student(current_user.role)
     if payload.conversation_kind == HOMEWORK_HELP:
         return await _create_homework_conversation(db, current_user=current_user, payload=payload)
     if payload.conversation_kind == EXAM_PREP:
         return await _create_exam_prep_conversation(db, current_user=current_user, payload=payload)
+    if payload.conversation_kind == TIME_MANAGEMENT:
+        return await _create_time_management_conversation(
+            db, current_user=current_user, payload=payload
+        )
     raise HTTPException(
         status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
         detail={"code": "unsupported_conversation_kind", "kind": payload.conversation_kind},
@@ -429,6 +438,61 @@ async def _create_exam_prep_conversation(
     return _to_conversation_read(conv)
 
 
+async def _create_time_management_conversation(
+    db: AsyncSession, *, current_user: CurrentUserContext, payload: CreateConversationRequest
+) -> ConversationRead:
+    """Time-management: no module/section/scope binding. Resume-or-create one active per student.
+
+    It is conversational only; no saved plan, calendar, .ics, or Stage 11 artifact is created here.
+    """
+    if (
+        payload.module_id is not None
+        or payload.section_id is not None
+        or payload.assessment_scope_id is not None
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail={"code": "binding_not_allowed_for_time_management"},
+        )
+
+    existing = await _existing_time_management(db, student_id=current_user.user_id)
+    if existing is not None:
+        return _to_conversation_read(existing)
+    now = _now()
+    conv = AssistantConversation(
+        student_id=current_user.user_id,
+        conversation_kind=TIME_MANAGEMENT,
+        title_source="auto",
+        last_activity_at=now,
+        created_at=now,
+        updated_at=now,
+    )
+    db.add(conv)
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        existing = await _existing_time_management(db, student_id=current_user.user_id)
+        if existing is None:  # pragma: no cover - defensive
+            raise
+        return _to_conversation_read(existing)
+    return _to_conversation_read(conv)
+
+
+async def _existing_time_management(
+    db: AsyncSession, *, student_id: UUID
+) -> AssistantConversation | None:
+    return (
+        await db.execute(
+            select(AssistantConversation).where(
+                AssistantConversation.student_id == student_id,
+                AssistantConversation.conversation_kind == TIME_MANAGEMENT,
+                AssistantConversation.deleted_at.is_(None),
+            )
+        )
+    ).scalar_one_or_none()
+
+
 async def _existing_exam_prep(
     db: AsyncSession, *, student_id: UUID, scope_id: UUID
 ) -> AssistantConversation | None:
@@ -495,6 +559,28 @@ async def get_conversation_detail(
             .where(AssistantMessage.conversation_id == conv.id)
         )
     ).scalar_one()
+
+    if conv.conversation_kind == TIME_MANAGEMENT:
+        return ConversationListItem(
+            id=conv.id,
+            conversation_kind=conv.conversation_kind,
+            display_title=_display_title(
+                title=conv.title,
+                title_source=conv.title_source,
+                section_title=None,
+                conversation_kind=conv.conversation_kind,
+                module_title=None,
+            ),
+            module_id=None,
+            module_title=None,
+            attached_section_id=None,
+            section_title=None,
+            section_type=None,
+            last_message_preview=None,
+            last_activity_at=conv.last_activity_at or conv.updated_at,
+            message_count=int(count),
+            grounding_chip=_grounding_chip(conv.conversation_kind),
+        )
 
     # 8.6a: a module-bound homework conversation (no section) — resolve MODULE visibility and render with
     # null section fields + the homework mode chip. Visibility was already re-checked by resolve.

@@ -19,6 +19,7 @@ import { ConversationView } from "../ConversationView";
 import { ExamPrepStarters } from "../ExamPrepStarters";
 import { HomeworkStarters } from "../HomeworkStarters";
 import { StarterChips } from "../StarterChips";
+import { TimeManagementStarters } from "../TimeManagementStarters";
 
 // 8.6b: the exam-prep quiz pointer is sourced from the quiz domain (the assistant never generates a quiz).
 type QuizPointer = { state: "available" | "preparing" | "unavailable" } | null;
@@ -199,6 +200,13 @@ export function AssistantWorkspaceConversation({ conversationId }: { conversatio
               </span>
             ) : null}
           </div>
+        ) : detail.conversationKind === "time_management" ? (
+          <div data-testid="assistant-context-pill" style={styles.pill}>
+            <span style={styles.pillText}>
+              Time management ·{" "}
+              <strong style={styles.pillStrong}>Your deadlines and progress</strong> · Structured data, day-level advice
+            </span>
+          </div>
         ) : detail.conversationKind === "homework_help" ? (
           <div data-testid="assistant-context-pill" style={styles.pill}>
             <span style={styles.pillText}>
@@ -314,6 +322,8 @@ export function AssistantWorkspaceConversation({ conversationId }: { conversatio
         starters={
           detail?.conversationKind === "exam_prep" ? (
             <ExamPrepStarters scope="workspace" onPick={conv.setDraft} />
+          ) : detail?.conversationKind === "time_management" ? (
+            <TimeManagementStarters scope="workspace" onPick={conv.setDraft} />
           ) : detail?.conversationKind === "homework_help" ? (
             <HomeworkStarters scope="workspace" onPick={conv.setDraft} />
           ) : (

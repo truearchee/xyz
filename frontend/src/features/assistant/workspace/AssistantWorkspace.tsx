@@ -8,11 +8,12 @@
  */
 
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
 import { type ConversationListItem } from "../../../lib/api";
 import { api } from "../../../lib/api/wrapper";
+import { useAssistantStore } from "../AssistantStoreProvider";
 import { ExamPrepPicker } from "./ExamPrepPicker";
 import { HomeworkPicker } from "./HomeworkPicker";
 import { LecturePicker } from "./LecturePicker";
@@ -20,7 +21,9 @@ import { LecturePicker } from "./LecturePicker";
 const PAGE = 30;
 
 export function AssistantWorkspace() {
+  const router = useRouter();
   const searchParams = useSearchParams();
+  const store = useAssistantStore();
   const [items, setItems] = useState<ConversationListItem[]>([]);
   const [total, setTotal] = useState(0);
   const [status, setStatus] = useState<"loading" | "loaded" | "error">("loading");
@@ -30,6 +33,7 @@ export function AssistantWorkspace() {
   // unchanged. Only one picker panel is open at a time.
   const [pickingHomework, setPickingHomework] = useState(false);
   const [pickingExamPrep, setPickingExamPrep] = useState(false);
+  const [startingTime, setStartingTime] = useState(false);
 
   const load = useCallback(async () => {
     setStatus("loading");
@@ -60,6 +64,19 @@ export function AssistantWorkspace() {
     }
   }, [items.length]);
 
+  const openTimeManagement = useCallback(async () => {
+    setStartingTime(true);
+    setPicking(false);
+    setPickingHomework(false);
+    setPickingExamPrep(false);
+    try {
+      const id = await store.ensureOpenForMode("time_management", {});
+      router.push(`/student/assistant/${id}`);
+    } finally {
+      setStartingTime(false);
+    }
+  }, [router, store]);
+
   return (
     <section aria-labelledby="assistant-workspace-title" data-testid="assistant-workspace" style={styles.shell}>
       <header style={styles.header}>
@@ -70,6 +87,15 @@ export function AssistantWorkspace() {
           <p style={styles.subtext}>Your lecture chats.</p>
         </div>
         <div style={styles.headerActions}>
+          <button
+            type="button"
+            data-testid="assistant-new-time-management"
+            disabled={startingTime}
+            onClick={() => void openTimeManagement()}
+            style={styles.secondaryButton}
+          >
+            {startingTime ? "Opening…" : "Time management"}
+          </button>
           <button
             type="button"
             data-testid="assistant-new-examprep"
@@ -130,8 +156,7 @@ export function AssistantWorkspace() {
         <div data-testid="assistant-workspace-empty" style={styles.empty}>
           <p style={styles.emptyTitle}>No lecture chats yet</p>
           <p style={styles.muted}>
-            Open a published lecture and tap “Ask the lecture assistant” to start one — it stays here so you
-            can continue later.
+            Open a published lecture or start a workspace mode — it stays here so you can continue later.
           </p>
           <Link href="/student" data-testid="assistant-empty-cta" style={styles.primaryLink}>
             Browse your modules
@@ -171,7 +196,7 @@ function ConversationListRow({ item }: { item: ConversationListItem }) {
         </div>
         <div style={styles.rowMeta}>
           <span>
-            {item.sectionTitle ? `${item.moduleTitle} → ${item.sectionTitle}` : item.moduleTitle} ·{" "}
+            {conversationContext(item)} ·{" "}
             {item.messageCount} {item.messageCount === 1 ? "message" : "messages"}
           </span>
           <span data-testid="assistant-grounded-chip" style={styles.chip}>
@@ -182,6 +207,12 @@ function ConversationListRow({ item }: { item: ConversationListItem }) {
       </Link>
     </li>
   );
+}
+
+function conversationContext(item: ConversationListItem): string {
+  if (item.sectionTitle && item.moduleTitle) return `${item.moduleTitle} → ${item.sectionTitle}`;
+  if (item.moduleTitle) return item.moduleTitle;
+  return "Your deadlines and progress";
 }
 
 function formatRelative(iso: string): string {
