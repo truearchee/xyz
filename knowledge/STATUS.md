@@ -1,6 +1,6 @@
 # Status
 
-_Last updated: 2026-06-20 — **Stage 8.6b (Assistant Exam-prep mode) is FULLY VERIFIED**, stacked on 8.6a on `stage-8.6-assistant-modes` and rebased over the Stage 10 mainline state. 8.6b lets a student pick a named AssessmentScope and opens an `exam_prep` conversation that discusses only that scope using covered weeks' permitted summaries, Stage 9 weak topics, and read-only `platform/query` helpers. It points to the Stage 6 quiz states but never generates a quiz. Routed V2/Cerebras. Verified: backend mode pytest, prompt drift, frontend `tsc` + vitest, 8.6b browser gate, full active Playwright **23/23**, and rule-11 exam-prep smoke. Stage 10 Gamification is already merged to `main`; its Alembic head is `0081`, so `dev_reseed` remains pinned to the higher merged head during this branch rebase._
+_Last updated: 2026-06-20 — **Stage 8.6b (Assistant Exam-prep mode) is FULLY VERIFIED**, stacked on 8.6a on `stage-8.6-assistant-modes` and rebased over the Stage 10 mainline state. 8.6b lets a student pick a named AssessmentScope and opens an `exam_prep` conversation that discusses only that scope using covered weeks' permitted summaries, Stage 9 weak topics, and read-only `platform/query` helpers. It points to the Stage 6 quiz with all three precise states live-verified: ready CTA, processing "being prepared", and none "not available yet", but never generates a quiz. Routed V2/Cerebras. Verified: backend mode pytest, prompt drift, frontend `tsc` + vitest **19**, updated 8.6b browser gate **2/2**, full active Playwright **24/24**, and rule-11 exam-prep smoke. Stage 10 Gamification is already merged to `main`; its Alembic head is `0081`, so `dev_reseed` remains pinned to the higher merged head during this branch rebase._
 
 _(8.6a, earlier on this branch: Mode Coordinator + Homework help — FULLY VERIFIED; full active Playwright 22/22 + rule-11 homework smoke.)_
 
@@ -26,8 +26,8 @@ _(8.6a, earlier on this branch: Mode Coordinator + Homework help — FULLY VERIF
 - **Quiz pointer.** The frontend points to the Stage 6 exam-prep quiz with ready/processing/not-available
   states sourced from the quiz surface.
 - **Routing.** V2/Cerebras route follows the 8.6a smoke lesson.
-- **Verification.** Backend mode tests, prompt drift, frontend type/unit tests, browser gate, full active
-  Playwright **23/23**, and rule-11 exam-prep smoke passed in the original 8.6b gate.
+- **Verification.** Backend mode tests, prompt drift, frontend type/unit tests, updated browser gate **2/2**,
+  full active Playwright **24/24**, and rule-11 exam-prep smoke passed in the final 8.6b gate.
 
 ## Stage 8.6a delivered (mode foundation + Homework help)
 - **Mode = `conversation_kind` + a strategy coordinator (ADR-056).** `generate_assistant_answer_async`

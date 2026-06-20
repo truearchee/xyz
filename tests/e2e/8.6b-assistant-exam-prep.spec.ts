@@ -14,8 +14,10 @@ import {
   getAppUserByEmail,
   getFirstTranscriptChunkText,
   getMembershipsForModule,
+  getModuleSectionWeeks,
   getSectionsForModule,
   runPsqlJson,
+  seedExamPrepProcessingSection,
   sqlLiteral,
   waitForSummariesSettled,
   waitForTranscriptEmbedded,
@@ -195,6 +197,21 @@ async function ask(page: Page, text: string, expectedCompleted: number) {
   await expect(page.locator('[data-testid="workspace-message-assistant"][data-state="completed"]')).toHaveCount(expectedCompleted, { timeout: 60_000 });
 }
 
+// Workspace → "Exam prep" → pick the named module → Start the named scope (used for the negative
+// quiz-pointer states, which the picker offers exactly like a ready scope — it never filters on
+// availability, so the student can always open the conversation; only the in-chat CTA reflects truth).
+async function openExamPrepScope(page: Page, moduleTitle: string, scopeName: string) {
+  await page.goto('/student/assistant');
+  await expect(page.getByTestId('assistant-workspace')).toBeVisible();
+  await page.getByTestId('assistant-new-examprep').click();
+  await expect(page.getByTestId('assistant-examprep-picker')).toBeVisible();
+  await page.getByTestId('assistant-examprep-module').filter({ hasText: moduleTitle }).click();
+  const scopeRow = page.getByTestId('assistant-examprep-scope').filter({ hasText: scopeName });
+  await expect(scopeRow).toBeVisible();
+  await scopeRow.getByTestId('assistant-examprep-start').click();
+  await expect(page).toHaveURL(/\/student\/assistant\/[0-9a-f-]+$/);
+}
+
 test('8.6b exam-prep browser gate', async ({ browser }) => {
   const runId = requireRunId();
   const adminCtx = await browser.newContext();
@@ -279,6 +296,102 @@ test('8.6b exam-prep browser gate', async ({ browser }) => {
     const row = page.getByTestId('assistant-conversation-row').filter({ hasText: moduleTitle });
     await expect(row).toBeVisible();
     await expect(row).toContainText('Exam prep');
+  } finally {
+    await apiStudent?.dispose();
+    await adminCtx.close();
+    await lecturerCtx.close();
+    await studentCtx.close();
+  }
+});
+
+/**
+ * Stage 8.6b — quiz-pointer NEGATIVE states (closing the gap left by the happy "ready → CTA" path). The
+ * three states were specced so the assistant NEVER invents quiz availability, so all three must be live.
+ * This gate seeds the two non-ready scopes and asserts the conversation surface shows the real state — and
+ * NEVER a "Practice with the exam-prep quiz" CTA, and that the assistant generates no quiz:
+ *   • a PROCESSING scope (a covered section's detailed summary is still generating) → "Practice quiz is
+ *     being prepared" (reasonCode='processing');
+ *   • a NOT-AVAILABLE scope (covered week has no eligible/published material) → "Practice quiz not
+ *     available yet" (reasonCode='no_eligible_sections').
+ * The picker offers both exactly like a ready scope (it never filters on availability), so the student can
+ * always open the chat; only the in-chat pointer reflects the truth read from the existing quiz endpoint.
+ */
+test('8.6b exam-prep quiz-pointer negative states (preparing + not-available)', async ({ browser }) => {
+  const runId = requireRunId();
+  const adminCtx = await browser.newContext();
+  const lecturerCtx = await browser.newContext();
+  const studentCtx = await browser.newContext();
+  let apiStudent: APIRequestContext | null = null;
+
+  try {
+    const adminPage = await signInPage(adminCtx, ADMIN_EMAIL, '/admin');
+    const apiAdmin = await createApiContext(await getAccessToken(adminPage));
+    const moduleTitle = `Stage 8.6b QuizPointer ${runId}-${Date.now()}`;
+    const { moduleId } = await createModule(runId, apiAdmin, moduleTitle);
+
+    const lecturerPage = await signInPage(lecturerCtx, LECTURER_EMAIL, '/lecturer');
+    const apiLecturer = await createApiContext(await getAccessToken(lecturerPage));
+    const studentId = getAppUserByEmail(STUDENT_EMAIL).id as string;
+
+    // Two distinct weeks from the module's auto-generated lecture sections: one becomes PROCESSING
+    // (published + detailed summary still generating), one stays draft → NOT-AVAILABLE for the student.
+    type WeekRow = { id: string; type: string; weekNumber: number | null; publishStatus: string };
+    const lectures = (getModuleSectionWeeks(moduleId) as WeekRow[]).filter(
+      (s) => s.type === 'lecture' && s.weekNumber != null,
+    );
+    expect(lectures.length).toBeGreaterThanOrEqual(2);
+    const processingSection = lectures[0];
+    const noneSection = lectures.find((s) => s.weekNumber !== processingSection.weekNumber);
+    expect(noneSection).toBeTruthy();
+
+    // PROCESSING seed: publish the section + COMPLETED active transcript + RUNNING detailed-summary job
+    // (no summary row) → its detailed_study slot derives GENERATING → the covering scope is 'processing'.
+    const seeded = seedExamPrepProcessingSection(processingSection.id, LECTURER_EMAIL);
+    recordManifestValue(runId, 'transcriptIds', seeded.transcriptId);
+
+    // Two NAMED scopes: one over the processing week, one over the still-draft week.
+    const processingScopeName = `Quiz Pointer Preparing ${runId}`;
+    const noneScopeName = `Quiz Pointer NotReady ${runId}`;
+    const procScopeRes = await apiJson<{ id: string }>(apiLecturer, 'POST', `/lecturer/modules/${moduleId}/assessment-scopes`, { name: processingScopeName, coveredWeeks: [processingSection.weekNumber] });
+    expect([200, 201]).toContain(procScopeRes.status);
+    const noneScopeRes = await apiJson<{ id: string }>(apiLecturer, 'POST', `/lecturer/modules/${moduleId}/assessment-scopes`, { name: noneScopeName, coveredWeeks: [noneSection!.weekNumber] });
+    expect([200, 201]).toContain(noneScopeRes.status);
+
+    const page = await signInPage(studentCtx, STUDENT_EMAIL, '/student');
+    apiStudent = await createApiContext(await getAccessToken(page));
+
+    // Backend truth the assistant reads (it never invents availability): the SAME quiz endpoint the CTA is
+    // sourced from reports processing for one scope and a non-processing "not available" for the other.
+    const avail = await apiJson<Array<{ id: string; available: boolean; reasonCode: string | null }>>(
+      apiStudent, 'GET', `/student/modules/${moduleId}/exam-prep-scopes`,
+    );
+    expect(avail.status).toBe(200);
+    const procAvail = avail.body.find((s) => s.id === procScopeRes.body.id);
+    const noneAvail = avail.body.find((s) => s.id === noneScopeRes.body.id);
+    expect(procAvail).toMatchObject({ available: false, reasonCode: 'processing' });
+    expect(noneAvail?.available).toBe(false);
+    expect(noneAvail?.reasonCode).not.toBe('processing'); // the "not available yet" branch, not "being prepared"
+
+    // ── CASE 1: PROCESSING → "Practice quiz is being prepared", and NEVER a fake CTA ──
+    await openExamPrepScope(page, moduleTitle, processingScopeName);
+    const procConversationId = page.url().split('/').pop() as string;
+    await expect(page.getByTestId('assistant-mode-label')).toHaveText('Exam prep');
+    await expect(page.getByTestId('assistant-context-pill')).toContainText(processingScopeName);
+    await expect(page.getByTestId('assistant-examprep-quiz-state')).toHaveText('Practice quiz is being prepared');
+    await expect(page.getByTestId('assistant-examprep-quiz-cta')).toHaveCount(0);
+    expect(conversationKind(procConversationId)).toBe('exam_prep');
+
+    // ── CASE 2: NOT-AVAILABLE → "Practice quiz not available yet", and NEVER a fake CTA ──
+    await openExamPrepScope(page, moduleTitle, noneScopeName);
+    const noneConversationId = page.url().split('/').pop() as string;
+    expect(noneConversationId).not.toBe(procConversationId); // distinct scope → distinct conversation
+    await expect(page.getByTestId('assistant-context-pill')).toContainText(noneScopeName);
+    await expect(page.getByTestId('assistant-examprep-quiz-state')).toHaveText('Practice quiz not available yet');
+    await expect(page.getByTestId('assistant-examprep-quiz-cta')).toHaveCount(0);
+    expect(conversationKind(noneConversationId)).toBe('exam_prep');
+
+    // The assistant generated NO quiz in either state — conversational-only, never invents availability.
+    expect(quizAttemptCountForModule(studentId, moduleId)).toBe(0);
   } finally {
     await apiStudent?.dispose();
     await adminCtx.close();
