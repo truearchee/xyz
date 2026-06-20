@@ -114,16 +114,20 @@ function recordMany(runId: string, field: string, values: string[]) {
 }
 
 // ── glossary / source DB assertions ──
-function entryByNormalizedTerm(studentId: string, normalized: string): { id: string; subjectId: string; definitionStatus: string } | null {
+function entryByNormalizedTerm(
+  studentId: string,
+  normalized: string,
+  subjectId: string,
+): { id: string; subjectId: string; definitionStatus: string } | null {
   return runPsqlJson(
-    `SELECT json_build_object('id', id, 'subjectId', subject_id, 'definitionStatus', definition_status)::text FROM glossary_entries WHERE student_id = ${sqlLiteral(studentId)}::uuid AND normalized_term = ${sqlLiteral(normalized)} AND status = 'active' LIMIT 1;`,
+    `SELECT json_build_object('id', id, 'subjectId', subject_id, 'definitionStatus', definition_status)::text FROM glossary_entries WHERE student_id = ${sqlLiteral(studentId)}::uuid AND normalized_term = ${sqlLiteral(normalized)} AND subject_id = ${sqlLiteral(subjectId)}::uuid AND status = 'active' LIMIT 1;`,
   ) as unknown as { id: string; subjectId: string; definitionStatus: string } | null;
 }
-function countActiveEntries(studentId: string): number {
-  return runPsqlJson(`SELECT to_json(count(*)::int)::text FROM glossary_entries WHERE student_id = ${sqlLiteral(studentId)}::uuid AND status = 'active';`) as unknown as number;
+function countActiveEntries(studentId: string, normalized: string, subjectId: string): number {
+  return runPsqlJson(`SELECT to_json(count(*)::int)::text FROM glossary_entries WHERE student_id = ${sqlLiteral(studentId)}::uuid AND normalized_term = ${sqlLiteral(normalized)} AND subject_id = ${sqlLiteral(subjectId)}::uuid AND status = 'active';`) as unknown as number;
 }
-function countGlossaryEvents(studentId: string, eventType: string): number {
-  return runPsqlJson(`SELECT to_json(count(*)::int)::text FROM student_activity_events WHERE student_id = ${sqlLiteral(studentId)}::uuid AND event_type = ${sqlLiteral(eventType)};`) as unknown as number;
+function countGlossaryEvents(studentId: string, eventType: string, sourceId: string): number {
+  return runPsqlJson(`SELECT to_json(count(*)::int)::text FROM student_activity_events WHERE student_id = ${sqlLiteral(studentId)}::uuid AND event_type = ${sqlLiteral(eventType)} AND source_id = ${sqlLiteral(sourceId)}::uuid;`) as unknown as number;
 }
 function conversationSourcesForEntry(entryId: string): Array<{ conversationId: string | null; messageId: string | null; sectionId: string | null }> {
   return runPsqlJson(
@@ -255,10 +259,10 @@ test('8.5 assistant save-to-glossary browser gate', async ({ browser }) => {
     await expect(answer.getByTestId('save-to-glossary-status')).toHaveAttribute('data-status', 'saved');
 
     // ── entry appears in the student's glossary, subject = THIS lecture; definition fills in async ──
-    await expect.poll(() => entryByNormalizedTerm(studentId, HIGHLIGHT_TERM)?.subjectId ?? null, { timeout: 15_000 }).toBe(moduleId);
-    const entry = entryByNormalizedTerm(studentId, HIGHLIGHT_TERM)!;
-    await expect.poll(() => entryByNormalizedTerm(studentId, HIGHLIGHT_TERM)?.definitionStatus ?? null, { timeout: 30_000 }).toBe('generated');
-    expect(countGlossaryEvents(studentId, 'glossary_term_saved')).toBe(1);
+    await expect.poll(() => entryByNormalizedTerm(studentId, HIGHLIGHT_TERM, moduleId)?.subjectId ?? null, { timeout: 15_000 }).toBe(moduleId);
+    const entry = entryByNormalizedTerm(studentId, HIGHLIGHT_TERM, moduleId)!;
+    await expect.poll(() => entryByNormalizedTerm(studentId, HIGHLIGHT_TERM, moduleId)?.definitionStatus ?? null, { timeout: 30_000 }).toBe('generated');
+    expect(countGlossaryEvents(studentId, 'glossary_term_saved', entry.id)).toBe(1);
     // the source records THIS conversation + message, bound to the lecture section
     const sources = conversationSourcesForEntry(entry.id);
     expect(sources).toHaveLength(1);
@@ -286,7 +290,7 @@ test('8.5 assistant save-to-glossary browser gate', async ({ browser }) => {
     await selectTextIn(page, ASSISTANT_SAVE_CONTENT, HIGHLIGHT_TERM);
     await answer2.getByTestId('save-to-glossary').click();
     await expect(answer2.getByTestId('save-to-glossary-status')).toHaveAttribute('data-status', 'duplicate');
-    expect(countActiveEntries(studentId)).toBe(1);
+    expect(countActiveEntries(studentId, HIGHLIGHT_TERM, moduleId)).toBe(1);
     expect(conversationSourcesForEntry(entry.id)).toHaveLength(1); // idempotent — chat not attached twice
 
     // ── negative (API): an UNBOUND conversation is rejected as a save source (404) ──
@@ -319,7 +323,7 @@ test('8.5 assistant save-to-glossary browser gate', async ({ browser }) => {
       selectedText: HIGHLIGHT_TERM,
     });
     expect(crossStudent.status).toBe(404);
-    expect(entryByNormalizedTerm(student2Id, HIGHLIGHT_TERM)).toBeNull(); // no leak into student-2's glossary
+    expect(entryByNormalizedTerm(student2Id, HIGHLIGHT_TERM, moduleId)).toBeNull(); // no leak into student-2's glossary
   } finally {
     await apiStudent?.dispose();
     await apiStudent2?.dispose();

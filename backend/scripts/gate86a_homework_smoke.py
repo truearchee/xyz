@@ -1,7 +1,7 @@
 """Stage 8.6a — real-provider smoke for the Homework help mode (rule 11; synthetic context only).
 
 Makes real authenticated calls through the production K2Think transport on the **homework_help/v1** route
-(declared `backend: nvidia` → Think/128k), then validates with the production OutputValidator. Proves the
+(declared `backend: cerebras` → V2/32k), then validates with the production OutputValidator. Proves the
 call is REAL and that **rule 11 holds**: the echoed model id equals the CONFIGURED identifier (the
 homework prompt's declared model), NOT a silent deployment alias. ALSO records the **L4 behavioral** check
 (best-effort, NOT a hard gate — the durable guarantee is the L1–L3 guardrail): on a representative
@@ -84,7 +84,7 @@ def main() -> int:
     for label, question, forbidden in _CASES:
         rendered = registry.render(HOMEWORK_KEY, transcript=_blob(question), section_type="lecture")
         expected_model = rendered.model_id
-        backend = rendered.backend  # homework_help/v1 declared route → nvidia (Think)
+        backend = rendered.backend  # homework_help/v1 declared route → cerebras (V2)
         try:
             started = time.monotonic()
             raw = provider.send(rendered=rendered, backend=backend)  # ONE real authenticated POST

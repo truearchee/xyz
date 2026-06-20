@@ -348,6 +348,7 @@ async def test_homework_module_scoped_grounds_with_module_basis(db_session, capt
     assert msg.grounding_status == LECTURE_GROUNDED
     snap = msg.context_snapshot
     assert snap["mode"] == "homework_help"
+    assert snap["promptVersion"] == "v1"
     assert snap["retrievalScope"] == "module"
     assert snap["selectedModuleId"] == str(seed.module.id)
     assert snap["selectedSectionId"] is None
@@ -603,6 +604,7 @@ async def test_exam_prep_turn_grounds_on_scope_with_basis(db_session, captured_e
     assert msg.grounding_status == LECTURE_GROUNDED
     snap = msg.context_snapshot
     assert snap["mode"] == "exam_prep"
+    assert snap["promptVersion"] == "v1"
     assert snap["assessmentScopeId"] == str(seed.scope.id)
     assert snap["coveredWeeks"] == [1]
     assert str(seed.section.id) in snap["resolvedSectionIds"]
@@ -782,6 +784,7 @@ async def test_time_management_grounds_on_own_deadlines_and_progress_only(db_ses
     assert msg.grounding_status == LECTURE_GROUNDED
     snap = msg.context_snapshot
     assert snap["mode"] == "time_management"
+    assert snap["promptVersion"] == "v1"
     assert snap["retrievalScope"] == "structured_schedule_progress"
     assert snap["windowDays"] == 14
     assert [r["sectionId"] for r in snap["deadlineRefs"]] == [str(seed.section.id)]
