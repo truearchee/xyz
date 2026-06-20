@@ -691,6 +691,8 @@ Transcript retention/deletion policy  BEFORE any real-student deployment —
                                       recordings of identifiable people stored
                                       indefinitely is a policy decision, not a default
 DeepL translation adapter             post-MVP per Slice 6 (adapter swap only)
+Shared glossary save entry-type picker
+                                      small dedicated follow-up for summary + chat saves
 Zoom import                           as a source adapter into the SAME pipeline
 Multi-institution model               per the Stage 9 ADR
 OpenAI embeddings option              if retrieval quality demands (Slice 5 note)
