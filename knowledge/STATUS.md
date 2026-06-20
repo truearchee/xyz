@@ -1,40 +1,72 @@
 # Status
 
-_Last updated: 2026-06-21 — **Stage 10 (Gamification): FULLY VERIFIED and merged to main.** Post-review hardening is complete: `newBadgeIds` is now based on rows actually inserted by `INSERT ... ON CONFLICT DO NOTHING RETURNING`, `nextScheduledDay` is populated from the next scheduled lecture/lab date, unrelated Stage 6 screenshot churn is restored out of the merge surface, and architecture docs are updated. Pre-landing proof on the rebuilt backend image and a fresh DB: Alembic `0041 → 0080 → 0081`, single head `0081`, downgrade/upgrade round-trip clean, `test_shared_check_union` green, full backend `660 passed`, frontend `tsc` clean + unit `12 passed`, and rule-14 full active Playwright **`24 passed (6.4m)`** with `PLAYWRIGHT_BASE_URL=http://localhost:3001`, `E2E_RUN_ID=e2e-stage10-reviewfix-20260620234724`, `.env.e2e` exported. Post-merge landing checks must confirm the same Alembic single-head/round-trip and shared-CHECK guard on main._
+_Last updated: 2026-06-20 — **Stage 8.6a (Assistant Mode Coordinator + Homework help) is FULLY VERIFIED** on `stage-8.6-assistant-modes`, rebased over the Stage 10 mainline state. The reusable mode foundation + Homework help are implemented end to end over the existing 8.1/8.2 seam with NO new provider/gateway code (rule 6), ONE call/turn @ interactive priority (rule 15), create-then-poll (no SSE). Verified at every level: backend **649 pytest** (625 prior + 24 new mode tests; 53 existing assistant tests green), migration **0042** single-head + fresh-DB round-trip, prompt-drift OK, frontend **tsc** + **vitest 9** green, client regen, 8.6a browser gate, full active Playwright **22/22**, and rule-11 homework smoke PASS on the Cerebras route. Stage 10 Gamification is already merged to `main`; its Alembic head is `0081`, so `dev_reseed` remains pinned to the higher merged head during this branch rebase._
 
-## Current state
-- Branch: `main`
-- Migration block: **0080–0081** (reassigned 0048→0060→**0080** per the Stage 10/11 coordination note — Stage 11 climbs from 0056 and owns 0057–0079; Stage 8.6 took 0042). Chain `… → 0041 → 0080 → 0081`; single head expected: `0081`.
+## Current branch
+- Branch: `stage-8.6-assistant-modes`
+- Target branch: `origin/main`
+- Base branch includes Stage 10 Gamification merged to `main` with Alembic head `0081`.
+- Stage 8.6a adds migration `0042`; later stacked Stage 8.6 commits add `0043` and `0044`.
+- Gate harness (workspace-local, gitignored): `.context/8.6a-gate.override.yml` runs the Dallas stack on
+  :8005/:3005 with a unique backend image tag to avoid sibling workspace image contention.
 
-## Stage 10 delivered (one Learning streak + badges, on-read, event-derived)
-- **Decisions A/A/A (owner-confirmed):** flashcard volume = **distinct local days with a completed flashcard session** (no per-card event exists; farm-proof; honest label) — [[decisions/adr-057-gamification-on-read-evaluation]]; **`COURSE_TIMEZONE` platform setting** (single IANA, DST-aware, default UTC; required hosted config at 4.8) — [[decisions/adr-056-gamification-course-timezone]]; **Tailwind panel** (no new inline-style debt).
-- **Streak (derived on read, pure fn):** consecutive scheduled class days with any qualifying activity; today-not-yet-broken, neutral no-class days, `nextScheduledDay` from the nearest future scheduled lecture/lab, `occurred_at`-as-activity-day; monotonic `longest_streak` persisted in `student_streak_state`. Statuses active / needs_activity_today / broken / no_scheduled_day.
-- **Badges (on read, persisted, sticky, idempotent):** code catalog (14 badges, 4 families), pure `evaluate_badges`, `INSERT … ON CONFLICT DO NOTHING RETURNING`; `newBadgeIds` is derived from rows actually inserted by the current read. `scope_id` non-null sentinel for global. `topic_mastered` reuses Stage 9 `status_label='strong'` (no invented threshold); volume badges count DISTINCT source items.
-- **`studied_section` (content-domain-owned, rule 7):** emitted on the student section-summary GET, deduped per student+section+configured-tz local day via a deterministic `uuid5` source_id reusing `UNIQUE(event_type, source_id)`; savepoint-wrapped so the read never breaks but failures are logged + retryable; CHECK widened additively (`0080`) + union CI guard extended.
-- **platform/query primitives** (`gamification_read.py`, read-only, additive — reusable by Stage 11): `scheduled_class_days`, `next_scheduled_class_day`, and `engagement_days` (the single "showing up" source of truth) + badge-metric loaders.
-- **API:** `GET /student/gamification` (student-only 403-gated, no `student_id` param, `Cache-Control: private, no-store`). Client regenerated (`GamificationService` + 4 models). `GamificationPanel` fills the Stage 9 placeholder (kept `data-testid="gamification-placeholder"` so the Stage 9 spec still passes).
-- **Reconcile tool** `scripts/reconcile_gamification.py` (dev/verification CLI, not HTTP) — rebuilds expected badges from events via the SAME `evaluate_badges` and asserts stored ⊇ qualified.
+## Stage 10 delivered on main
+- Stage 10 Gamification is FULLY VERIFIED and merged to `main`.
+- Migration block `0080-0081` is on main; expected merged Alembic head is `0081`.
+- The Stage 10 report and log entries remain the source for the full gamification verification record.
+
+## Stage 8.6a delivered (mode foundation + Homework help)
+- **Mode = `conversation_kind` + a strategy coordinator (ADR-056).** `generate_assistant_answer_async`
+  dispatches by kind via `_MODE_TURN_BUILDERS` (default = `_lecture_turn`, the existing behavior extracted
+  VERBATIM; `homework_help` -> `_homework_turn`). A `_ModeTurn` carries the per-mode prep; the single
+  `gateway.complete(... priority="interactive", feature="assistant")`, `decide_grounding`, and
+  `_persist_grounded_answer` are shared. Kind is immutable; the per-mode snapshot rides the existing
+  `context_snapshot`.
+- **Homework (ADR-057).** Routes V2/Cerebras/32k via `homework_help/v1.yaml` after the rule-11 smoke showed
+  the originally specced Think/Nvidia route was not suitable. Homework grounds on the bound module's permitted
+  material via `retrieve_module_chunks` or the section scan when narrowed, and always coaches rather than
+  giving direct answers.
+- **Resume-or-create.** Migration 0042 adds one-active homework partial-unique indexes for module and
+  optional-section bindings.
+- **Section-or-module reads.** Conversation list/detail/visibility reads and DTOs are module-aware for
+  module-bound homework while preserving the section-bound path.
+- **Frontend.** Workspace "Help with homework" entry, `HomeworkPicker`, `HomeworkStarters`, non-editable mode
+  label, homework context pills, and shared `ConversationView` support.
 
 ## Verification
-- Alembic: fresh DB `upgrade head` ran `… 0041 → 0080 → 0081`; `alembic heads` → `0081 (head)`; `downgrade 0041 → upgrade head` round-trip clean.
-- Backend `pytest`: full suite green (the 1 dev_reseed head-pin advanced 0041→0081 → fixed); **new gamification suites:** `test_gamification_streak` 13, `test_gamification_service` 14, `test_gamification_studied_section` 3, `test_gamification_api` 5 = **35** + `test_shared_check_union` (studied_section assertion). Includes the milestone-keys-off-`longest_streak`-held-after-a-later-break trap, studied_section recording-failure-is-logged (visible, not swallowed), concurrent first-read `newBadgeIds`, and `nextScheduledDay` assertions. Full backend rerun after review fixes: **660 passed**. `reconcile_gamification.py` → "reconcile OK" from the original Stage 10 gate.
-- Client regenerated from the live OpenAPI (only `index.ts` + 5 new gamification files); frontend `tsc` exit 0; `test:unit` **12 passed** (incl. 3 new `GamificationPanel` tests); zero NEW `check:inline-styles`/`check:design-tokens` violations (the gate stays repo-red from the 396 Stage-12 backlog; Stage 10 added none and removed the placeholder's inline section).
-- E2E gate `tests/e2e/10-gamification.spec.ts` authored and green; full active suite lists **24 tests / 19 files** and the post-review clean-stack rule-14 rerun passed **24/24** (`24 passed (6.4m)`, run id `e2e-stage10-reviewfix-20260620234724`).
-
-## Landing status
-- Stage 10's FULLY VERIFIED product gate is closed by the clean full-suite `24 passed (6.4m)` rerun above. Landing on `main` requires the immediate post-merge Alembic head/round-trip and `test_shared_check_union` checks.
+- Alembic: `alembic upgrade head` -> single head `0042` during the original 8.6a gate; fresh-DB round-trip
+  `downgrade 0041 -> upgrade head` clean.
+- Backend pytest: **649 passed** after the 8.6a implementation gate.
+- New `tests/test_assistant_modes.py`: **24 passed**; existing assistant tests **53 passed**.
+- Frontend `tsc` exit 0; vitest **9 passed**.
+- Live 8.6a browser gate passed; full active Playwright **22/22** (`e2e-86a-final`, 7.2m).
+- Rule-11 homework smoke passed on Cerebras with the configured model echo and coaching guardrail held.
 
 ## Known-state notes
-- Shared `kyiv-backend` image tag picked up a sibling's migration `0042` and stamped the dev DB; isolated via `.context/stage10.override.yml` (unique `da-nang-stage10-backend` image + source bind-mount) + a dev-DB reset (Stage 8.2 pattern).
-- `dev_reseed.EXPECTED_ALEMBIC_VERSION` advanced `0041 → 0081`; keep it pinned to the merged Alembic head.
+- `check:design-tokens`/`check:inline-styles` remain known-red from the pre-existing Stage 12 backlog; 8.6a
+  followed the existing inline idiom.
+- `test_quiz_pool::test_pool_one_active_lock_concurrent_first_requests` is a pre-existing flaky full-suite
+  backend test that passes in isolation.
+- `dev_reseed.EXPECTED_ALEMBIC_VERSION` stays on the higher merged mainline pin `0081` while this branch is
+  rebased over Stage 10.
+
+## Stage 8.6a documents
+- Spec: [[specs/stage-08/8.6a-mode-coordinator-homework]]
+- Plan: [[plans/stage-08/8.6a-mode-coordinator-homework]]
+- Report: [[steps/stage-08/8.6a-mode-coordinator-homework]]
+- ADRs: [[decisions/adr-056-assistant-mode-coordinator]], [[decisions/adr-057-assistant-mode-routing-budget]]
+- Gate handoff: [[steps/stage-08/findings-8.6a-gate-handoff]]
+- Smoke: [[steps/stage-08/8.6-real-provider-smoke]]
 
 ## Stage 10 documents
 - Spec: [[specs/stage-10/10-gamification]]
 - Plan: [[plans/stage-10/10a-foundation]]
 - Report: [[steps/stage-10/10a-foundation]]
-- ADRs: [[decisions/adr-056-gamification-course-timezone]] · [[decisions/adr-057-gamification-on-read-evaluation]]
+- ADRs: [[decisions/adr-056-gamification-course-timezone]], [[decisions/adr-057-gamification-on-read-evaluation]]
 
 ## Prior
-- 2026-06-20 — Stage 8.5 Save-to-Glossary from the assistant FULLY VERIFIED (migration 0041); 625 backend pytest; full Playwright 21/21.
-- 2026-06-19 — Stage 8.4 Assistant Workspace + floating widget FULLY VERIFIED (0040); PR #10. Stage 4.9g monochrome redesign merged.
-- 2026-06-18 — Stage 9 My Progress FULLY VERIFIED (0038-0039); Stage 8.2 + 8.1; Stage 7 core; Stage 6 + 5.5 + 5.
+- 2026-06-21 — Stage 10 Gamification FULLY VERIFIED and merged to main (migration head `0081`).
+- 2026-06-20 — Stage 8.5 Save-to-Glossary from the Assistant FULLY VERIFIED (migration 0041); gate 21/21.
+- 2026-06-19 — Stage 8.4 Assistant Workspace + floating widget FULLY VERIFIED (migration 0040); PR #10.
+- 2026-06-18 — Stage 9 My Progress FULLY VERIFIED (0038-0039); Stage 8.2 + 8.1 FULLY VERIFIED.
+- 2026-06-18 — Stage 7 core (7a-7c) FULLY VERIFIED; Stage 6 + Stage 5.5 + Stage 5 FULLY VERIFIED.

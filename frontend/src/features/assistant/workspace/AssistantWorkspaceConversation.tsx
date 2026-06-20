@@ -16,6 +16,7 @@ import { ApiError, type ConversationListItem } from "../../../lib/api";
 import { ForbiddenError, api } from "../../../lib/api/wrapper";
 import { useAssistantConversation, useAssistantStore } from "../AssistantStoreProvider";
 import { ConversationView } from "../ConversationView";
+import { HomeworkStarters } from "../HomeworkStarters";
 import { StarterChips } from "../StarterChips";
 
 type DetailState = "loading" | "loaded" | "gone" | "error";
@@ -129,23 +130,54 @@ export function AssistantWorkspaceConversation({ conversationId }: { conversatio
       </div>
 
       {detailState === "loaded" && detail && !renaming ? (
-        <h2 data-testid="assistant-conversation-title" style={styles.convTitle}>{detail.displayTitle}</h2>
+        <div style={styles.titleRow}>
+          <h2 data-testid="assistant-conversation-title" style={styles.convTitle}>{detail.displayTitle}</h2>
+          {/* 8.6a: the mode shown as a non-editable LABEL (never a selector — kind is immutable). */}
+          <span data-testid="assistant-mode-label" style={styles.modeLabel}>{detail.groundingChip}</span>
+        </div>
       ) : null}
 
       {detailState === "loaded" && detail ? (
-        <div data-testid="assistant-context-pill" style={styles.pill}>
-          <span style={styles.pillText}>
-            Chatting about: <strong style={styles.pillStrong}>{detail.sectionTitle}</strong> · Grounded in
-            published lecture material
-          </span>
-          <Link
-            href={`/student/modules/${detail.moduleId}/sections/${detail.attachedSectionId}`}
-            data-testid="assistant-open-lecture"
-            style={styles.pillAction}
-          >
-            Open lecture
-          </Link>
-        </div>
+        detail.conversationKind === "homework_help" ? (
+          <div data-testid="assistant-context-pill" style={styles.pill}>
+            <span style={styles.pillText}>
+              Homework help ·{" "}
+              {detail.sectionTitle ? (
+                <>
+                  Focused on <strong style={styles.pillStrong}>{detail.sectionTitle}</strong>
+                </>
+              ) : (
+                <>
+                  Across <strong style={styles.pillStrong}>{detail.moduleTitle}</strong>
+                </>
+              )}{" "}
+              · Hints and coaching, never the final answer
+            </span>
+            {detail.attachedSectionId ? (
+              <Link
+                href={`/student/modules/${detail.moduleId}/sections/${detail.attachedSectionId}`}
+                data-testid="assistant-open-lecture"
+                style={styles.pillAction}
+              >
+                Open lecture
+              </Link>
+            ) : null}
+          </div>
+        ) : (
+          <div data-testid="assistant-context-pill" style={styles.pill}>
+            <span style={styles.pillText}>
+              Chatting about: <strong style={styles.pillStrong}>{detail.sectionTitle}</strong> · Grounded in
+              published lecture material
+            </span>
+            <Link
+              href={`/student/modules/${detail.moduleId}/sections/${detail.attachedSectionId}`}
+              data-testid="assistant-open-lecture"
+              style={styles.pillAction}
+            >
+              Open lecture
+            </Link>
+          </div>
+        )
       ) : detailState === "loading" ? (
         <p style={styles.muted}>Loading conversation…</p>
       ) : null}
@@ -218,7 +250,13 @@ export function AssistantWorkspaceConversation({ conversationId }: { conversatio
         onDraftChange={conv.setDraft}
         conversationId={conversationId}
         saveSectionId={detail?.attachedSectionId ?? null}
-        starters={<StarterChips scope="workspace" onPick={conv.setDraft} />}
+        starters={
+          detail?.conversationKind === "homework_help" ? (
+            <HomeworkStarters scope="workspace" onPick={conv.setDraft} />
+          ) : (
+            <StarterChips scope="workspace" onPick={conv.setDraft} />
+          )
+        }
       />
     </section>
   );
@@ -227,7 +265,12 @@ export function AssistantWorkspaceConversation({ conversationId }: { conversatio
 const styles = {
   shell: { display: "grid", gap: 12, margin: "0 auto", maxWidth: 720 },
   topBar: { alignItems: "center", display: "flex", justifyContent: "space-between" },
+  titleRow: { alignItems: "baseline", display: "flex", flexWrap: "wrap", gap: 8 },
   convTitle: { color: "#111827", fontSize: 18, fontWeight: 600, lineHeight: 1.3, margin: 0 },
+  modeLabel: {
+    background: "#f5f5f7", borderRadius: 9999, color: "#4b5563", fontSize: 11, fontWeight: 600,
+    padding: "2px 8px", whiteSpace: "nowrap",
+  },
   actions: { display: "flex", gap: 8 },
   backLink: { color: "#174a63", fontSize: 14, fontWeight: 600, textDecoration: "none" },
   linkButton: { background: "none", border: "none", color: "#174a63", cursor: "pointer", fontSize: 13, fontWeight: 600, padding: 0 },

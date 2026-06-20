@@ -22,6 +22,7 @@ export type { ConversationListItem } from './models/ConversationListItem';
 export type { ConversationRead } from './models/ConversationRead';
 export type { ConversationSaveSource } from './models/ConversationSaveSource';
 export type { CreateAssessmentScopeRequest } from './models/CreateAssessmentScopeRequest';
+export type { CreateConversationRequest } from './models/CreateConversationRequest';
 export type { CreateModuleRequest } from './models/CreateModuleRequest';
 export { CreateUserRequest } from './models/CreateUserRequest';
 export { CurrentUserResponse } from './models/CurrentUserResponse';

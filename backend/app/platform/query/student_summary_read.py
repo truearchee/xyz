@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domains.transcripts.summary_eligibility import is_summary_eligible
@@ -47,6 +47,12 @@ class VisibleStudentSection:
     due_at: datetime | None
     lecturer_notes: str | None
     course_module_id: UUID
+
+
+@dataclass(frozen=True)
+class VisibleStudentModule:
+    id: UUID
+    title: str
 
 
 @dataclass(frozen=True)
@@ -132,6 +138,32 @@ async def get_visible_student_section(
         lecturer_notes=row.lecturer_notes,
         course_module_id=row.course_module_id,
     )
+
+
+async def get_visible_student_module(
+    db: AsyncSession,
+    *,
+    student_id: UUID,
+    module_id: UUID,
+) -> VisibleStudentModule | None:
+    """Module-level analogue of ``get_visible_student_section`` (Stage 8.6a). One row iff the module is
+    active and the student is an active student-member; otherwise zero rows (caller → pinned 404). Used by
+    the homework mode, which binds a MODULE (not a single section). No fetch-then-branch."""
+    result = await db.execute(
+        select(CourseModule.id, CourseModule.title)
+        .join(CourseMembership, CourseMembership.module_id == CourseModule.id)
+        .where(
+            CourseModule.id == module_id,
+            CourseModule.is_active.is_(True),
+            CourseMembership.user_id == student_id,
+            CourseMembership.role == "student",
+            CourseMembership.status == "active",
+        )
+    )
+    row = result.one_or_none()
+    if row is None:
+        return None
+    return VisibleStudentModule(id=row.id, title=row.title)
 
 
 async def get_student_section_materials(
@@ -356,13 +388,16 @@ async def get_visible_student_section_list(
 @dataclass(frozen=True)
 class StudentConversationListRow:
     id: UUID
+    conversation_kind: str
     title: str | None
     title_source: str
-    attached_section_id: UUID
+    # 8.6a: section fields are NULL for a module-bound (sectionless) homework conversation; module is
+    # always present (a homework conversation binds a module, a lecture conversation's section has one).
+    attached_section_id: UUID | None
     module_id: UUID
     module_title: str
-    section_title: str
-    section_type: str
+    section_title: str | None
+    section_type: str | None
     last_activity_at: datetime
     message_count: int
     last_message_preview: str | None
@@ -391,19 +426,40 @@ async def get_visible_student_conversation_list(
     limit: int,
     offset: int,
 ) -> tuple[list[StudentConversationListRow], int]:
-    """The Workspace conversation list. Returns the student's OWN, non-soft-deleted conversations whose
-    attached section is STILL visible — the SAME published+active-module+active-membership predicate as
+    """The Workspace conversation list. Returns the student's OWN, non-soft-deleted conversations that are
+    STILL visible — the SAME published+active-module+active-membership predicate as
     ``get_visible_student_section``, so a list row exists iff a direct open would succeed (invariant C is
     STRUCTURAL, not a parallel filter that could drift). Newest-activity-first; ``message_count`` and the
-    last-message preview are batched (no per-row fan-out). Read model only (rule 8)."""
+    last-message preview are batched (no per-row fan-out). Read model only (rule 8).
+
+    8.6a: a conversation may be SECTION-bound (lecture chat — visibility via the section) or MODULE-bound
+    (homework, no section — visibility via ``attached_module_id``). The section is LEFT-joined and the
+    effective module is ``COALESCE(section.course_module_id, attached_module_id)``; the visibility
+    predicate keeps the section-bound case BYTE-IDENTICAL (section must be published+active) and adds the
+    module-bound case (section NULL + module bound). Module-active + active-membership apply to both."""
     last_activity = func.coalesce(
         AssistantConversation.last_activity_at, AssistantConversation.updated_at
+    )
+    effective_module_id = func.coalesce(
+        ModuleSection.course_module_id, AssistantConversation.attached_module_id
+    )
+    # Either the section is bound AND published+active (lecture chat), or it is a module-bound homework
+    # conversation (no section). The module + membership predicate below applies to both.
+    bound_and_visible = or_(
+        and_(
+            AssistantConversation.attached_section_id.is_not(None),
+            ModuleSection.publish_status == "published",
+            ModuleSection.status == "active",
+        ),
+        and_(
+            AssistantConversation.attached_section_id.is_(None),
+            AssistantConversation.attached_module_id.is_not(None),
+        ),
     )
     visibility = (
         AssistantConversation.student_id == student_id,
         AssistantConversation.deleted_at.is_(None),
-        ModuleSection.publish_status == "published",
-        ModuleSection.status == "active",
+        bound_and_visible,
         CourseModule.is_active.is_(True),
         CourseMembership.user_id == student_id,
         CourseMembership.role == "student",
@@ -414,8 +470,10 @@ async def get_visible_student_conversation_list(
         await db.execute(
             select(func.count())
             .select_from(AssistantConversation)
-            .join(ModuleSection, ModuleSection.id == AssistantConversation.attached_section_id)
-            .join(CourseModule, CourseModule.id == ModuleSection.course_module_id)
+            .outerjoin(
+                ModuleSection, ModuleSection.id == AssistantConversation.attached_section_id
+            )
+            .join(CourseModule, CourseModule.id == effective_module_id)
             .join(CourseMembership, CourseMembership.module_id == CourseModule.id)
             .where(*visibility)
         )
@@ -425,6 +483,7 @@ async def get_visible_student_conversation_list(
         await db.execute(
             select(
                 AssistantConversation.id,
+                AssistantConversation.conversation_kind,
                 AssistantConversation.title,
                 AssistantConversation.title_source,
                 AssistantConversation.attached_section_id,
@@ -434,8 +493,10 @@ async def get_visible_student_conversation_list(
                 ModuleSection.type,
                 last_activity.label("last_activity_at"),
             )
-            .join(ModuleSection, ModuleSection.id == AssistantConversation.attached_section_id)
-            .join(CourseModule, CourseModule.id == ModuleSection.course_module_id)
+            .outerjoin(
+                ModuleSection, ModuleSection.id == AssistantConversation.attached_section_id
+            )
+            .join(CourseModule, CourseModule.id == effective_module_id)
             .join(CourseMembership, CourseMembership.module_id == CourseModule.id)
             .where(*visibility)
             .order_by(last_activity.desc(), AssistantConversation.id.desc())
@@ -479,14 +540,15 @@ async def get_visible_student_conversation_list(
     return [
         StudentConversationListRow(
             id=r[0],
-            title=r[1],
-            title_source=r[2],
-            attached_section_id=r[3],
-            module_id=r[4],
-            module_title=r[5],
-            section_title=r[6],
-            section_type=r[7],
-            last_activity_at=r[8],
+            conversation_kind=r[1],
+            title=r[2],
+            title_source=r[3],
+            attached_section_id=r[4],
+            module_id=r[5],
+            module_title=r[6],
+            section_title=r[7],
+            section_type=r[8],
+            last_activity_at=r[9],
             message_count=int(counts.get(r[0], 0)),
             last_message_preview=preview_by_conv.get(r[0]),
         )
@@ -497,12 +559,14 @@ async def get_visible_student_conversation_list(
 # re-export for the service's step-key iteration
 __all__ = [
     "VisibleStudentSection",
+    "VisibleStudentModule",
     "StudentMaterialRow",
     "SectionSummaryInputs",
     "StudentSectionListRow",
     "StudentConversationListRow",
     "resolve_single_active",
     "get_visible_student_section",
+    "get_visible_student_module",
     "get_student_section_materials",
     "get_section_summary_inputs",
     "get_visible_student_section_list",

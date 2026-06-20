@@ -13,6 +13,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { type ConversationListItem } from "../../../lib/api";
 import { api } from "../../../lib/api/wrapper";
+import { HomeworkPicker } from "./HomeworkPicker";
 import { LecturePicker } from "./LecturePicker";
 
 const PAGE = 30;
@@ -24,6 +25,9 @@ export function AssistantWorkspace() {
   const [status, setStatus] = useState<"loading" | "loaded" | "error">("loading");
   const [loadingMore, setLoadingMore] = useState(false);
   const [picking, setPicking] = useState(searchParams.get("new") === "1");
+  // 8.6a: homework mode entry — a separate starter so the 8.4 lecture-chat flow (New chat → LecturePicker)
+  // is unchanged. Only one picker panel is open at a time.
+  const [pickingHomework, setPickingHomework] = useState(false);
 
   const load = useCallback(async () => {
     setStatus("loading");
@@ -63,17 +67,34 @@ export function AssistantWorkspace() {
           </h1>
           <p style={styles.subtext}>Your lecture chats.</p>
         </div>
-        <button
-          type="button"
-          data-testid="assistant-new-chat"
-          onClick={() => setPicking((v) => !v)}
-          style={styles.primaryButton}
-        >
-          {picking ? "Close" : "New chat"}
-        </button>
+        <div style={styles.headerActions}>
+          <button
+            type="button"
+            data-testid="assistant-new-homework"
+            onClick={() => {
+              setPickingHomework((v) => !v);
+              setPicking(false);
+            }}
+            style={styles.secondaryButton}
+          >
+            {pickingHomework ? "Close" : "Help with homework"}
+          </button>
+          <button
+            type="button"
+            data-testid="assistant-new-chat"
+            onClick={() => {
+              setPicking((v) => !v);
+              setPickingHomework(false);
+            }}
+            style={styles.primaryButton}
+          >
+            {picking ? "Close" : "New chat"}
+          </button>
+        </div>
       </header>
 
       {picking ? <LecturePicker onClose={() => setPicking(false)} /> : null}
+      {pickingHomework ? <HomeworkPicker onClose={() => setPickingHomework(false)} /> : null}
 
       {status === "loading" ? (
         <ul aria-busy="true" style={styles.list}>
@@ -133,8 +154,8 @@ function ConversationListRow({ item }: { item: ConversationListItem }) {
         </div>
         <div style={styles.rowMeta}>
           <span>
-            {item.moduleTitle} → {item.sectionTitle} · {item.messageCount}{" "}
-            {item.messageCount === 1 ? "message" : "messages"}
+            {item.sectionTitle ? `${item.moduleTitle} → ${item.sectionTitle}` : item.moduleTitle} ·{" "}
+            {item.messageCount} {item.messageCount === 1 ? "message" : "messages"}
           </span>
           <span data-testid="assistant-grounded-chip" style={styles.chip}>
             {item.groundingChip}
@@ -161,7 +182,8 @@ function formatRelative(iso: string): string {
 
 const styles = {
   shell: { display: "grid", gap: 16, margin: "0 auto", maxWidth: 720 },
-  header: { alignItems: "start", display: "flex", justifyContent: "space-between" },
+  header: { alignItems: "start", display: "flex", gap: 12, justifyContent: "space-between" },
+  headerActions: { display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "flex-end" },
   title: { color: "#111827", fontSize: 24, lineHeight: 1.2, margin: 0 },
   subtext: { color: "#4b5563", fontSize: 14, margin: "4px 0 0" },
   list: { display: "grid", gap: 0, listStyle: "none", margin: 0, padding: 0 },

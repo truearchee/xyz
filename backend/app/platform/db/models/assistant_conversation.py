@@ -39,7 +39,10 @@ class AssistantConversation(Base):
     __tablename__ = "assistant_conversations"
     __table_args__ = (
         CheckConstraint(
-            "conversation_kind IN ('lecture_default', 'manual', 'floating_widget', 'workspace')",
+            # 8.6a (migration 0042) widened this to admit 'homework_help'; 8.6b/8.6c add the other two
+            # mode kinds. The four original kinds all map to the existing general-chat path.
+            "conversation_kind IN "
+            "('lecture_default', 'manual', 'floating_widget', 'workspace', 'homework_help')",
             name="ck_assistant_conversations_kind",
         ),
         CheckConstraint(
@@ -55,6 +58,30 @@ class AssistantConversation(Base):
             "attached_section_id",
             unique=True,
             postgresql_where=text("conversation_kind = 'lecture_default' AND deleted_at IS NULL"),
+        ),
+        # 8.6a resume-or-create (D2): one active homework conversation per (student, module [, section]).
+        # Split on the nullable attached_section_id so the natural key is TOTAL (Postgres treats NULLs as
+        # distinct in a unique index), matching migration 0042.
+        Index(
+            "uq_assistant_conversations_one_homework_section",
+            "student_id",
+            "attached_module_id",
+            "attached_section_id",
+            unique=True,
+            postgresql_where=text(
+                "conversation_kind = 'homework_help' "
+                "AND attached_section_id IS NOT NULL AND deleted_at IS NULL"
+            ),
+        ),
+        Index(
+            "uq_assistant_conversations_one_homework_module",
+            "student_id",
+            "attached_module_id",
+            unique=True,
+            postgresql_where=text(
+                "conversation_kind = 'homework_help' "
+                "AND attached_section_id IS NULL AND deleted_at IS NULL"
+            ),
         ),
     )
 
@@ -72,6 +99,12 @@ class AssistantConversation(Base):
     attached_section_id: Mapped[UUID | None] = mapped_column(
         PostgresUUID(as_uuid=True),
         ForeignKey("module_sections.id", ondelete="CASCADE"),
+    )
+    # 8.6a: the module a homework_help conversation is bound to (homework binds a module; the optional
+    # attached_section_id narrows retrieval to one lecture/lab). NULL for the section-bound legacy kinds.
+    attached_module_id: Mapped[UUID | None] = mapped_column(
+        PostgresUUID(as_uuid=True),
+        ForeignKey("course_modules.id", ondelete="CASCADE"),
     )
     title: Mapped[str | None] = mapped_column(Text)
     # 8.4: 'auto' (title derived-on-read from the lecture) until a manual rename flips it to 'manual';
