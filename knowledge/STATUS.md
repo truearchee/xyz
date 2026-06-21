@@ -1,6 +1,6 @@
 # Status
 
-_Last updated: 2026-06-21 12:19 +04 — **Stage 8.6d topic-mastery visibility repair is applied and fully reverified** on `stage-8.6-assistant-modes`, rebased over the Stage 10 mainline state. `list_topic_mastery()` now filters `ModuleSection.publish_status == "published"`, so hidden topic-mastery rows disappear from Stage 9 progress output and from Stage 8.6b/8.6c weak-topic prompt/snapshot context. Regressions were added for Stage 9, exam-prep, and time-management; no migration was needed. Verification GREEN: affected backend pytest **42 passed, 7 warnings in 14.68s** and full active Playwright **25/25** (`e2e-86d-full2-1782029476`, serial, 6.2m) on :8005/:3005 with `E2E_COMPOSE_FILES`. The first Playwright attempt was a missing-run-manifest harness setup failure only; explicit fixture seeding produced the passing rerun. Cross-branch hand-off for Stage 10/11 direct reads is recorded in [[steps/findings-topic-mastery-visibility]]. Stage 10 Gamification is already merged to `main`; its Alembic head is `0081`, so `dev_reseed` remains pinned to the higher merged head during this branch rebase._
+_Last updated: 2026-06-21 12:19 +04 — **Stage 8.6d topic-mastery visibility repair is applied and fully reverified** on `stage-8.6-assistant-modes`, rebased over the Stage 10 mainline state. `list_topic_mastery()` now filters `ModuleSection.publish_status == "published"`, so hidden topic-mastery rows disappear from Stage 9 progress output and from Stage 8.6b/8.6c weak-topic prompt/snapshot context. Regressions were added for Stage 9, exam-prep, and time-management. Feature behavior needed no schema change; the rebase adds no-op Alembic merge revision `0082` to join Stage 8.6 head `0044` with Stage 10 head `0081`, and `dev_reseed` is pinned to `0082`. Verification GREEN before rebase: affected backend pytest **42 passed, 7 warnings in 14.68s** and full active Playwright **25/25** (`e2e-86d-full2-1782029476`, serial, 6.2m) on :8005/:3005 with `E2E_COMPOSE_FILES`. Cross-branch hand-off for Stage 10/11 direct reads is recorded in [[steps/findings-topic-mastery-visibility]]._
 
 _(8.6a, earlier on this branch: Mode Coordinator + Homework help — FULLY VERIFIED; full active Playwright 22/22 + rule-11 homework smoke.)_
 
@@ -8,8 +8,8 @@ _(8.6a, earlier on this branch: Mode Coordinator + Homework help — FULLY VERIF
 - Branch: `stage-8.6-assistant-modes`
 - Target branch: `origin/main`
 - Base branch includes Stage 10 Gamification merged to `main` with Alembic head `0081`.
-- Stage 8.6 migrations currently applied on this branch: `0042` (homework), `0043` (exam-prep), and `0044`
-  (time management).
+- Stage 8.6 migrations on this branch: `0042` (homework), `0043` (exam-prep), and `0044`
+  (time management), joined to Stage 10 by no-op Alembic merge revision `0082`.
 - Gate harness (workspace-local, gitignored): `.context/8.6a-gate.override.yml` runs the stack on
   :8005/:3005 with a unique image tag `dallas-stage86-gate` plus a production frontend.
 - Full-suite fault specs must run with
@@ -18,7 +18,8 @@ _(8.6a, earlier on this branch: Mode Coordinator + Homework help — FULLY VERIF
 
 ## Stage 10 delivered on main
 - Stage 10 Gamification is FULLY VERIFIED and merged to `main`.
-- Migration block `0080-0081` is on main; expected merged Alembic head is `0081`.
+- Migration block `0080-0081` is on main; the rebased Stage 8.6 branch joins it through Alembic merge head
+  `0082`.
 - The Stage 10 report and log entries remain the source for the full gamification verification record.
 
 ## Stage 8.6c delivered (Time management)
@@ -49,7 +50,8 @@ _(8.6a, earlier on this branch: Mode Coordinator + Homework help — FULLY VERIF
 - **Pinned surfaces.** Stage 9 `/student/modules/{module_id}/progress` now omits hidden topic mastery rows;
   exam-prep and time-management prompt/snapshot regressions prove hidden topic titles and section ids do not
   enter weak-topic context or `weakTopicRefs`.
-- **No migration.** This is a read-boundary repair only.
+- **No schema migration.** This is a read-boundary repair only; the rebase adds merge-only Alembic revision
+  `0082` to unify Stage 10 and Stage 8.6 migration heads.
 - **Cross-branch hand-off.** [[steps/findings-topic-mastery-visibility]] records direct-read follow-ups for
   Stage 10 `gamification_read.py` and Stage 11 `analytics_read.py`; those branches must fix on rebase.
 - **Verification.** Affected backend tests **42 passed**; full active Playwright **25/25**
@@ -65,8 +67,8 @@ _(8.6a, earlier on this branch: Mode Coordinator + Homework help — FULLY VERIF
   optional-section bindings.
 
 ## Known-state notes
-- `dev_reseed.EXPECTED_ALEMBIC_VERSION` stays on the higher merged mainline pin `0081` while this branch is
-  rebased over Stage 10.
+- `dev_reseed.EXPECTED_ALEMBIC_VERSION` is `0082`, the no-op merge revision joining Stage 10 and Stage 8.6
+  heads.
 - `check:design-tokens`/`check:inline-styles` remain known-red from the pre-existing Stage 12 backlog.
 - `test_quiz_pool::test_pool_one_active_lock_concurrent_first_requests` is a pre-existing flaky full-suite
   backend test that passes in isolation.

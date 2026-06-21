@@ -35,7 +35,7 @@ from app.platform.storage.base import StorageProvider
 from app.platform.storage.keys import generate_section_asset_storage_key
 
 
-EXPECTED_ALEMBIC_VERSION = "0081"  # Stage 10 gamification migrations (0080 event type + 0081 tables) advance the head to 0081. Re-pin at merge if the rebased head changes.
+EXPECTED_ALEMBIC_VERSION = "0082"  # Merge Stage 10 (0081) and Stage 8.6 (0044) migration heads.
 REFERENCE_COURSE_START_DATE = date(2026, 5, 11)
 REFERENCE_COURSE_END_DATE = date(2026, 6, 26)
 REFERENCE_WEEK_START_DAY = "monday"
