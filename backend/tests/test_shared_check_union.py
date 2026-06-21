@@ -46,3 +46,5 @@ async def test_student_activity_event_type_check_equals_model_tuple(
     assert literals == set(STUDENT_ACTIVITY_EVENT_TYPES)
     assert {"glossary_term_saved", "glossary_practice_completed"} <= literals
     assert {"completed_quiz", "perfect_quiz_score"} <= literals
+    # Stage 10: the content-domain engagement event must survive any later parallel-stage widening.
+    assert "studied_section" in literals

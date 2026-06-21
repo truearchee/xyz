@@ -5,7 +5,7 @@ session: "5a"
 slug: quiz-foundation
 status: complete
 created: 2026-06-16
-updated: 2026-06-16
+updated: 2026-06-20
 spec: knowledge/specs/stage-05/5a-quiz-foundation.md
 plan: knowledge/plans/stage-05/5a-quiz-foundation.md
 ---
@@ -96,3 +96,5 @@ were never touched.
 ## Change history
 - 2026-06-16 — [Session 5a] initial report. Stage 5a foundation landed + verified (407 passed) on an isolated DB.
 - 2026-06-16 22:46 — [Session 5e] added missing negative CHECK tests for quiz_mode, failure_category, question_type, and source_type; focused Stage 5 set passed (61), full backend passed (442).
+- 2026-06-20 23:12 — [Session 10] extended `backend/tests/conftest.py` truncation with
+  `student_badges` and `student_streak_state` so Stage 10 gamification tables are cleaned in backend tests.

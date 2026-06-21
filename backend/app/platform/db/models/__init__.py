@@ -29,8 +29,10 @@ from app.platform.db.models.section_asset import SectionAsset
 from app.platform.db.models.section_question_pool import SectionQuestionPool
 from app.platform.db.models.student_activity_event import StudentActivityEvent
 from app.platform.db.models.student_answer import StudentAnswer
+from app.platform.db.models.student_badge import StudentBadge
 from app.platform.db.models.student_grade_record import StudentGradeRecord
 from app.platform.db.models.student_progress_snapshot import StudentProgressSnapshot
+from app.platform.db.models.student_streak_state import StudentStreakState
 from app.platform.db.models.student_target_grade_goal import StudentTargetGradeGoal
 from app.platform.db.models.student_topic_mastery_snapshot import StudentTopicMasterySnapshot
 from app.platform.db.models.transcript import Transcript
@@ -71,8 +73,10 @@ __all__ = [
     "SectionQuestionPool",
     "StudentActivityEvent",
     "StudentAnswer",
+    "StudentBadge",
     "StudentGradeRecord",
     "StudentProgressSnapshot",
+    "StudentStreakState",
     "StudentTargetGradeGoal",
     "StudentTopicMasterySnapshot",
     "Transcript",

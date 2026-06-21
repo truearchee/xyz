@@ -12,6 +12,7 @@ import type {
   TrendPointRead,
 } from "../../lib/api";
 import { api } from "../../lib/api/wrapper";
+import { GamificationPanel } from "../gamification/GamificationPanel";
 
 type LoadState = "loading" | "ready" | "error";
 
@@ -169,17 +170,7 @@ export function ProgressDashboard() {
               <BenchmarkCard benchmark={detail.benchmark} />
               <TrendCard trend={detail.trend} />
               <TopicMasteryCard topics={detail.topics} />
-              <section
-                aria-label="Gamification"
-                data-testid="gamification-placeholder"
-                style={styles.card}
-              >
-                <p style={styles.cardEyebrow}>Next</p>
-                <h2 style={styles.cardTitle}>Gamification coming soon</h2>
-                <p style={styles.stateText}>
-                  Streaks and badges will appear here without changing this dashboard layout.
-                </p>
-              </section>
+              <GamificationPanel />
             </>
           ) : (
             <section aria-busy="true" style={styles.card}>

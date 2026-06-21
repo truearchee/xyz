@@ -2,7 +2,7 @@
 type: architecture
 stage: 04
 created: 2026-06-05
-updated: 2026-06-18
+updated: 2026-06-20
 related-session: knowledge/specs/stage-04/4.3.5c-stage2-admin-ui-backfill.md
 ---
 
@@ -25,6 +25,10 @@ related-session: knowledge/specs/stage-04/4.3.5c-stage2-admin-ui-backfill.md
 - Report: [[steps/stage-05/5.5e-ui-browser-gate]]
 - Spec: [[specs/stage-09/9-my-progress-dashboard]]
 - Report: [[steps/stage-09/9-my-progress-dashboard]]
+- Spec: [[specs/stage-10/10-gamification]]
+- Report: [[steps/stage-10/10a-foundation]]
+- ADR: [[decisions/adr-056-gamification-course-timezone]]
+- ADR: [[decisions/adr-057-gamification-on-read-evaluation]]
 
 ## Route structure
 The root `frontend/src/app/layout.tsx` owns global providers only. The public auth page lives under `(auth)/login` and renders without the AppShell. Protected app pages live under `(app)` and are wrapped by `ProtectedAppLayout` plus `AppShell`.
@@ -182,9 +186,20 @@ Stage 9 adds a thin current-student dashboard at `/student/progress`:
   `api.progress.getModule`, and `api.progress.setTargetGrade` through the generated client wrapper.
 - The dashboard renders module cards, a target-grade select with auto-save, the six deterministic
   forecast labels, an expandable calculation explanation, text fallback for trend data, topic mastery
-  rows, privacy-safe benchmark copy, and a non-functional gamification placeholder.
+  rows, and privacy-safe benchmark copy.
 - It follows the current inline-style idiom because the Stage 4.9 Tailwind/shared component system is
   not present in this checkout.
+
+## Stage 10 Gamification UI
+Stage 10 fills the My Progress gamification slot with `frontend/src/features/gamification/GamificationPanel.tsx`.
+The panel is mounted by `ProgressDashboard`, keeps the existing `data-testid="gamification-placeholder"`
+selector for Stage 9 compatibility, and calls `api.gamification.get()` through the generated-client
+wrapper (`GET /student/gamification`).
+
+The panel renders the server-owned streak status, earned badges, locked badge progress, and progress
+items from the gamification response. It never awards badges or mutates streak state client-side;
+`newBadgeIds` remains an API signal for one-time celebration behavior and is not an authority for
+persistence.
 
 ## E2E bridge and run teardown
 `NEXT_PUBLIC_E2E_TEST_HOOKS=true` enables a browser-only `window.__xyzE2E` bridge for Playwright. It exposes Supabase session helpers, wrapper-backed `/me` and `/admin/users` calls with serializable result envelopes, and a single-use forced bearer-token override for deterministic 401 testing. The bridge is not registered unless the flag is exactly `true`.

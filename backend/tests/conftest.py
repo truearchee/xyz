@@ -27,6 +27,8 @@ TEST_JWT_AUDIENCE = "authenticated"
 TEST_JWT_ISSUER = "https://test.supabase.co/auth/v1"
 TRUNCATE_TABLES = """
 TRUNCATE TABLE
+    student_badges,
+    student_streak_state,
     student_topic_mastery_snapshots,
     student_progress_snapshots,
     student_target_grade_goals,

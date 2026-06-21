@@ -19,15 +19,16 @@ from uuid6 import uuid7
 from app.platform.db.models.base import Base
 
 # Source of truth for ck_student_activity_events_event_type. Widened per consuming slice (Stage 5
-# emits the two quiz events; Stage 7 adds the two glossary events). The 0030 migration hard-codes the
-# matching string; a CI test asserts the live DB CHECK allowed-set == this tuple. A parallel stage
-# (Stage 6) that also extends this constraint must union both stages' values at merge — CI is the
-# guard (knowledge/steps/findings-stage-07.md).
+# emits the two quiz events; Stage 7 adds the two glossary events; Stage 10 adds studied_section, the
+# content-domain engagement event). The migration hard-codes the matching string; a CI test asserts the
+# live DB CHECK allowed-set == this tuple. A parallel stage (Stage 11) that also extends this constraint
+# must union both stages' values at merge — CI is the guard (knowledge/steps/findings-stage-07.md).
 STUDENT_ACTIVITY_EVENT_TYPES: tuple[str, ...] = (
     "completed_quiz",
     "perfect_quiz_score",
     "glossary_term_saved",
     "glossary_practice_completed",
+    "studied_section",
 )
 _EVENT_TYPE_IN = ", ".join(f"'{event_type}'" for event_type in STUDENT_ACTIVITY_EVENT_TYPES)
 
