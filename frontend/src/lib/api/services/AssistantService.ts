@@ -5,6 +5,7 @@
 import type { AssistantAvailabilityResponse } from '../models/AssistantAvailabilityResponse';
 import type { ConversationListItem } from '../models/ConversationListItem';
 import type { ConversationRead } from '../models/ConversationRead';
+import type { CreateConversationRequest } from '../models/CreateConversationRequest';
 import type { KeysetPage_MessageRead_ } from '../models/KeysetPage_MessageRead_';
 import type { MessageRead } from '../models/MessageRead';
 import type { PaginatedResponse_ConversationListItem_ } from '../models/PaginatedResponse_ConversationListItem_';
@@ -60,6 +61,32 @@ export class AssistantService {
             headers: {
                 'Authorization': authorization,
             },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Create Assistant Conversation
+     * 8.6a mode entry: create (or resume) a mode conversation — homework_help only this stage. The kind
+     * is set at creation and IMMUTABLE; binding rules + idempotency live in the service.
+     * @param requestBody
+     * @param authorization
+     * @returns ConversationRead Successful Response
+     * @throws ApiError
+     */
+    public static createStudentAssistantConversation(
+        requestBody: CreateConversationRequest,
+        authorization?: (string | null),
+    ): CancelablePromise<ConversationRead> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/student/assistant/conversations',
+            headers: {
+                'Authorization': authorization,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
             errors: {
                 422: `Validation Error`,
             },

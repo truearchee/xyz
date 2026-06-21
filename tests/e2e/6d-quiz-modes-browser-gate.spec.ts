@@ -31,7 +31,9 @@ const ADMIN_EMAIL = 'admin_e2e@example.test';
 const LECTURER_EMAIL = 'lecturer_e2e@example.test';
 const STUDENT_A_EMAIL = 'student_e2e@example.test';
 const E2E_ACTOR_DOMAIN = 'xyz-lms-e2e.dev';
-const SCREENSHOT_DIR = resolve('knowledge/steps/stage-06/screenshots');
+// Screenshots are archival artifacts, not live assertions. Keep capture opt-in so rule-14 full-suite runs do
+// not rewrite the committed Stage 6 PNGs on every browser/font/rendering drift.
+const SCREENSHOT_DIR = process.env.STAGE6_SCREENSHOT_DIR ? resolve(process.env.STAGE6_SCREENSHOT_DIR) : null;
 
 type ApiResponse<T = unknown> = { body: T; status: number };
 type OptionRow = { questionId: string; optionId: string; isCorrect: boolean };
@@ -539,6 +541,7 @@ function expectOnlyInScope(actual: string[], allowed: string[], forbidden: strin
 }
 
 async function captureSurface(page: Page, name: string) {
+  if (!SCREENSHOT_DIR) return;
   mkdirSync(SCREENSHOT_DIR, { recursive: true });
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.screenshot({ path: resolve(SCREENSHOT_DIR, `${name}-desktop.png`), fullPage: true });

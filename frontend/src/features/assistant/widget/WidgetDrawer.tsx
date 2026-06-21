@@ -152,9 +152,7 @@ export function WidgetDrawer({ mode, conversationId, lectureStatus, moduleId, se
                         style={styles.recentLink}
                       >
                         <span style={styles.recentTitle}>{c.displayTitle}</span>
-                        <span style={styles.recentMeta}>
-                          {c.moduleTitle} → {c.sectionTitle}
-                        </span>
+                        <span style={styles.recentMeta}>{conversationContext(c)}</span>
                       </Link>
                     </li>
                   ))}
@@ -234,6 +232,12 @@ function LectureContextHeader({
       ) : null}
     </div>
   );
+}
+
+function conversationContext(item: ConversationListItem): string {
+  if (item.sectionTitle && item.moduleTitle) return `${item.moduleTitle} → ${item.sectionTitle}`;
+  if (item.moduleTitle) return item.moduleTitle;
+  return "Your deadlines and progress";
 }
 
 const styles = {

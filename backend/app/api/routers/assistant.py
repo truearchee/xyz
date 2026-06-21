@@ -18,6 +18,7 @@ from app.domains.assistant.schemas import (
     AssistantAvailabilityResponse,
     ConversationListItem,
     ConversationRead,
+    CreateConversationRequest,
     MessageRead,
     RenameConversationRequest,
     SendMessageRequest,
@@ -62,6 +63,23 @@ async def open_assistant_conversation(
     return await service.open_or_create_conversation(
         db, current_user=current_user, section_id=section_id
     )
+
+
+@router.post(
+    "/student/assistant/conversations",
+    response_model=ConversationRead,
+    operation_id="createStudentAssistantConversation",
+)
+async def create_assistant_conversation(
+    payload: CreateConversationRequest,
+    response: Response,
+    db: DbSession,
+    current_user: CurrentUser,
+) -> ConversationRead:
+    """8.6a mode entry: create (or resume) a mode conversation — homework_help only this stage. The kind
+    is set at creation and IMMUTABLE; binding rules + idempotency live in the service."""
+    response.headers["Cache-Control"] = _NO_STORE
+    return await service.create_conversation(db, current_user=current_user, payload=payload)
 
 
 @router.get(
