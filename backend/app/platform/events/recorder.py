@@ -26,6 +26,10 @@ QUIZ_EVENT_TYPES: tuple[str, ...] = (COMPLETED_QUIZ, PERFECT_QUIZ_SCORE)
 # Stage 7 glossary events (rule 7: the glossary EMITS these through the spine, it never owns it).
 GLOSSARY_TERM_SAVED = "glossary_term_saved"
 GLOSSARY_PRACTICE_COMPLETED = "glossary_practice_completed"
+# Stage 10 content engagement event — emitted on the student section-summary READ path (the CONTENT
+# domain owns it; rule 7). Deduped per student+section+configured-tz local day via a deterministic
+# uuid5 source_id reusing UNIQUE(event_type, source_id). Gamification CONSUMES it, never owns it.
+STUDIED_SECTION = "studied_section"
 
 
 class EventRecorder:

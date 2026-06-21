@@ -26,6 +26,7 @@ from app.domains.student_summaries.schemas import (
 )
 from app.platform.auth.context import CurrentUserContext
 from app.platform.db.models import GeneratedLectureSummary
+from app.platform.events import record_studied_section
 from app.platform.query.modules import get_active_module_access
 from app.platform.query.student_summary_read import (
     SectionSummaryInputs,
@@ -80,6 +81,16 @@ async def get_student_section_detail(
 ) -> StudentSectionRead:
     """§8.2 endpoint 1 — section shell + per-slot STATE (no content)."""
     section = await _resolve_visible_section(db, current_user=current_user, section_id=section_id)
+    # Stage 10: opening a published section summary is a qualifying learning activity. Emitted here —
+    # the REAL student section-read path — after visibility is confirmed; content-engagement event owned
+    # outside gamification (rule 7), recorded via the shared platform helper (idempotent per local day,
+    # savepoint-wrapped so it can never break this read).
+    await record_studied_section(
+        db,
+        student_id=current_user.user_id,
+        module_id=section.course_module_id,
+        section_id=section_id,
+    )
     materials = await get_student_section_materials(db, section_id=section_id)
     inputs = await get_section_summary_inputs(db, section_id=section_id)
     brief = _slot_result(

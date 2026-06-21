@@ -2,7 +2,7 @@
 type: architecture
 stage: 02
 created: 2026-05-29
-updated: 2026-06-03 17:47
+updated: 2026-06-20
 related-session: knowledge/specs/stage-02/2.2-supabase-auth-current-user-context.md
 ---
 
@@ -23,6 +23,8 @@ related-session: knowledge/specs/stage-02/2.2-supabase-auth-current-user-context
 - Report: [[4.3.5a-client-edge-tracer-final-report]]
 - ADR: [[decisions/adr-003-module-authz-db-lookup]]
 - Architecture: [[architecture/db-spine]]
+- Spec: [[specs/stage-10/10-gamification]]
+- Report: [[steps/stage-10/10a-foundation]]
 
 ## Current structure
 The backend auth boundary is `backend/app/platform/auth/`. JWT parsing and verification live in `jwt.py`, request identity resolution lives in `dependencies.py`, role guards live in `guards.py`, and immutable request identity types live in `context.py`.
@@ -52,3 +54,8 @@ Module-gated routes consume `Depends(require_module_access)` and do not hand-rol
 `GET /health/authed` remains an auth smoke endpoint using `get_current_user`. Admin routes use `require_role("admin")` as their only identity dependency, so handlers do not double-resolve identity or inline role checks.
 
 `GET /me` is the browser bootstrap endpoint for application context. It uses `get_current_user`, so inactive users are rejected before a response is produced. It returns database-owned user profile fields plus active module memberships, excludes archived memberships, and returns an empty membership list for admins. Frontend session state must use this backend-confirmed app context rather than JWT claims for product role and module access.
+
+`GET /student/gamification` consumes `get_current_user` directly and gates to the `student` role in
+the gamification service. It has no `student_id` parameter: all gamification reads are for the
+authenticated caller, non-students receive 403, and badge/streak persistence is server-derived from
+the caller's existing schedule and activity events.
