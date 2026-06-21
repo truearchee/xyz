@@ -170,6 +170,7 @@ async def list_topic_mastery(
             .where(
                 StudentTopicMasterySnapshot.student_id == student_id,
                 StudentTopicMasterySnapshot.module_id == module_id,
+                ModuleSection.publish_status == "published",
                 ModuleSection.status == "active",
                 ModuleSection.type.in_(("lecture", "lab")),
             )

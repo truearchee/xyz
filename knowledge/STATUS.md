@@ -1,6 +1,6 @@
 # Status
 
-_Last updated: 2026-06-21 — **Stage 8.6 post-review fixes are applied and fully reverified** on `stage-8.6-assistant-modes`, rebased over the Stage 10 mainline state. Fixed the mode `context_snapshot.promptVersion` audit bug, widget recents now render mode contexts without dangling section separators, and `gate86a_homework_smoke.py` operator text now matches the Cerebras/V2 route. Also hardened the Stage 8.5 browser gate against reused alt-stack DB history by scoping glossary entry/event assertions to the current run's module/source. Verification GREEN after rebuild/recreate of the alt-port stack: backend mode pytest **32 passed**, frontend `tsc` + vitest **21 passed**, focused 8.5 gate **1 passed**, and full active Playwright **25/25** (`e2e-86reviewfull-010113`, serial, 5.0m) on :8005/:3005 with `E2E_COMPOSE_FILES`. Stage 10 Gamification is already merged to `main`; its Alembic head is `0081`, so `dev_reseed` remains pinned to the higher merged head during this branch rebase._
+_Last updated: 2026-06-21 12:19 +04 — **Stage 8.6d topic-mastery visibility repair is applied and fully reverified** on `stage-8.6-assistant-modes`, rebased over the Stage 10 mainline state. `list_topic_mastery()` now filters `ModuleSection.publish_status == "published"`, so hidden topic-mastery rows disappear from Stage 9 progress output and from Stage 8.6b/8.6c weak-topic prompt/snapshot context. Regressions were added for Stage 9, exam-prep, and time-management; no migration was needed. Verification GREEN: affected backend pytest **42 passed, 7 warnings in 14.68s** and full active Playwright **25/25** (`e2e-86d-full2-1782029476`, serial, 6.2m) on :8005/:3005 with `E2E_COMPOSE_FILES`. The first Playwright attempt was a missing-run-manifest harness setup failure only; explicit fixture seeding produced the passing rerun. Cross-branch hand-off for Stage 10/11 direct reads is recorded in [[steps/findings-topic-mastery-visibility]]. Stage 10 Gamification is already merged to `main`; its Alembic head is `0081`, so `dev_reseed` remains pinned to the higher merged head during this branch rebase._
 
 _(8.6a, earlier on this branch: Mode Coordinator + Homework help — FULLY VERIFIED; full active Playwright 22/22 + rule-11 homework smoke.)_
 
@@ -42,6 +42,18 @@ _(8.6a, earlier on this branch: Mode Coordinator + Homework help — FULLY VERIF
   states sourced from the quiz surface.
 - **Verification.** Updated browser gate **2/2**, full active Playwright **24/24**, and rule-11 exam-prep
   smoke passed in the final 8.6b gate.
+
+## Stage 8.6d delivered (Topic mastery visibility)
+- **Shared fix.** `backend/app/platform/query/progress_read.py::list_topic_mastery()` now requires
+  `ModuleSection.publish_status == "published"` alongside active lecture/lab filtering.
+- **Pinned surfaces.** Stage 9 `/student/modules/{module_id}/progress` now omits hidden topic mastery rows;
+  exam-prep and time-management prompt/snapshot regressions prove hidden topic titles and section ids do not
+  enter weak-topic context or `weakTopicRefs`.
+- **No migration.** This is a read-boundary repair only.
+- **Cross-branch hand-off.** [[steps/findings-topic-mastery-visibility]] records direct-read follow-ups for
+  Stage 10 `gamification_read.py` and Stage 11 `analytics_read.py`; those branches must fix on rebase.
+- **Verification.** Affected backend tests **42 passed**; full active Playwright **25/25**
+  (`e2e-86d-full2-1782029476`, 6.2m) on the alt-port stack.
 
 ## Stage 8.6a delivered (mode foundation + Homework help)
 - **Mode = `conversation_kind` + a strategy coordinator (ADR-056).** `generate_assistant_answer_async`
@@ -85,6 +97,12 @@ _(8.6a, earlier on this branch: Mode Coordinator + Homework help — FULLY VERIF
 - Plan: [[plans/stage-10/10a-foundation]]
 - Report: [[steps/stage-10/10a-foundation]]
 - ADRs: [[decisions/adr-056-gamification-course-timezone]], [[decisions/adr-057-gamification-on-read-evaluation]]
+
+## Stage 8.6d documents
+- Spec: [[specs/stage-08/8.6d-topic-mastery-visibility]]
+- Plan: [[plans/stage-08/8.6d-topic-mastery-visibility]]
+- Report: [[steps/stage-08/8.6d-topic-mastery-visibility]]
+- Cross-branch finding: [[steps/findings-topic-mastery-visibility]]
 
 ## Prior
 - 2026-06-21 — Stage 10 Gamification FULLY VERIFIED and merged to main (migration head `0081`).

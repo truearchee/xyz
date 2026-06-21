@@ -5,7 +5,7 @@ session: "9"
 slug: my-progress-dashboard
 status: fully-verified
 created: 2026-06-18
-updated: 2026-06-20
+updated: 2026-06-21
 spec: knowledge/specs/stage-09/9-my-progress-dashboard.md
 plan: knowledge/plans/stage-09/9-my-progress-dashboard.md
 commit: "uncommitted"
@@ -172,3 +172,6 @@ runs this workspace on:
 - 2026-06-20 23:12 — [Session 10] replaced the Stage 9 gamification placeholder in
   `frontend/src/features/progress/ProgressDashboard.tsx` with the Stage 10 `GamificationPanel` while
   preserving `data-testid="gamification-placeholder"` so Stage 9 browser assertions remain green.
+- 2026-06-21 12:19 +04 — [Session 8.6d] `list_topic_mastery()` now filters to published sections only;
+  Stage 9 module progress regression pins hidden topic-mastery rows disappearing from student-visible
+  progress output.

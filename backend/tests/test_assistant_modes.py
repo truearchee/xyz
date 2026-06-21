@@ -649,6 +649,58 @@ async def test_exam_prep_excludes_uncovered_section(db_session, captured_enqueue
     assert secret not in (provider.last_prompt or "").split(ASSISTANT_LATEST_QUESTION_MARKER)[0]
 
 
+async def test_exam_prep_omits_unpublished_topic_mastery_from_prompt_and_snapshot(db_session, captured_enqueue):
+    seed = await _seed_exam_scope(db_session, week=1, chunk_text="visible exam vector")
+    hidden_section = ModuleSection(
+        course_module_id=seed.module.id,
+        title="HIDDEN TOPIC MASTERY SENTINEL",
+        type="lecture",
+        order_index=2,
+        publish_status="unpublished",
+        status="active",
+        week_number=1,
+    )
+    db_session.add(hidden_section)
+    await db_session.flush()
+    db_session.add_all(
+        [
+            StudentTopicMasterySnapshot(
+                student_id=seed.student.id,
+                module_id=seed.module.id,
+                module_section_id=seed.section.id,
+                mastery_percentage=Decimal("60.00"),
+                status_label="needs_attention",
+                source_metrics={"source": "test"},
+            ),
+            StudentTopicMasterySnapshot(
+                student_id=seed.student.id,
+                module_id=seed.module.id,
+                module_section_id=hidden_section.id,
+                mastery_percentage=Decimal("40.00"),
+                status_label="needs_attention",
+                source_metrics={"source": "test"},
+            ),
+        ]
+    )
+    await db_session.commit()
+
+    conv = await _create_exam_prep(db_session, _ctx(seed.student), scope_id=seed.scope.id)
+    provider = _RecordingProvider()
+    mid, factory = await _run_exam_prep_turn(
+        db_session,
+        seed,
+        "visible exam vector",
+        conversation_id=conv.id,
+        provider=provider,
+    )
+    msg = await _get_msg(factory, mid)
+    payload = provider.last_prompt or ""
+    assert msg.status == "completed"
+    assert seed.section.title in payload
+    assert "HIDDEN TOPIC MASTERY SENTINEL" not in payload
+    assert str(hidden_section.id) not in (msg.context_snapshot.get("resolvedSectionIds") or [])
+
+
 # ── time-management (8.6c) ────────────────────────────────────────────────────────────────────────
 async def _create_time_management(db_session, ctx) -> object:
     return await service.create_conversation(
@@ -799,6 +851,33 @@ async def test_time_management_grounds_on_own_deadlines_and_progress_only(db_ses
     assert "OTHER_STUDENT_DEADLINE_SENTINEL" not in payload
     assert "OTHER_STUDENT_PRIVATE_MODULE" not in payload
     assert await _count_logs(factory) == 1
+
+
+async def test_time_management_omits_unpublished_topic_mastery_from_prompt_and_snapshot(
+    db_session,
+    captured_enqueue,
+):
+    seed = await _seed(db_session, module_title="Algorithms", section_title="HIDDEN TOPIC MASTERY SENTINEL")
+    await _add_time_management_progress(db_session, seed=seed)
+    section = await db_session.get(ModuleSection, seed.section.id)
+    section.publish_status = "unpublished"
+    await db_session.commit()
+
+    conv = await _create_time_management(db_session, _ctx(seed.student))
+    provider = _RecordingProvider()
+    mid, factory = await _run_time_management_turn(
+        db_session,
+        seed,
+        "What should I prioritize today?",
+        conversation_id=conv.id,
+        provider=provider,
+    )
+    msg = await _get_msg(factory, mid)
+    payload = provider.last_prompt or ""
+    assert msg.status == "completed"
+    assert "HIDDEN TOPIC MASTERY SENTINEL" not in payload
+    assert msg.context_snapshot["weakTopicRefs"] == []
+    assert str(seed.section.id) not in {ref["sectionId"] for ref in msg.context_snapshot["deadlineRefs"]}
 
 
 async def test_time_management_empty_state_still_completes_with_structured_basis(db_session, captured_enqueue):
