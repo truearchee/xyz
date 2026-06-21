@@ -2,7 +2,7 @@
 type: architecture
 stage: 02
 created: 2026-05-29
-updated: 2026-06-18
+updated: 2026-06-20
 related-session: knowledge/specs/stage-02/2.1-db-spine.md
 ---
 
@@ -32,6 +32,10 @@ related-session: knowledge/specs/stage-02/2.1-db-spine.md
 - Spec: [[specs/stage-09/9-my-progress-dashboard]]
 - Report: [[steps/stage-09/9-my-progress-dashboard]]
 - Decision: [[decisions/adr-052-single-tenant-mvp]]
+- Spec: [[specs/stage-10/10-gamification]]
+- Report: [[steps/stage-10/10a-foundation]]
+- Decision: [[decisions/adr-056-gamification-course-timezone]]
+- Decision: [[decisions/adr-057-gamification-on-read-evaluation]]
 - Spec: [[specs/stage-04/4.1-transcript-upload]]
 - Plan: [[plans/stage-04/4.1-transcript-upload]]
 - Report: [[steps/stage-04/4.1-transcript-upload]]
@@ -79,6 +83,16 @@ The backend now has a SQLAlchemy declarative model package under `backend/app/pl
 - `student_progress_snapshots` and `student_topic_mastery_snapshots` (Stage 9) store week-scoped
   standing snapshots and lecture/lab section-scoped mastery read models for the progress dashboard.
   These are seeded/read-model tables, not event-source tables.
+- `student_activity_events` is the shared event spine introduced by Stage 5. Stage 10 widens its
+  event-type CHECK to include `studied_section`, emitted server-side when a student reads a section
+  summary. The event remains same-transaction/idempotent through the existing `(event_type, source_id)`
+  uniqueness contract.
+- `student_badges` (Stage 10) stores sticky earned badges. Badge identity is total across
+  `(student_id, badge_key, scope_type, scope_id)`; global badges use the all-zero UUID sentinel for
+  `scope_id` so PostgreSQL NULL-distinct behavior cannot duplicate them.
+- `student_streak_state` (Stage 10) stores only monotonic streak state per student:
+  `longest_streak` and `last_seen_gamification_at`. Current streaks are recomputed on read from
+  schedule + activity events.
 
 ## Section asset schema notes
 - `section_assets.storage_key` is a private object-storage path and is unique.
@@ -143,6 +157,20 @@ The backend now has a SQLAlchemy declarative model package under `backend/app/pl
   `(student_id, module_id)`. Updating a target changes that row and recomputes the forecast at read time.
 - The benchmark surface reads aggregate quiz average and cohort size only from completed
   `quiz_attempts`; individual rows and per-student standings are not exposed by DTOs.
+
+## Gamification schema notes (Stage 10)
+- Stage 10 migrations use `0080` for the additive `student_activity_events.event_type` CHECK widen
+  and `0081` for `student_badges` + `student_streak_state`.
+- Badge awarding is on-read and sticky: the service evaluates the code catalog from
+  `student_activity_events`, schedule metadata, and Stage 9 snapshots, then inserts missing badge rows
+  with `ON CONFLICT DO NOTHING`. The API's `newBadgeIds` signal is based on rows actually inserted by
+  the current read.
+- Streak math is recomputed by the pure gamification domain from read-only `platform/query`
+  primitives: scheduled lecture/lab dates, qualifying engagement days, and the next future scheduled
+  class day. The configured `COURSE_TIMEZONE` controls local-day conversion and `studied_section`
+  once-per-day deduplication.
+- `GET /student/gamification` is a read surface, not a badge-award command surface. No HTTP endpoint
+  accepts a badge, streak, or arbitrary gamification event from the frontend.
 
 ## ID strategy
 All primary keys are PostgreSQL `UUID` columns with no database-side default. Application models generate UUIDv7 values through `uuid6.uuid7`, keeping IDs time-ordered while avoiding `gen_random_uuid()` defaults.

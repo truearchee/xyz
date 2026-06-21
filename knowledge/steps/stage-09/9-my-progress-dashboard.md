@@ -5,7 +5,7 @@ session: "9"
 slug: my-progress-dashboard
 status: fully-verified
 created: 2026-06-18
-updated: 2026-06-18
+updated: 2026-06-20
 spec: knowledge/specs/stage-09/9-my-progress-dashboard.md
 plan: knowledge/plans/stage-09/9-my-progress-dashboard.md
 commit: "uncommitted"
@@ -169,3 +169,6 @@ runs this workspace on:
 - 2026-06-19 — [Session 4.9g] visually tokenized the progress dashboard against the imported monochrome
   design foundation; progress API/schema/forecast behavior unchanged. See
   [[steps/stage-04/4.9g-merge-monochrome-redesign]].
+- 2026-06-20 23:12 — [Session 10] replaced the Stage 9 gamification placeholder in
+  `frontend/src/features/progress/ProgressDashboard.tsx` with the Stage 10 `GamificationPanel` while
+  preserving `data-testid="gamification-placeholder"` so Stage 9 browser assertions remain green.

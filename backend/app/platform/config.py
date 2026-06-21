@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 
 class SettingsError(RuntimeError):
@@ -387,6 +388,27 @@ class Settings:
         detailed timeout, then 300→360 (F-6e) to stay above the 330 reasoning/pool timeout; the smoke
         calls the provider directly and does not use the lease."""
         return self._int("LLM_LEASE_TTL_SECONDS", "360", minimum=1)
+
+    # ─── Gamification (Stage 10) ────────────────────────────────────────────
+    @property
+    def COURSE_TIMEZONE(self) -> str:
+        """The single configured course timezone (IANA, DST-aware) for ALL gamification day-boundary
+        math — streak day rollover and the ``studied_section`` per-day dedup (ADR-056). The streak is
+        ONE unified streak across a student's modules, so a single configured zone is the only thing
+        that makes "a day" unambiguous; per-student/per-module timezone is post-MVP.
+
+        Default ``'UTC'`` is fine for dev / CI / the browser gate, but a hosted deploy MUST set this to
+        the institution's real zone (Stage 4.8 deploy env list) or real students' days roll over at UTC
+        midnight. Validated by constructing ``ZoneInfo`` so a typo fails loud at read time rather than
+        silently bucketing days under UTC."""
+        value = os.environ.get("COURSE_TIMEZONE", "UTC").strip() or "UTC"
+        try:
+            ZoneInfo(value)
+        except (ZoneInfoNotFoundError, ValueError) as exc:
+            raise SettingsError(
+                f"COURSE_TIMEZONE must be a valid IANA timezone (got {value!r})"
+            ) from exc
+        return value
 
     def _bool(self, name: str, *, default: bool) -> bool:
         raw_value = os.environ.get(name)

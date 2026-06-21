@@ -34,6 +34,8 @@ import {
   type ProgressDashboardRead,
   type ProgressModuleDetail,
   ProgressService,
+  GamificationService,
+  type GamificationRead,
   type QuizAttemptForStudent,
   type QuizAttemptResult,
   type QuizAttemptsSummary,
@@ -461,6 +463,10 @@ export const api = {
       withAuthRecovery(() =>
         ProgressService.setStudentTargetGrade(moduleId, requestBody),
       ),
+  },
+  gamification: {
+    get: (): Promise<GamificationRead> =>
+      withAuthRecovery(() => GamificationService.getStudentGamification()),
   },
   assessments: {
     create: (
