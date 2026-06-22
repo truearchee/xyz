@@ -410,10 +410,25 @@ async function apiContext(token: string): Promise<APIRequestContext> {
   });
 }
 
-function aiLogCount(): number {
+// The My Progress dashboard is a pure read: it must issue NO LLM request of its own (no AI log). We prove
+// that by an id-set diff rather than a global count, deliberately EXCLUDING async transcript-ingestion
+// worker logs (ingestion_job_id NOT NULL — e.g. summary_brief/summary_detailed) that other specs' jobs
+// can drain into this window. Those are background work, not the progress read, and a global count made
+// the assertion flake on test ordering. A regression where the progress path itself called the LLM would
+// log a row with ingestion_job_id IS NULL (it is not an ingestion job) and is still caught here.
+function aiLogIds(): string[] {
+  return runPsqlRows(`SELECT id::text FROM ai_request_logs`);
+}
+
+function newSynchronousAiLogCount(beforeIds: string[]): number {
+  const exclusion = beforeIds.length
+    ? `AND id NOT IN (${beforeIds.map((id) => sqlLiteral(id)).join(', ')})`
+    : '';
   return runPsqlJson(`
 SELECT to_json(count(*)::int)::text
 FROM ai_request_logs
+WHERE ingestion_job_id IS NULL
+${exclusion}
 `) as unknown as number;
 }
 
@@ -421,7 +436,7 @@ test('Stage 9 My Progress dashboard gate', async ({ browser }) => {
   const runId = requireRunId();
   const seeded = await seedProgress(runId);
   const context = await browser.newContext();
-  const beforeAi = aiLogCount();
+  const beforeAiIds = aiLogIds();
 
   const states: Array<[string, string, string, string, string]> = [
     ['a', seeded.moduleOneId, 'on_track', 'On track', 'OK'],
@@ -521,6 +536,6 @@ test('Stage 9 My Progress dashboard gate', async ({ browser }) => {
   assertPrivacyPayload(raw, seeded);
   await api.dispose();
 
-  expect(aiLogCount()).toBe(beforeAi);
+  expect(newSynchronousAiLogCount(beforeAiIds)).toBe(0);
   await context.close();
 });
