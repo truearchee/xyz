@@ -142,15 +142,32 @@ VALUES (${sqlLiteral(id)}::uuid, ${sqlLiteral(userId)}::uuid, ${sqlLiteral(modul
 }
 
 // Section scheduled RELATIVE to the DB's current UTC date (dayOffset days from today; <=0 = past/today).
-function insertSection(runId: string, moduleId: string, title: string, dayOffset: number, orderIndex: number): string {
+// publishStatus defaults to 'published' — pass 'unpublished' to exercise the visibility-leak negative case.
+function insertSection(
+  runId: string,
+  moduleId: string,
+  title: string,
+  dayOffset: number,
+  orderIndex: number,
+  publishStatus: 'published' | 'unpublished' = 'published',
+): string {
   const id = randomUUID();
   runPsqlRows(`
 INSERT INTO module_sections (id, course_module_id, title, type, order_index, week_number, session_date, publish_status, status)
 VALUES (${sqlLiteral(id)}::uuid, ${sqlLiteral(moduleId)}::uuid, ${sqlLiteral(title)}, 'lecture', ${orderIndex}, 1,
-        (now() AT TIME ZONE 'UTC')::date + (${dayOffset}), 'published', 'active');
+        (now() AT TIME ZONE 'UTC')::date + (${dayOffset}), ${sqlLiteral(publishStatus)}, 'active');
 `);
   recordValue(runId, 'sectionIds', id);
   return id;
+}
+
+// A top-tier ('strong') Stage 9 topic-mastery snapshot for a section — the input the topic_mastered
+// badge keys off. Used to prove the badge is NOT awarded when the section is not student-visible.
+function insertMasterySnapshot(studentId: string, moduleId: string, sectionId: string) {
+  runPsqlRows(`
+INSERT INTO student_topic_mastery_snapshots (id, student_id, module_id, module_section_id, mastery_percentage, status_label)
+VALUES (gen_random_uuid(), ${sqlLiteral(studentId)}::uuid, ${sqlLiteral(moduleId)}::uuid, ${sqlLiteral(sectionId)}::uuid, 95, 'strong');
+`);
 }
 
 // completed_quiz event RELATIVE to now() (occurred_at = now() + dayOffset days; UTC date = today+offset).
@@ -336,4 +353,32 @@ test('Stage 10 gamification gate — Scenario C: studied_section recorded once p
   expect(body.streakStatus).toBe('active');
   await api.dispose();
   await context.close();
+});
+
+test('Stage 10 gamification gate — Scenario D: topic_mastered respects section visibility', async ({ browser }) => {
+  // Security negative case (the leak the all-published fixtures never exercised): a topic mastered on an
+  // UNPUBLISHED section must NOT grant topic_mastered — otherwise the badge leaks that hidden content
+  // exists. Then publishing it (a visible mastered topic) earns the badge — guards against over-correction.
+  const runId = requireRunId();
+  const lecturer = await ensureAuthUser(runId, 'd-lect', 'lecturer');
+  const student = await ensureAuthUser(runId, 'd-stu', 'student');
+  const moduleId = insertModule(runId, `Stage 10 D ${runId}`, lecturer.appId);
+  insertMembership(runId, lecturer.appId, moduleId, 'lecturer');
+  insertMembership(runId, student.appId, moduleId, 'student');
+  const hiddenSection = insertSection(runId, moduleId, 'Hidden lecture', 0, 1, 'unpublished');
+  insertMasterySnapshot(student.appId, moduleId, hiddenSection);
+
+  const token = await tokenFor(browser, student.email);
+  const api = await apiContext(token);
+  const before = JSON.parse(await (await api.get('/student/gamification')).text());
+  const earnedBefore = new Set((before.earnedBadges as Array<{ badgeKey: string }>).map((b) => b.badgeKey));
+  expect(earnedBefore.has('topic_mastered')).toBe(false); // mastery on an unpublished section must not leak
+
+  // Now master a topic on a PUBLISHED (visible) section → the badge legitimately unlocks.
+  const visibleSection = insertSection(runId, moduleId, 'Visible lecture', 0, 2, 'published');
+  insertMasterySnapshot(student.appId, moduleId, visibleSection);
+  const after = JSON.parse(await (await api.get('/student/gamification')).text());
+  const earnedAfter = new Set((after.earnedBadges as Array<{ badgeKey: string }>).map((b) => b.badgeKey));
+  expect(earnedAfter.has('topic_mastered')).toBe(true);
+  await api.dispose();
 });

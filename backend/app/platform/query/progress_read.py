@@ -7,6 +7,7 @@ from uuid import UUID
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.platform.query.section_visibility import apply_visible_section_gate
 from app.platform.db.models import (
     CourseGradeScheme,
     CourseMembership,
@@ -163,19 +164,20 @@ async def list_topic_mastery(
     student_id: UUID,
     module_id: UUID,
 ) -> list[tuple[StudentTopicMasterySnapshot, ModuleSection]]:
-    rows = (
-        await db.execute(
-            select(StudentTopicMasterySnapshot, ModuleSection)
-            .join(ModuleSection, ModuleSection.id == StudentTopicMasterySnapshot.module_section_id)
-            .where(
-                StudentTopicMasterySnapshot.student_id == student_id,
-                StudentTopicMasterySnapshot.module_id == module_id,
-                ModuleSection.status == "active",
-                ModuleSection.type.in_(("lecture", "lab")),
-            )
-            .order_by(ModuleSection.week_number.asc().nulls_last(), ModuleSection.order_index.asc())
-        )
-    ).all()
+    # Route through the canonical student section-visibility gate (publish_status published + active
+    # section + active module + active student membership) so a topic mastered on an unpublished section
+    # never surfaces in My Progress. The gate joins ModuleSection on the snapshot's section and supplies
+    # the active-section predicate; the lecture/lab type filter stays local to this read.
+    stmt = apply_visible_section_gate(
+        select(StudentTopicMasterySnapshot, ModuleSection).where(
+            StudentTopicMasterySnapshot.student_id == student_id,
+            StudentTopicMasterySnapshot.module_id == module_id,
+            ModuleSection.type.in_(("lecture", "lab")),
+        ),
+        student_id=student_id,
+        section_id_col=StudentTopicMasterySnapshot.module_section_id,
+    ).order_by(ModuleSection.week_number.asc().nulls_last(), ModuleSection.order_index.asc())
+    rows = (await db.execute(stmt)).all()
     return [(row[0], row[1]) for row in rows]
 
 

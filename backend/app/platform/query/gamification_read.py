@@ -39,6 +39,7 @@ from app.platform.events import (
     PERFECT_QUIZ_SCORE,
     STUDIED_SECTION,
 )
+from app.platform.query.section_visibility import apply_visible_section_gate
 from app.platform.query.section_week_resolver import resolve_sections_by_date_range
 
 # Stage 9 mastery: "topic mastered" reuses Stage 9's notion (no invented threshold) — a snapshot at the
@@ -204,13 +205,19 @@ async def _module_completion_progress(
     if not module_ids:
         return {}
     quiz_bearing: dict[UUID, set[str]] = {}
-    bearing_rows = await db.execute(
+    # Only sections the student can actually see count toward the denominator — a quiz on an
+    # unpublished (or otherwise non-visible) section must NOT inflate `total`, or the module_completed
+    # progress bar would leak that hidden content exists (and make the badge un-earnable).
+    bearing_stmt = apply_visible_section_gate(
         select(QuizDefinition.module_id, QuizDefinition.module_section_id).where(
             QuizDefinition.module_id.in_(module_ids),
             QuizDefinition.quiz_mode == _POST_CLASS_QUIZ_MODE,
             QuizDefinition.module_section_id.is_not(None),
-        )
+        ),
+        student_id=student_id,
+        section_id_col=QuizDefinition.module_section_id,
     )
+    bearing_rows = await db.execute(bearing_stmt)
     for module_id, section_id in bearing_rows.all():
         quiz_bearing.setdefault(module_id, set()).add(str(section_id))
 
@@ -241,6 +248,9 @@ async def load_badge_counts(db: AsyncSession, *, student_id: UUID, tz: ZoneInfo)
     ``longest_streak`` / ``has_first_week_activity``, which the service fills). Every value is
     reproducible from the event spine + Stage 9 snapshots; volume counts are DISTINCT source items so
     re-doing work cannot farm a badge."""
+    # These two counts are event-derived: the studied_section / completed_quiz events were only emitted
+    # behind the published+assigned visibility gate, so they count content the student legitimately saw.
+    # A section unpublished AFTER the fact stays counted — accepted retroactive MVP behavior, not a leak.
     distinct_quiz_definitions = (
         await db.scalar(
             select(
@@ -273,13 +283,20 @@ async def load_badge_counts(db: AsyncSession, *, student_id: UUID, tz: ZoneInfo)
     ).all()
     flashcard_days = len({occurred_at.astimezone(tz).date() for occurred_at in flashcard_occurred_ats})
 
+    # A mastery snapshot only counts toward the topic_mastered badge if its section is still visible to
+    # the student — mastering a topic on an unpublished (or inactive-module / lost-membership) section
+    # must NOT grant the badge, or it leaks that hidden content exists.
     has_mastered_topic = bool(
         await db.scalar(
-            select(func.count())
-            .select_from(StudentTopicMasterySnapshot)
-            .where(
-                StudentTopicMasterySnapshot.student_id == student_id,
-                StudentTopicMasterySnapshot.status_label == _MASTERED_STATUS_LABEL,
+            apply_visible_section_gate(
+                select(func.count())
+                .select_from(StudentTopicMasterySnapshot)
+                .where(
+                    StudentTopicMasterySnapshot.student_id == student_id,
+                    StudentTopicMasterySnapshot.status_label == _MASTERED_STATUS_LABEL,
+                ),
+                student_id=student_id,
+                section_id_col=StudentTopicMasterySnapshot.module_section_id,
             )
         )
     )

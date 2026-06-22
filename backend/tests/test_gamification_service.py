@@ -75,7 +75,9 @@ async def _enroll(db, user_id, module_id, role: str = "student") -> None:
     await db.flush()
 
 
-async def _section(db, module_id, *, session_date, order_index=1, type_="lecture") -> ModuleSection:
+async def _section(
+    db, module_id, *, session_date, order_index=1, type_="lecture", publish_status="published"
+) -> ModuleSection:
     section = ModuleSection(
         course_module_id=module_id,
         title="Section",
@@ -83,7 +85,7 @@ async def _section(db, module_id, *, session_date, order_index=1, type_="lecture
         order_index=order_index,
         week_number=1,
         session_date=session_date,
-        publish_status="published",
+        publish_status=publish_status,
         status="active",
     )
     db.add(section)
@@ -332,6 +334,100 @@ async def test_topic_mastered_uses_strong_status_label(db_session):
     await db_session.commit()
     result = await get_gamification(db_session, student_id=student.id, now_utc=NOW)
     assert "topic_mastered" in _earned_keys(result)
+
+
+def _mastery(student_id, module_id, section_id, *, status_label="strong"):
+    return StudentTopicMasterySnapshot(
+        student_id=student_id,
+        module_id=module_id,
+        module_section_id=section_id,
+        mastery_percentage=95,
+        status_label=status_label,
+    )
+
+
+async def test_topic_mastered_excludes_unpublished_section(db_session):
+    # Security: a topic mastered on a section the student cannot see (unpublished) must NOT grant the
+    # badge — otherwise it leaks that hidden content exists. This is the case the all-published Stage 10
+    # fixtures never exercised.
+    student, module = await _student_in_module(db_session, "s@example.test")
+    section = await _section(
+        db_session, module.id, session_date=_day(0), publish_status="unpublished"
+    )
+    db_session.add(_mastery(student.id, module.id, section.id))
+    await db_session.commit()
+    result = await get_gamification(db_session, student_id=student.id, now_utc=NOW)
+    assert "topic_mastered" not in _earned_keys(result)
+
+
+async def test_topic_mastered_excludes_inactive_module(db_session):
+    # Same leak class via a deactivated module — the section is published but the module is no longer
+    # active, so it is not student-visible and must not grant the badge.
+    student, module = await _student_in_module(db_session, "s@example.test")
+    section = await _section(db_session, module.id, session_date=_day(0))
+    db_session.add(_mastery(student.id, module.id, section.id))
+    module.is_active = False
+    await db_session.commit()
+    result = await get_gamification(db_session, student_id=student.id, now_utc=NOW)
+    assert "topic_mastered" not in _earned_keys(result)
+
+
+async def test_topic_mastered_excludes_lost_membership(db_session):
+    # Same leak class via a dropped enrollment — visible content requires an active student membership.
+    student, module = await _student_in_module(db_session, "s@example.test")
+    section = await _section(db_session, module.id, session_date=_day(0))
+    db_session.add(_mastery(student.id, module.id, section.id))
+    membership = await db_session.scalar(
+        select(CourseMembership).where(
+            CourseMembership.user_id == student.id, CourseMembership.module_id == module.id
+        )
+    )
+    membership.status = "archived"
+    await db_session.commit()
+    result = await get_gamification(db_session, student_id=student.id, now_utc=NOW)
+    assert "topic_mastered" not in _earned_keys(result)
+
+
+async def test_topic_mastered_still_granted_for_published_section(db_session):
+    # Positive guard: the fix must not over-correct — a published+visible mastered section still earns it.
+    student, module = await _student_in_module(db_session, "s@example.test")
+    section = await _section(db_session, module.id, session_date=_day(0))
+    db_session.add(_mastery(student.id, module.id, section.id))
+    await db_session.commit()
+    result = await get_gamification(db_session, student_id=student.id, now_utc=NOW)
+    assert "topic_mastered" in _earned_keys(result)
+
+
+async def test_module_completed_denominator_excludes_unpublished_section(db_session):
+    # Security: an unpublished quiz-bearing section must NOT count toward the module_completed
+    # denominator — otherwise the progress bar (e.g. 1/2) leaks that a hidden section exists, and the
+    # badge becomes un-earnable. Visible section alone → denominator 1, completing it earns the badge.
+    student, module = await _student_in_module(db_session, "s@example.test")
+    visible = await _section(db_session, module.id, session_date=_day(-1), order_index=1)
+    hidden = await _section(
+        db_session, module.id, session_date=_day(0), order_index=2, publish_status="unpublished"
+    )
+    for section in (visible, hidden):
+        db_session.add(
+            QuizDefinition(
+                module_id=module.id,
+                module_section_id=section.id,
+                quiz_mode="post_class",
+                question_policy={"count": 10},
+                source_scope={},
+            )
+        )
+    await db_session.flush()
+    # Complete only the visible section's quiz.
+    db_session.add(
+        _completed_quiz(student.id, module.id, occurred_at=_at(-1), quiz_def_id=uuid4(), section_id=visible.id)
+    )
+    await db_session.commit()
+    result = await get_gamification(db_session, student_id=student.id, now_utc=NOW)
+    # Denominator counts ONLY the visible section → 1/1 → badge earned; hidden section never surfaces.
+    assert ("module_completed", "module", str(module.id)) in _earned_scoped(result)
+    locked = [b for b in result.locked_badges if b.badge_key == "module_completed"]
+    assert not locked  # earned, so not shown as locked — and target never leaked the hidden section
 
 
 async def test_module_completed_requires_all_quiz_bearing_sections(db_session):
