@@ -29,6 +29,10 @@ class RiskConfig:
     inactivity_needs_support_days: int
     topic_deadline_watch_days: int
     topic_deadline_needs_support_hours: int
+    # Explicit set of StudentActivityEvent.event_type values that reset the inactivity clock. Config-backed
+    # (settings.RISK_ACTIVITY_EVENT_TYPES) and part of input_hash for reproducibility — includes the
+    # content-domain `studied_section` engagement event (owner decision; no gamification dependency).
+    activity_event_types: tuple[str, ...]
 
 
 @dataclass(frozen=True)

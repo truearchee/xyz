@@ -320,6 +320,27 @@ class Settings:
     def RISK_SNAPSHOT_RETENTION_DAYS(self) -> int:
         return self._int("RISK_SNAPSHOT_RETENTION_DAYS", "180", minimum=1)
 
+    @property
+    def RISK_ACTIVITY_EVENT_TYPES(self) -> tuple[str, ...]:
+        """The explicit, config-backed set of ``StudentActivityEvent.event_type`` values that count as
+        qualifying activity when computing the ``inactive_recently`` risk reason (so the inactivity clock
+        is reset by real engagement only, never by a future system/event type slipping in unnoticed).
+
+        ``studied_section`` (opening a section summary) COUNTS AS qualifying activity — owner decision at
+        the three-branch landing (ADR-060 / §11.1 spec, rule 13). It is a CONTENT-domain-owned engagement
+        event read off the shared activity spine; the risk path never imports or depends on the Stage 10
+        gamification domain. Because this set feeds the risk ``input_hash``, changing it is an
+        ``algorithmVersion``-level change captured in reproducibility, not a silent code edit — the same
+        pattern as the numeric risk thresholds. Override with a comma-separated env value."""
+        raw = os.environ.get(
+            "RISK_ACTIVITY_EVENT_TYPES",
+            "completed_quiz,perfect_quiz_score,glossary_term_saved,glossary_practice_completed,studied_section",
+        )
+        values = tuple(item.strip() for item in raw.split(",") if item.strip())
+        if not values:
+            raise SettingsError("RISK_ACTIVITY_EVENT_TYPES must list at least one event type")
+        return values
+
     # ─── deterministic workload planner (Stage 11.4) ───────────────────────
     @property
     def WORKLOAD_PLAN_ALGORITHM_VERSION(self) -> str:

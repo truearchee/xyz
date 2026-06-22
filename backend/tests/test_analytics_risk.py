@@ -21,6 +21,13 @@ def _config() -> RiskConfig:
         inactivity_needs_support_days=14,
         topic_deadline_watch_days=7,
         topic_deadline_needs_support_hours=48,
+        activity_event_types=(
+            "completed_quiz",
+            "perfect_quiz_score",
+            "glossary_term_saved",
+            "glossary_practice_completed",
+            "studied_section",
+        ),
     )
 
 

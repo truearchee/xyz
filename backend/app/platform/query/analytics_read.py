@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections import defaultdict
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from decimal import Decimal
@@ -594,11 +595,16 @@ async def latest_activity_at(
     student_id: UUID,
     module_id: UUID,
     source_cutoff_at: datetime,
+    event_types: Sequence[str],
 ) -> datetime | None:
+    # Only events whose type is in the explicit qualifying set (config-backed RISK_ACTIVITY_EVENT_TYPES,
+    # incl. the content-domain `studied_section`) reset the inactivity clock. Reading the shared activity
+    # spine by event_type is intentional and carries NO gamification-domain dependency.
     return await db.scalar(
         select(func.max(StudentActivityEvent.occurred_at)).where(
             StudentActivityEvent.student_id == student_id,
             StudentActivityEvent.module_id == module_id,
+            StudentActivityEvent.event_type.in_(tuple(event_types)),
             StudentActivityEvent.occurred_at <= source_cutoff_at,
         )
     )

@@ -100,6 +100,7 @@ def risk_config() -> RiskConfig:
         inactivity_needs_support_days=settings.RISK_INACTIVITY_NEEDS_SUPPORT_DAYS,
         topic_deadline_watch_days=settings.RISK_TOPIC_DEADLINE_WATCH_DAYS,
         topic_deadline_needs_support_hours=settings.RISK_TOPIC_DEADLINE_NEEDS_SUPPORT_HOURS,
+        activity_event_types=tuple(settings.RISK_ACTIVITY_EVENT_TYPES),
     )
 
 
@@ -957,6 +958,7 @@ async def _risk_metrics_for_subject(
         student_id=subject.student_id,
         module_id=subject.module_id,
         source_cutoff_at=source_cutoff_at,
+        event_types=config.activity_event_types,
     )
     days_since_activity = None
     if latest_activity is not None:

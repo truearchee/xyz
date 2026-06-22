@@ -1,16 +1,21 @@
 # Status
 
-_Last updated: 2026-06-22 — **Stage 11.7 corrective AgentRun requeue recovery is FULLY VERIFIED.** Existing `queued`/`failed` `AgentRun`s now reconcile against the stable RQ job id before enqueueing, genuinely live RQ jobs are not duplicated, focused scheduler/API tests are green (`17 passed`), the 11.1 browser gate is green, the rule-14 full active Playwright split is green (`25` success + `2` fault), and Alembic remains `0059 (head)`. **Stage 11 remains feature-complete (11.1–11.6), with the 11.7 recovery fix applied.** Per owner: do not rebase or merge yet._
+_Last updated: 2026-06-22 — **Stage 11 REBASED onto current `main` (head `0082`) and reconciled against Stage 10 + Stage 8.6; PR open, awaiting owner merge.** Migration chain re-parented to single head `0082 -> 0056 -> 0057 -> 0058 -> 0059` (clean upgrade→base→upgrade round-trip). Product reconciliation: `studied_section` now COUNTS AS qualifying activity in `inactive_recently` via a config-backed event-type set (`risk-v1` amended in place; ADR-060). Shared surfaces reconciled: My-Progress `ForecastAdviceCard` coexists with Stage 10's `GamificationPanel`; the Stage 9 AI-free gate composes PR #14's id-set-diff with 11.6's forecast-advice scoping. The AgentRun requeue recovery is folded into **11.1** (a maintenance fix, NOT a roadmap stage "11.7"). Verified on the combined code in an isolated env (unique image `baghdad-stage11-landing`, clean DB, deterministic provider): backend **804 passed**, frontend `tsc` + **42 vitest**, full active Playwright **33 success + 2 fault**. No rule-11 smoke (deterministic risk change, no LLM path touched). One rule-10 flag open: `topic_deadline_gap` does not apply the published-section gate ([[steps/stage-11/findings-stage11-landing-reconciliation]]). Per owner: pushed + PR opened; the owner merges the PR._
 
 ## Current branch
 - Branch: `stage-11-ai-analytics`
 - Target branch: `origin/main`
-- Current base head before local changes: `4756f72`
+- Rebased onto current `origin/main` (`46d48bc`; Alembic head `0082` = no-op merge of Stage 8.6 `0044`
+  and Stage 10 `0081`, plus PR #14 section-visibility-leak fix). Migration chain re-parented (not
+  renumbered): `0056.down_revision` `0041` -> `0082`, giving `0082 -> 0056 -> 0057 -> 0058 -> 0059`.
 - Migration block: `0056-0072`
 - Migrations used: `0056`, `0057`, `0058`, `0059`
-- Current Alembic head verified in Docker: `0059 (head)` (below the Stage-10 `0060` block)
+- Current Alembic head verified in Docker after re-parent + upgrade->base->upgrade round-trip:
+  `0059 (head)` (single head)
 
-## Stage 11.7 Corrective Recovery — Fully Verified
+## Stage 11.1 Fix — AgentRun Requeue Recovery (maintenance fix WITHIN 11.1, not a roadmap stage)
+- Originally tracked as "11.7"; per owner it is a maintenance fix inside Stage 11.1, NOT a new sub-stage.
+  Its spec/plan/report retain their `11.7-agent-run-requeue-recovery` filenames as the fix's documentation.
 - **Stuck-run recovery:** fixed the AgentRun commit-before-RQ-enqueue gap. Later scheduler ticks or manual
   trigger retries now re-enqueue existing `queued`/`failed` runs instead of leaving them stranded.
 - **Stable job identity:** the stable `agent-run-{run_id}` RQ job id remains authoritative. The helper reconciles
@@ -20,7 +25,7 @@ _Last updated: 2026-06-22 — **Stage 11.7 corrective AgentRun requeue recovery 
   fixes the queue handoff. Manual/scheduler paths remain AI-free and do not touch `AIRequestLog`.
 - **No migration:** Alembic head stays `0059 (head)`.
 
-## Stage 11.7 Verification
+## Stage 11.1 Fix (requeue recovery) — Verification
 - Compile: targeted `python -m compileall ...` for the queue/scheduler/router/test files -> pass.
 - Focused scheduler/API tests: `tests/test_scheduler.py tests/test_analytics_api.py` -> `17 passed`.
 - 11.1 browser gate: `tests/e2e/11.1-roster-risk-scheduler.spec.ts` -> `1 passed`.
@@ -257,15 +262,15 @@ _Last updated: 2026-06-22 — **Stage 11.7 corrective AgentRun requeue recovery 
 - Plan: [[plans/stage-11/11.6-grade-forecast-advice]]
 - Report: [[steps/stage-11/11.6-grade-forecast-advice]]
 - Real-provider smoke: [[steps/stage-11/11.6-real-provider-smoke]]
-- Spec: [[specs/stage-11/11.7-agent-run-requeue-recovery]]
-- Plan: [[plans/stage-11/11.7-agent-run-requeue-recovery]]
-- Report: [[steps/stage-11/11.7-agent-run-requeue-recovery]]
+- 11.1 requeue-recovery fix (NOT a stage): Spec [[specs/stage-11/11.7-agent-run-requeue-recovery]] · Plan [[plans/stage-11/11.7-agent-run-requeue-recovery]] · Report [[steps/stage-11/11.7-agent-run-requeue-recovery]]
 - Real-provider smoke: [[steps/stage-11/11.2-real-provider-smoke]]
 - Findings: [[steps/stage-11/findings-11.1-gate-run]]
+- Landing reconciliation findings (rule 10): [[steps/stage-11/findings-stage11-landing-reconciliation]]
 - ADR: [[decisions/adr-056-stage-11-scheduler-risk-contract]]
 - ADR: [[decisions/adr-057-stage-11-recommendation-copy-route]]
 - ADR: [[decisions/adr-058-stage-11-workload-planner-algorithm]]
 - ADR: [[decisions/adr-059-stage-11-grade-forecast-advice-route]]
+- ADR: [[decisions/adr-060-stage-11-studied-section-activity]]
 
 ## Prior
 - 2026-06-20 — Stage 8.5 Save-to-Glossary from the Assistant FULLY VERIFIED.
