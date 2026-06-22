@@ -14,6 +14,14 @@ findings surfaced for an owner decision, per "flag it, rule 10, don't silently d
 
 ## F-LAND-1 (rule 10) — `topic_deadline_gap` student reason does not apply the published-section gate
 
+> **RESOLVED 2026-06-22** (branch `fix/stage11-section-visibility-leak`). `earliest_topic_deadline_gap`
+> now routes through `apply_visible_section_gate`. A read-audit found this was NOT the only Stage 11
+> recurrence of the leak class — `get_workload_module_context`, `get_grade_forecast_inputs`,
+> `count_missed_recent_quizzes`, `has_upcoming_work`, and `student_has_module` had the same omission and
+> were all fixed. See [[steps/stage-11/findings-stage11-section-visibility-fix]] for the full fix +
+> regression tests. (The "low practical risk" caveat below was the reason it shipped at landing; it is
+> now closed regardless.)
+
 **What.** `analytics_read.earliest_topic_deadline_gap()` selects `ModuleSection.title` + `due_at` joined to
 `StudentTopicMasterySnapshot` filtered by `ModuleSection.status == "active"` + `due_at` window, but **not**
 `ModuleSection.publish_status == "published"`. The returned `title` is surfaced to the **student** in the
@@ -44,11 +52,18 @@ landing time — flagged for an explicit owner decision.
 
 ## F-LAND-2 (informational) — `has_upcoming_work` intentionally not publish-gated (NOT a leak)
 
+> **REVISED 2026-06-22.** On owner direction this read IS now publish-gated (see
+> [[steps/stage-11/findings-stage11-section-visibility-fix]]). It surfaces no section *identity*, but a
+> draft future-dated section silently changes a student's risk tier (it drives the `inactive_recently`
+> reason) from content the student cannot see — so it is gated for consistency with the workload /
+> calendar deadline reads. The `section_visibility.py` "scheduled-day reads" carve-out still applies to
+> genuine schedule-date surfaces; `has_upcoming_work` gates a risk reason, not a schedule date.
+
 `analytics_read.has_upcoming_work()` counts `ModuleSection.status == "active"` with a future `due_at`
 regardless of `publish_status`, and gates the `inactive_recently` reason. It surfaces **no title** — only
 whether *some* upcoming work exists. This matches `section_visibility.py`'s explicit design note that the
 visibility gate "is deliberately NOT applied to the scheduled-day reads (a future class DATE may surface
-before its section publishes — a schedule date, not hidden content; by design)." No change recommended.
+before its section publishes — a schedule date, not hidden content; by design)."
 
 ## F-LAND-3 (informational) — ADR number collision across the three branches
 
