@@ -3,6 +3,8 @@
 import {
   type ActiveSummaryPreviewRead,
   AdminService,
+  AnalyticsService,
+  type AgentRunRead,
   type AnswerFeedback,
   type AnswerSubmission,
   ApiError,
@@ -15,6 +17,9 @@ import {
   type ConversationRead,
   type CreateConversationRequest,
   type KeysetPage_MessageRead_,
+  type LecturerAssessmentInsightsRead,
+  type LecturerRosterRiskRead,
+  type LecturerStudentRecommendationsRead,
   type MessageRead,
   type PaginatedResponse_ConversationListItem_,
   type RenameConversationRequest,
@@ -52,11 +57,19 @@ import {
   type StudentSectionListItem,
   type StudentSectionRead,
   type StudentSectionSummariesRead,
+  type StudentRiskRead,
+  type ForecastAdviceRead,
+  type StudentAvailabilityRead,
+  type StudentAvailabilityUpdate,
+  type RecommendationActionRead,
+  type StudentRecommendationBannerRead,
+  type StudentRecommendationListRead,
   StudentSummariesService,
   TranscriptsService,
   type TranscriptMeta,
   type TranscriptProcessingStatus,
   type TranscriptSummariesRead,
+  type TriggerAgentRunRequest,
   type UpdateSectionNotesRequest,
   GlossaryService,
   type FolderCreateRequest,
@@ -77,6 +90,7 @@ import {
   type TargetGradeRequest,
   type UpdateEntryRequest,
   type UpdatePreferencesRequest,
+  type WorkloadPlanRead,
 } from './index';
 import { consumeForcedBearerToken } from '../e2e/e2eAuthOverride';
 import { getSupabaseBrowserClient } from '../supabase/client';
@@ -224,6 +238,50 @@ async function downloadAttachmentAsset(
     throw new ForbiddenError(response.statusText || 'Forbidden', body);
   }
   throw new Error(body || response.statusText || 'Download failed');
+}
+
+async function downloadWorkloadPlanCalendar(
+  planId: string,
+): Promise<{ blob: Blob; fileName: string }> {
+  const tokenResolver = OpenAPI.TOKEN;
+  const token =
+    typeof tokenResolver === 'function'
+      ? await tokenResolver({ method: 'GET', url: '' })
+      : tokenResolver;
+
+  if (!token) {
+    await redirectToLogin();
+    throw new AuthRequiredError();
+  }
+
+  const response = await fetch(
+    `${OpenAPI.BASE}/student/workload/plans/${encodeURIComponent(planId)}/calendar.ics`,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    },
+  );
+
+  if (response.ok) {
+    return {
+      blob: await response.blob(),
+      fileName: attachmentFileName(
+        response.headers.get('Content-Disposition'),
+        `xyz-lms-workload-plan-${planId}.ics`,
+      ),
+    };
+  }
+
+  if (response.status === 401) {
+    await redirectToLogin();
+    throw new AuthRequiredError(response.statusText || 'Unauthorized');
+  }
+  const body = await response.text();
+  if (response.status === 403) {
+    throw new ForbiddenError(response.statusText || 'Forbidden', body);
+  }
+  throw new Error(body || response.statusText || 'Calendar export failed');
 }
 
 export const api = {
@@ -468,6 +526,77 @@ export const api = {
   gamification: {
     get: (): Promise<GamificationRead> =>
       withAuthRecovery(() => GamificationService.getStudentGamification()),
+  },
+  analytics: {
+    triggerAgentRun: (requestBody: TriggerAgentRunRequest): Promise<AgentRunRead> =>
+      withAuthRecovery(() => AnalyticsService.triggerAgentRun(requestBody)),
+    getAgentRun: (runId: string): Promise<AgentRunRead> =>
+      withAuthRecovery(() => AnalyticsService.getAgentRun(runId)),
+    getLecturerRosterRisk: (moduleId: string): Promise<LecturerRosterRiskRead> =>
+      withAuthRecovery(() => AnalyticsService.getLecturerRosterRisk(moduleId)),
+    getLecturerAssessmentInsights: (
+      moduleId: string,
+    ): Promise<LecturerAssessmentInsightsRead> =>
+      withAuthRecovery(() =>
+        AnalyticsService.getLecturerAssessmentInsights(moduleId),
+      ),
+    getStudentRisk: (moduleId: string): Promise<StudentRiskRead> =>
+      withAuthRecovery(() => AnalyticsService.getStudentModuleRisk(moduleId)),
+    getStudentForecastAdvice: (moduleId: string): Promise<ForecastAdviceRead> =>
+      withAuthRecovery(() =>
+        AnalyticsService.getStudentModuleForecastAdvice(moduleId),
+      ),
+    getStudentWorkloadAvailability: (
+      moduleId: string,
+    ): Promise<StudentAvailabilityRead> =>
+      withAuthRecovery(() =>
+        AnalyticsService.getStudentWorkloadAvailability(moduleId),
+      ),
+    updateStudentWorkloadAvailability: (
+      moduleId: string,
+      requestBody: StudentAvailabilityUpdate,
+    ): Promise<StudentAvailabilityRead> =>
+      withAuthRecovery(() =>
+        AnalyticsService.updateStudentWorkloadAvailability(moduleId, requestBody),
+      ),
+    getStudentWorkloadPlan: (moduleId: string): Promise<WorkloadPlanRead> =>
+      withAuthRecovery(() => AnalyticsService.getStudentWorkloadPlan(moduleId)),
+    generateStudentWorkloadPlan: (moduleId: string): Promise<WorkloadPlanRead> =>
+      withAuthRecovery(() => AnalyticsService.generateStudentWorkloadPlan(moduleId)),
+    downloadWorkloadPlanCalendar,
+    getLecturerStudentRecommendations: (
+      moduleId: string,
+      studentId: string,
+    ): Promise<LecturerStudentRecommendationsRead> =>
+      withAuthRecovery(() =>
+        AnalyticsService.getLecturerStudentRecommendations(moduleId, studentId),
+      ),
+    markLecturerRecommendationActed: (
+      recommendationId: string,
+    ): Promise<RecommendationActionRead> =>
+      withAuthRecovery(() =>
+        AnalyticsService.markLecturerRecommendationActed(recommendationId),
+      ),
+    dismissLecturerRecommendation: (
+      recommendationId: string,
+    ): Promise<RecommendationActionRead> =>
+      withAuthRecovery(() =>
+        AnalyticsService.dismissLecturerRecommendation(recommendationId),
+      ),
+    getStudentModuleRecommendations: (
+      moduleId: string,
+    ): Promise<StudentRecommendationListRead> =>
+      withAuthRecovery(() =>
+        AnalyticsService.getStudentModuleRecommendations(moduleId),
+      ),
+    getStudentRecommendationBanner: (): Promise<StudentRecommendationBannerRead> =>
+      withAuthRecovery(() => AnalyticsService.getStudentRecommendationBanner()),
+    dismissStudentRecommendation: (
+      recommendationId: string,
+    ): Promise<RecommendationActionRead> =>
+      withAuthRecovery(() =>
+        AnalyticsService.dismissStudentRecommendation(recommendationId),
+      ),
   },
   assessments: {
     create: (

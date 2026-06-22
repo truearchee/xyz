@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from app.domains.progress.seed import seed_progress_dataset
 
 
-EXPECTED_ALEMBIC_VERSION = "0039"
+EXPECTED_ALEMBIC_VERSION = "0057"
 _LOCAL_DATABASE_HOSTS = {"", "localhost", "127.0.0.1", "::1", "db", "postgres"}
 
 

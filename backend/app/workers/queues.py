@@ -5,6 +5,8 @@ from uuid import UUID
 
 from redis import Redis
 from rq import Queue, Retry
+from rq.exceptions import NoSuchJobError
+from rq.job import Job
 
 
 INGESTION_QUEUE_NAME = "ingestion"
@@ -15,6 +17,8 @@ EMBEDDING_RQ_RETRY_INTERVALS = [30, 120, 300]
 # RQ retries are reserved for provider_transient + bounded invalid_output (rule 15).
 AI_RQ_RETRY_MAX = 3
 AI_RQ_RETRY_INTERVALS = [30, 120, 300]
+AGENT_RUN_REQUEUEABLE_STATUSES = {"queued", "failed"}
+AGENT_RUN_LIVE_RQ_STATUSES = {"queued", "started", "deferred", "scheduled"}
 
 
 def get_redis_connection() -> Redis:
@@ -161,6 +165,107 @@ def enqueue_generate_assistant_answer(message_id: UUID) -> str:
         str(message_id),
         job_id=job_id,
         at_front=True,
+        retry=Retry(max=AI_RQ_RETRY_MAX, interval=AI_RQ_RETRY_INTERVALS),
+    )
+    return job_id
+
+
+def agent_run_job_id(run_id: UUID) -> str:
+    return f"agent-run-{run_id}"
+
+
+def agent_run_status_is_requeueable(status: str) -> bool:
+    return status in AGENT_RUN_REQUEUEABLE_STATUSES
+
+
+def enqueue_run_agent(run_id: UUID) -> str:
+    """Enqueue a deterministic Stage 11 AgentRun on the default worker queue.
+
+    The job is idempotent at the database layer. No AI queue is involved because Stage 11.1 computes
+    snapshots only; later AI phrasing remains lazy/on-view.
+    """
+    from app.domains.analytics.jobs import run_agent
+
+    job_id = agent_run_job_id(run_id)
+    get_ingestion_queue().enqueue(run_agent, str(run_id), job_id=job_id)
+    return job_id
+
+
+def enqueue_run_agent_if_needed(run_id: UUID) -> tuple[str, bool]:
+    """Enqueue an AgentRun unless the stable RQ job id is already live.
+
+    The Postgres ``AgentRun.idempotency_key`` remains the run identity boundary. This helper only reconciles
+    the RQ handoff: a committed ``queued``/``failed`` run can recover if the first enqueue failed after commit,
+    while a run that is genuinely queued/started/deferred/scheduled in RQ is not duplicated.
+    """
+    from app.domains.analytics.jobs import run_agent
+
+    job_id = agent_run_job_id(run_id)
+    queue = get_ingestion_queue()
+    existing = _fetch_rq_job(job_id, queue.connection)
+    if existing is not None:
+        status = _rq_status(existing)
+        if status in AGENT_RUN_LIVE_RQ_STATUSES:
+            return job_id, False
+        existing.delete()
+    queue.enqueue(run_agent, str(run_id), job_id=job_id)
+    return job_id, True
+
+
+def _fetch_rq_job(job_id: str, connection) -> Job | None:
+    try:
+        return Job.fetch(job_id, connection=connection)
+    except NoSuchJobError:
+        return None
+
+
+def _rq_status(job: Job) -> str:
+    status = job.get_status(refresh=True)
+    raw = getattr(status, "value", status)
+    return str(raw).lower().removeprefix("jobstatus.")
+
+
+def recommendation_copy_job_id(recommendation_id: UUID) -> str:
+    return f"recommendation-copy-{recommendation_id}"
+
+
+def enqueue_generate_recommendation_copy(recommendation_id: UUID) -> str:
+    """Enqueue lazy Stage 11.2 recommendation copy generation.
+
+    This is background-priority AI work. The page renders deterministic template copy immediately;
+    the job enriches the persisted recommendation cache when available.
+    """
+    from app.domains.analytics.recommendation_ai import generate_recommendation_copy
+
+    job_id = recommendation_copy_job_id(recommendation_id)
+    get_ai_queue().enqueue(
+        generate_recommendation_copy,
+        str(recommendation_id),
+        job_id=job_id,
+        retry=Retry(max=AI_RQ_RETRY_MAX, interval=AI_RQ_RETRY_INTERVALS),
+    )
+    return job_id
+
+
+def forecast_advice_job_id(advice_id: UUID) -> str:
+    return f"forecast-advice-{advice_id}"
+
+
+def enqueue_generate_forecast_advice(advice_id: UUID) -> str:
+    """Enqueue lazy Stage 11.6 grade-forecast advice generation.
+
+    Background-priority AI work. The page renders the deterministic template advice immediately; the job
+    enriches the persisted advice cache when available. The stable job id collapses repeat enqueues of
+    the same advice row; the worker's ``_claim`` (SELECT ... FOR UPDATE + status re-check) is the
+    authority that makes a duplicate run a no-op under concurrency (rule-15 frugality).
+    """
+    from app.domains.analytics.forecast_advice_ai import generate_forecast_advice
+
+    job_id = forecast_advice_job_id(advice_id)
+    get_ai_queue().enqueue(
+        generate_forecast_advice,
+        str(advice_id),
+        job_id=job_id,
         retry=Retry(max=AI_RQ_RETRY_MAX, interval=AI_RQ_RETRY_INTERVALS),
     )
     return job_id

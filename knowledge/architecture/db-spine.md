@@ -36,6 +36,17 @@ related-session: knowledge/specs/stage-02/2.1-db-spine.md
 - Report: [[steps/stage-10/10a-foundation]]
 - Decision: [[decisions/adr-056-gamification-course-timezone]]
 - Decision: [[decisions/adr-057-gamification-on-read-evaluation]]
+- Spec: [[specs/stage-11/11.1-roster-risk-scheduler]]
+- Report: [[steps/stage-11/11.1-roster-risk-scheduler]]
+- Spec: [[specs/stage-11/11.2-student-detail-recommendations]]
+- Report: [[steps/stage-11/11.2-student-detail-recommendations]]
+- Spec: [[specs/stage-11/11.3-assessment-analysis-question-insights]]
+- Report: [[steps/stage-11/11.3-assessment-analysis-question-insights]]
+- Spec: [[specs/stage-11/11.4-workload-planner]]
+- Report: [[steps/stage-11/11.4-workload-planner]]
+- Decision: [[decisions/adr-056-stage-11-scheduler-risk-contract]]
+- Decision: [[decisions/adr-057-stage-11-recommendation-copy-route]]
+- Decision: [[decisions/adr-058-stage-11-workload-planner-algorithm]]
 - Spec: [[specs/stage-04/4.1-transcript-upload]]
 - Plan: [[plans/stage-04/4.1-transcript-upload]]
 - Report: [[steps/stage-04/4.1-transcript-upload]]
@@ -93,6 +104,23 @@ The backend now has a SQLAlchemy declarative model package under `backend/app/pl
 - `student_streak_state` (Stage 10) stores only monotonic streak state per student:
   `longest_streak` and `last_seen_gamification_at`. Current streaks are recomputed on read from
   schedule + activity events.
+- `agent_runs` (Stage 11.1) records deterministic scheduler/manual agent executions with trigger/scope,
+  scheduled time, triggering admin, algorithm version, status/timestamps, counts, idempotency key, and
+  sanitized failure message.
+- `student_risk_snapshots` (Stage 11.1) stores deterministic run history for per-student/per-module risk
+  with `risk_tier`, structured `risk_reasons`, `algorithm_version`, `input_hash`, `source_cutoff_at`, and
+  `computed_at`. UI reads still compute current risk live; these rows are history/proactive-layer evidence.
+- `recommendations` (Stage 11.2) stores deterministic recommendation rows derived from
+  `student_risk_snapshots.risk_reasons`. Each row has separate lecturer/student state, one active row per
+  `(student_id, reason_code, target_key)`, deterministic payload/provenance fields, and optional cached AI
+  phrasing/provenance. Visibility still revalidates current risk live on read.
+- `student_availability`, `workload_plans`, and `workload_plan_items` (Stage 11.4) store student-owned
+  workload planning preferences and deterministic generated plan rows. Availability has one row per
+  `(student_id, module_id)` with selected weekdays, preferred window, daily minute cap, and version. Workload
+  plans store `algorithm_version`, stable `input_hash`, `availability_version`, `source_cutoff_at`,
+  `horizon_metadata`, and one active partial index per `(student_id, module_id)`. Items store the persisted task
+  key, source section where applicable, scheduled date/window/start/end, label, estimate, reason, tight flag,
+  and source metadata.
 
 ## Section asset schema notes
 - `section_assets.storage_key` is a private object-storage path and is unique.
@@ -171,6 +199,45 @@ The backend now has a SQLAlchemy declarative model package under `backend/app/pl
   once-per-day deduplication.
 - `GET /student/gamification` is a read surface, not a badge-award command surface. No HTTP endpoint
   accepts a badge, streak, or arbitrary gamification event from the frontend.
+## Analytics risk schema notes (Stage 11.1)
+- Stage 11.1 uses migration `0056`, chained after main head `0041`.
+- `agent_runs.idempotency_key` is unique and is derived from
+  `trigger_type | scope_type | scope_id | scheduled_for | algorithm_version`.
+- `student_risk_snapshots` is unique per `(agent_run_id, student_id, module_id)` and cascades with
+  `agent_runs`, `app_users`, and `course_modules`.
+- Risk reasons are JSONB, but every reason must satisfy the application contract that
+  `supportingMetrics` contains exactly the listed `metricKeys`.
+- No black-box risk score is stored.
+
+## Recommendation schema notes (Stage 11.2)
+- Stage 11.2 uses migration `0057`, chained after `0056`.
+- `recommendations.deterministic_payload` is the source for template copy, AI prompt facts, allowed numbers,
+  allowed metric keys, and allowed fact phrases.
+- `lecturer_state` and `student_state` are independent so a lecturer action never hides a student nudge, and
+  student `Not now` never hides the lecturer draft.
+- Cached AI copy is invalidated by `input_hash` or prompt-version change. Invalid or unsafe AI output is not
+  persisted; deterministic templates remain the fallback.
+
+## Assessment insight read model notes (Stage 11.3)
+- Stage 11.3 adds no tables and no migration. Alembic head remains `0057`.
+- Lecturer assessment insights compute on read from completed `quiz_attempts`, `quiz_questions`,
+  `student_answers`, `answer_options`, and existing section/summary provenance.
+- Topic mastery accepts only source sections that belong to the requested module. Null, missing, or cross-module
+  provenance is returned as unavailable rather than inferred.
+- The API DTO exposes aggregates only. It does not expose student IDs, names, emails, or per-student attempt rows.
+
+## Workload planner schema notes (Stage 11.4)
+- Stage 11.4 uses migration `0058`, chained after `0057`.
+- `student_availability` is scoped to the requesting student and module. `availability_version` increments only
+  when persisted availability changes.
+- `workload_plans` are superseded rather than overwritten. Regeneration updates the old active row with
+  `is_active=false` and `superseded_at`, then inserts one new active plan in the same transaction.
+- `workload_plan_items` persist estimates and reasons so the frontend and future 11.5 export read stored plan
+  facts instead of recalculating planner logic.
+- Tight unscheduled residuals are the only plan items allowed to have null scheduled date/start/end, and they
+  require `tight=true` plus a tight message.
+- The legacy horizon fallback is recorded in `horizon_metadata`; it is only for modules whose course end is
+  genuinely unknown and must not truncate a resolvable `course_modules.ends_on`.
 
 ## ID strategy
 All primary keys are PostgreSQL `UUID` columns with no database-side default. Application models generate UUIDv7 values through `uuid6.uuid7`, keeping IDs time-ordered while avoiding `gen_random_uuid()` defaults.

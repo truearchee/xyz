@@ -14,6 +14,17 @@ const APP_DATABASE_SERVICE = 'db';
 const APP_DATABASE_NAME = 'xyz_lms';
 const APP_DATABASE_USER = 'postgres';
 const E2E_ACTOR_DOMAIN = 'xyz-lms-e2e.dev';
+const FIXED_E2E_USER_EMAILS = [
+  'admin_e2e@example.test',
+  'lecturer_e2e@example.test',
+  'lecturer_unassigned_e2e@example.test',
+  'student_e2e@example.test',
+  'student2_e2e@example.test',
+];
+const FIXED_E2E_GLOSSARY_TERMS = [
+  // Stage 8.5 highlights this deterministic assistant term from the standing student account.
+  'concise',
+];
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const ASSET_STORAGE_KEY_PATTERN =
@@ -22,6 +33,8 @@ const TRANSCRIPT_STORAGE_KEY_PATTERN =
   /^modules\/[0-9a-f-]{36}\/sections\/[0-9a-f-]{36}\/transcripts\/[0-9a-f-]{36}\/[^/]+$/i;
 const LEGACY_DIRECT_TRANSCRIPT_STORAGE_KEY_PATTERN =
   /^modules\/[0-9a-f-]{36}\/sections\/\d+\/[0-9a-f-]{36}\.vtt$/i;
+const E2E_PROCESSING_TRANSCRIPT_STORAGE_KEY_PATTERN =
+  /^e2e\/[0-9a-f-]{36}\/processing\.vtt$/i;
 
 function loadEnv() {
   if (!existsSync(ENV_PATH)) {
@@ -127,13 +140,14 @@ function assertManifestIds(manifest) {
 }
 
 function assertExactStorageKey(key) {
+  const isExactE2EProcessingKey = E2E_PROCESSING_TRANSCRIPT_STORAGE_KEY_PATTERN.test(key);
   if (
     !key ||
     key.includes('*') ||
     key.endsWith('/') ||
     key === 'modules' ||
     key.includes('..') ||
-    !key.startsWith('modules/')
+    (!key.startsWith('modules/') && !isExactE2EProcessingKey)
   ) {
     throw new Error(`Refusing broad or invalid storage cleanup key: ${key}`);
   }
@@ -141,7 +155,8 @@ function assertExactStorageKey(key) {
   if (
     !ASSET_STORAGE_KEY_PATTERN.test(key) &&
     !TRANSCRIPT_STORAGE_KEY_PATTERN.test(key) &&
-    !LEGACY_DIRECT_TRANSCRIPT_STORAGE_KEY_PATTERN.test(key)
+    !LEGACY_DIRECT_TRANSCRIPT_STORAGE_KEY_PATTERN.test(key) &&
+    !E2E_PROCESSING_TRANSCRIPT_STORAGE_KEY_PATTERN.test(key)
   ) {
     throw new Error(`Refusing non-object storage cleanup key: ${key}`);
   }
@@ -153,6 +168,10 @@ function sqlLiteral(value) {
 
 function uuidList(values) {
   return values.map((value) => `${sqlLiteral(value)}::uuid`).join(', ');
+}
+
+function textList(values) {
+  return values.map((value) => sqlLiteral(value)).join(', ');
 }
 
 function runPsql(sql) {
@@ -356,6 +375,30 @@ async function teardown(identifier) {
       : '';
 
   const storageKeys = selectStorageKeys(manifest);
+  const fixedE2EStudentScope = `
+student_id IN (
+  SELECT id
+  FROM app_users
+  WHERE email IN (${textList(FIXED_E2E_USER_EMAILS)})
+)`;
+  const glossaryPracticeSessionScope = [studentScope, fixedE2EStudentScope]
+    .filter(Boolean)
+    .join(' OR ');
+  const fixedE2EGlossaryTermScope = `
+student_id IN (
+  SELECT id
+  FROM app_users
+  WHERE email IN (${textList(FIXED_E2E_USER_EMAILS)})
+)
+AND normalized_term IN (${textList(FIXED_E2E_GLOSSARY_TERMS)})`;
+  const glossaryEntryScope = [
+    manifest.moduleIds.length > 0 ? `subject_id IN (${uuidList(manifest.moduleIds)})` : '',
+    manifest.sectionIds.length > 0 ? `module_section_id IN (${uuidList(manifest.sectionIds)})` : '',
+    manifest.appUserIds.length > 0 ? `student_id IN (${uuidList(manifest.appUserIds)})` : '',
+    fixedE2EGlossaryTermScope,
+  ]
+    .filter(Boolean)
+    .join(' OR ');
   const summary = {
     manifest: path,
     runId: manifest.runId,
@@ -421,6 +464,56 @@ async function teardown(identifier) {
     ]),
     aiRequestLogs: deleteWhere('ai_request_logs', [
       manifest.aiRequestLogIds.length > 0 ? `id IN (${uuidList(manifest.aiRequestLogIds)})` : '',
+    ]),
+    recommendations: deleteWhere('recommendations', [
+      manifest.moduleIds.length > 0 ? `module_id IN (${uuidList(manifest.moduleIds)})` : '',
+      manifest.appUserIds.length > 0 ? `student_id IN (${uuidList(manifest.appUserIds)})` : '',
+    ]),
+    workloadPlanItems: deleteWhere('workload_plan_items', [
+      manifest.moduleIds.length > 0
+        ? `workload_plan_id IN (SELECT id FROM workload_plans WHERE module_id IN (${uuidList(manifest.moduleIds)}))`
+        : '',
+      manifest.appUserIds.length > 0
+        ? `workload_plan_id IN (SELECT id FROM workload_plans WHERE student_id IN (${uuidList(manifest.appUserIds)}))`
+        : '',
+    ]),
+    workloadPlans: deleteWhere('workload_plans', [
+      manifest.moduleIds.length > 0 ? `module_id IN (${uuidList(manifest.moduleIds)})` : '',
+      manifest.appUserIds.length > 0 ? `student_id IN (${uuidList(manifest.appUserIds)})` : '',
+    ]),
+    studentAvailability: deleteWhere('student_availability', [
+      manifest.moduleIds.length > 0 ? `module_id IN (${uuidList(manifest.moduleIds)})` : '',
+      manifest.appUserIds.length > 0 ? `student_id IN (${uuidList(manifest.appUserIds)})` : '',
+    ]),
+    glossaryPracticeAnswers: deleteWhere('glossary_practice_answers', [
+      glossaryPracticeSessionScope
+        ? `practice_session_id IN (SELECT id FROM glossary_practice_sessions WHERE ${glossaryPracticeSessionScope})`
+        : '',
+    ]),
+    glossaryPracticeSessions: deleteWhere('glossary_practice_sessions', [
+      glossaryPracticeSessionScope,
+    ]),
+    glossaryReviewState: deleteWhere('glossary_review_state', [
+      glossaryEntryScope
+        ? `glossary_entry_id IN (SELECT id FROM glossary_entries WHERE ${glossaryEntryScope})`
+        : '',
+    ]),
+    glossarySourceReferences: deleteWhere('glossary_source_references', [
+      glossaryEntryScope
+        ? `glossary_entry_id IN (SELECT id FROM glossary_entries WHERE ${glossaryEntryScope})`
+        : '',
+    ]),
+    glossaryEvents: deleteWhere('student_activity_events', [
+      glossaryEntryScope
+        ? `event_type = 'glossary_term_saved' AND source_id IN (SELECT id FROM glossary_entries WHERE ${glossaryEntryScope})`
+        : '',
+    ]),
+    glossaryEntries: deleteWhere('glossary_entries', [glossaryEntryScope]),
+    studentRiskSnapshots: deleteWhere('student_risk_snapshots', [
+      manifest.moduleIds.length > 0 ? `module_id IN (${uuidList(manifest.moduleIds)})` : '',
+    ]),
+    agentRuns: deleteWhere('agent_runs', [
+      manifest.moduleIds.length > 0 ? `scope_id IN (${uuidList(manifest.moduleIds)})` : '',
     ]),
     transcriptSegments: deleteWhere('transcript_segments', [
       manifest.transcriptSegmentIds.length > 0

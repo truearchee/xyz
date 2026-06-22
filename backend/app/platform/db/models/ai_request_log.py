@@ -31,6 +31,8 @@ AI_REQUEST_LOG_FEATURES: tuple[str, ...] = (
     "quiz_pool",
     "glossary_definition",
     "assistant",
+    "recommendation_copy",
+    "grade_forecast_advice",
 )
 _FEATURE_IN = ", ".join(f"'{feature}'" for feature in AI_REQUEST_LOG_FEATURES)
 

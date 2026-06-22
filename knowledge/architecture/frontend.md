@@ -2,7 +2,7 @@
 type: architecture
 stage: 04
 created: 2026-06-05
-updated: 2026-06-20
+updated: 2026-06-22
 related-session: knowledge/specs/stage-04/4.3.5c-stage2-admin-ui-backfill.md
 ---
 
@@ -29,6 +29,16 @@ related-session: knowledge/specs/stage-04/4.3.5c-stage2-admin-ui-backfill.md
 - Report: [[steps/stage-10/10a-foundation]]
 - ADR: [[decisions/adr-056-gamification-course-timezone]]
 - ADR: [[decisions/adr-057-gamification-on-read-evaluation]]
+- Spec: [[specs/stage-11/11.1-roster-risk-scheduler]]
+- Report: [[steps/stage-11/11.1-roster-risk-scheduler]]
+- Spec: [[specs/stage-11/11.2-student-detail-recommendations]]
+- Report: [[steps/stage-11/11.2-student-detail-recommendations]]
+- Spec: [[specs/stage-11/11.3-assessment-analysis-question-insights]]
+- Report: [[steps/stage-11/11.3-assessment-analysis-question-insights]]
+- Spec: [[specs/stage-11/11.4-workload-planner]]
+- Report: [[steps/stage-11/11.4-workload-planner]]
+- Spec: [[specs/stage-11/11.5-calendar-ics-export]]
+- Report: [[steps/stage-11/11.5-calendar-ics-export]]
 
 ## Route structure
 The root `frontend/src/app/layout.tsx` owns global providers only. The public auth page lives under `(auth)/login` and renders without the AppShell. Protected app pages live under `(app)` and are wrapped by `ProtectedAppLayout` plus `AppShell`.
@@ -41,6 +51,12 @@ Session 4.3.5d Checkpoint D adds the student module detail route `/student/modul
 
 Stage 9 adds the student progress route `/student/progress`. It is a protected student route under
 `(app)` and renders `frontend/src/features/progress/ProgressDashboard.tsx`.
+
+Stage 11 adds analytics widgets to existing routes rather than adding new pages:
+`LecturerRosterRiskPanel` mounts on `/lecturer/modules/[moduleId]`, and `StudentRiskCard` mounts on
+`/student/modules/[moduleId]` and `/student/progress`. Stage 11.3 adds `LecturerAssessmentInsightsPanel`
+to `/lecturer/modules/[moduleId]`. Stage 11.4 adds `StudentWorkloadPlanner` to
+`/student/modules/[moduleId]` and `/student/progress`.
 
 ## Session state
 `SessionProvider` is the browser source for frontend auth state. It reads Supabase browser session state, calls backend `GET /me`, and exposes app context from the backend response. Role routing and guards use the `/me` role only; frontend code must not decode JWT claims or read Supabase metadata for product role.
@@ -200,6 +216,71 @@ The panel renders the server-owned streak status, earned badges, locked badge pr
 items from the gamification response. It never awards badges or mutates streak state client-side;
 `newBadgeIds` remains an API signal for one-time celebration behavior and is not an authority for
 persistence.
+## Stage 11.1 risk UI
+Stage 11.1 adds `frontend/src/features/analytics/`:
+
+- `LecturerRosterRiskPanel` calls `api.analytics.getLecturerRosterRisk(moduleId)` and displays
+  `Needs support: N`, tier filtering, student rows, deterministic reason text, and exact cited metric
+  key/value pairs.
+- `StudentRiskCard` calls `api.analytics.getStudentRisk(moduleId)` and renders only the deterministic
+  gentle `studentText` reasons. It does not render the `riskTier`, peer data, or lecturer labels even
+  though the backend response carries the internal tier for consistency.
+- The API wrapper remains the only product path for analytics calls; no direct browser `fetch()` was added.
+
+## Stage 11.2 recommendation UI
+Stage 11.2 extends `frontend/src/features/analytics/`:
+
+- `LecturerRosterRiskPanel` can open a recommendation detail modal for an owned student. The modal renders
+  deterministic reasons/metrics, lecturer draft copy, student nudge preview, and exactly Copy draft / Mark acted /
+  Dismiss. There is no Send button and no send endpoint in the analytics client.
+- `StudentRecommendationNudge` mounts in the My Progress `Where you stand` surface as the primary student nudge.
+- `StudentRecommendationBanner` mounts on the student dashboard as a secondary, at-most-one active nudge.
+- Student nudges are dismissible through `Not now` and do not use modals, push, email, toast, peer copy, or risk
+  labels.
+- The UI renders deterministic template text immediately while AI copy is pending or unavailable; student surfaces
+  do not expose AI machinery.
+
+## Stage 11.3 assessment insight UI
+Stage 11.3 adds `LecturerAssessmentInsightsPanel` under `frontend/src/features/analytics/`:
+
+- It calls `api.analytics.getLecturerAssessmentInsights(moduleId)` through the generated client wrapper.
+- It renders aggregate-only question stats, most-missed ordering, wrong-option distractor counts/rates, topic
+  mastery rows, and explicit unavailable/small-cohort messages.
+- It mounts on the existing lecturer module detail page and adds no student-facing route.
+- It does not render or receive student names, emails, IDs, attempt rows, AI copy, peer comparisons, or risk labels.
+
+The browser gate asserts exact visible values against a seeded asymmetric distribution and scopes privacy checks to
+the assessment panel because the same lecturer module page also contains legitimate roster-risk student rows from
+Stage 11.1.
+
+## Stage 11.4 workload planner UI
+Stage 11.4 adds `StudentWorkloadPlanner` under `frontend/src/features/analytics/`:
+
+- It calls the analytics wrapper workload methods generated from OpenAPI for availability read/update, active
+  plan read, and plan generation.
+- It mounts on the student module detail page as the module-specific planning surface and on My Progress as a
+  compact selected-module planning surface.
+- Availability controls are the only editable region: weekday checkboxes, preferred-window select, daily-minute
+  number input, Generate/Regenerate, and Update availability.
+- Plan items render from stored backend values: date/window/start/end when scheduled, label, estimate minutes,
+  reason, tight badge, and tight message.
+- Plan rows contain no edit, done, drag, accept/reject, mark-complete, or item mutation affordance. The 11.4
+  browser gate asserts the absence of those controls and draggable rows.
+- The compact My Progress mount avoids the word "Save" in the availability button so the existing Stage 9
+  target-grade auto-save/no-Save-button assertion remains true.
+
+## Stage 11.5 calendar export UI
+Stage 11.5 extends `StudentWorkloadPlanner` with a snapshot download action:
+
+- The planner renders `Download calendar snapshot` only after an active plan is loaded.
+- `frontend/src/lib/api/wrapper.ts` exposes `api.analytics.downloadWorkloadPlanCalendar(planId)` as a controlled
+  authenticated attachment download helper. It follows the existing wrapper auth contract: 401 redirects to login,
+  while 403 surfaces `ForbiddenError` without signing the student out.
+- The generated OpenAPI client includes the new export route, but the mounted UI uses the wrapper helper because
+  browser blob downloads need filename/header handling.
+- The action creates a local object URL, clicks a temporary anchor, and revokes the object URL after download.
+- The export button does not add plan-item edit, done, drag, accept/reject, mark-complete, or auto-reschedule
+  controls.
 
 ## E2E bridge and run teardown
 `NEXT_PUBLIC_E2E_TEST_HOOKS=true` enables a browser-only `window.__xyzE2E` bridge for Playwright. It exposes Supabase session helpers, wrapper-backed `/me` and `/admin/users` calls with serializable result envelopes, and a single-use forced bearer-token override for deterministic 401 testing. The bridge is not registered unless the flag is exactly `true`.

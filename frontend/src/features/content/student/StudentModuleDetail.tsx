@@ -11,6 +11,8 @@ import {
 } from "../../../lib/api";
 import { Badge } from "../../../components/ui/Badge";
 import { ForbiddenError, api } from "../../../lib/api/wrapper";
+import { StudentRiskCard } from "../../analytics/StudentRiskCard";
+import { StudentWorkloadPlanner } from "../../analytics/StudentWorkloadPlanner";
 import { StudentQuizModesPanel } from "../../quiz/StudentQuizModesPanel";
 import { StudentSectionView } from "./StudentSectionView";
 
@@ -160,6 +162,10 @@ export function StudentModuleDetail({ moduleId }: StudentModuleDetailProps) {
           </Badge>
         ) : null}
       </header>
+
+      <StudentRiskCard moduleId={moduleId} />
+
+      <StudentWorkloadPlanner moduleId={moduleId} />
 
       <StudentQuizModesPanel
         moduleId={moduleId}

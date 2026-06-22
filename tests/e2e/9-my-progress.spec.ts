@@ -410,12 +410,16 @@ async function apiContext(token: string): Promise<APIRequestContext> {
   });
 }
 
-// The My Progress dashboard is a pure read: it must issue NO LLM request of its own (no AI log). We prove
-// that by an id-set diff rather than a global count, deliberately EXCLUDING async transcript-ingestion
-// worker logs (ingestion_job_id NOT NULL — e.g. summary_brief/summary_detailed) that other specs' jobs
-// can drain into this window. Those are background work, not the progress read, and a global count made
-// the assertion flake on test ordering. A regression where the progress path itself called the LLM would
-// log a row with ingestion_job_id IS NULL (it is not an ingestion job) and is still caught here.
+// The My Progress dashboard is a pure read: it must issue NO LLM request of its OWN beyond the lazy
+// grade-forecast advice Stage 11.6 intentionally adds to the forecast area (master-spec coordination:
+// 11.6 "adds grade advice to the forecast area"). We prove that with an id-set diff rather than a global
+// count, deliberately EXCLUDING both:
+//   (a) async transcript-ingestion worker logs (ingestion_job_id NOT NULL — e.g. summary_brief/
+//       summary_detailed) that other specs' jobs can drain into this window — background work, not the
+//       progress read; a global count made the assertion flake on test ordering; and
+//   (b) the expected `grade_forecast_advice` rows — Stage 11.6's allowed advice AI on this surface.
+// A regression where the progress path itself called the LLM for summary / quiz / recommendation would
+// log a row with ingestion_job_id IS NULL AND feature <> 'grade_forecast_advice' — still caught here.
 function aiLogIds(): string[] {
   return runPsqlRows(`SELECT id::text FROM ai_request_logs`);
 }
@@ -428,6 +432,7 @@ function newSynchronousAiLogCount(beforeIds: string[]): number {
 SELECT to_json(count(*)::int)::text
 FROM ai_request_logs
 WHERE ingestion_job_id IS NULL
+  AND feature <> 'grade_forecast_advice'
 ${exclusion}
 `) as unknown as number;
 }

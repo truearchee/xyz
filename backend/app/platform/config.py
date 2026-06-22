@@ -237,6 +237,157 @@ class Settings:
     def REDIS_URL(self) -> str:
         return os.environ.get("REDIS_URL", "redis://redis:6379/0")
 
+    # ─── scheduler + deterministic analytics (Stage 11.1) ───────────────────
+    @property
+    def INSTITUTION_TIMEZONE(self) -> str:
+        return os.environ.get("INSTITUTION_TIMEZONE", "UTC").strip() or "UTC"
+
+    @property
+    def SCHEDULER_ENABLED(self) -> bool:
+        return self._bool("SCHEDULER_ENABLED", default=True)
+
+    @property
+    def SCHEDULER_DAILY_HOUR(self) -> int:
+        value = self._int("SCHEDULER_DAILY_HOUR", "6", minimum=0)
+        if value > 23:
+            raise SettingsError("SCHEDULER_DAILY_HOUR must be between 0 and 23")
+        return value
+
+    @property
+    def SCHEDULER_POLL_SECONDS(self) -> int:
+        return self._int("SCHEDULER_POLL_SECONDS", "60", minimum=1)
+
+    @property
+    def AGENT_RUN_MANUAL_TRIGGER_RATE_LIMIT(self) -> int:
+        return self._int("AGENT_RUN_MANUAL_TRIGGER_RATE_LIMIT", "20", minimum=0)
+
+    @property
+    def AGENT_RUN_MANUAL_TRIGGER_RATE_WINDOW_SECONDS(self) -> int:
+        return self._int("AGENT_RUN_MANUAL_TRIGGER_RATE_WINDOW_SECONDS", "60", minimum=1)
+
+    @property
+    def FORECAST_ADVICE_GENERATION_RATE_LIMIT(self) -> int:
+        # Max lazy AI advice (re)generations per student+module per window. Bounds adversarial
+        # input-variation cost; normal forecast changes are far below this. Throttled reads still
+        # serve the deterministic template (never a 429), so the cap never blocks the page.
+        return self._int("FORECAST_ADVICE_GENERATION_RATE_LIMIT", "8", minimum=0)
+
+    @property
+    def FORECAST_ADVICE_GENERATION_RATE_WINDOW_SECONDS(self) -> int:
+        return self._int("FORECAST_ADVICE_GENERATION_RATE_WINDOW_SECONDS", "300", minimum=1)
+
+    @property
+    def RISK_ALGORITHM_VERSION(self) -> str:
+        return os.environ.get("RISK_ALGORITHM_VERSION", "risk-v1").strip() or "risk-v1"
+
+    @property
+    def RISK_RECENT_QUIZ_WINDOW(self) -> int:
+        return self._int("RISK_RECENT_QUIZ_WINDOW", "3", minimum=1)
+
+    @property
+    def RISK_MISSED_QUIZ_WATCH_COUNT(self) -> int:
+        return self._int("RISK_MISSED_QUIZ_WATCH_COUNT", "1", minimum=1)
+
+    @property
+    def RISK_MISSED_QUIZ_NEEDS_SUPPORT_COUNT(self) -> int:
+        return self._int("RISK_MISSED_QUIZ_NEEDS_SUPPORT_COUNT", "2", minimum=1)
+
+    @property
+    def RISK_LOW_QUIZ_WATCH_AVERAGE(self) -> int:
+        return self._int("RISK_LOW_QUIZ_WATCH_AVERAGE", "70", minimum=0)
+
+    @property
+    def RISK_LOW_QUIZ_NEEDS_SUPPORT_AVERAGE(self) -> int:
+        return self._int("RISK_LOW_QUIZ_NEEDS_SUPPORT_AVERAGE", "50", minimum=0)
+
+    @property
+    def RISK_INACTIVITY_WATCH_DAYS(self) -> int:
+        return self._int("RISK_INACTIVITY_WATCH_DAYS", "7", minimum=1)
+
+    @property
+    def RISK_INACTIVITY_NEEDS_SUPPORT_DAYS(self) -> int:
+        return self._int("RISK_INACTIVITY_NEEDS_SUPPORT_DAYS", "14", minimum=1)
+
+    @property
+    def RISK_TOPIC_DEADLINE_WATCH_DAYS(self) -> int:
+        return self._int("RISK_TOPIC_DEADLINE_WATCH_DAYS", "7", minimum=1)
+
+    @property
+    def RISK_TOPIC_DEADLINE_NEEDS_SUPPORT_HOURS(self) -> int:
+        return self._int("RISK_TOPIC_DEADLINE_NEEDS_SUPPORT_HOURS", "48", minimum=1)
+
+    @property
+    def RISK_SNAPSHOT_RETENTION_DAYS(self) -> int:
+        return self._int("RISK_SNAPSHOT_RETENTION_DAYS", "180", minimum=1)
+
+    # ─── deterministic workload planner (Stage 11.4) ───────────────────────
+    @property
+    def WORKLOAD_PLAN_ALGORITHM_VERSION(self) -> str:
+        return os.environ.get("WORKLOAD_PLAN_ALGORITHM_VERSION", "workload-v1").strip() or "workload-v1"
+
+    @property
+    def WORKLOAD_PLAN_DAILY_OVERFLOW_PERCENT(self) -> int:
+        value = self._int("WORKLOAD_PLAN_DAILY_OVERFLOW_PERCENT", "25", minimum=0)
+        if value > 100:
+            raise SettingsError("WORKLOAD_PLAN_DAILY_OVERFLOW_PERCENT must be between 0 and 100")
+        return value
+
+    @property
+    def WORKLOAD_PLAN_DEADLINE_ESTIMATE_MINUTES(self) -> int:
+        return self._int("WORKLOAD_PLAN_DEADLINE_ESTIMATE_MINUTES", "90", minimum=1)
+
+    @property
+    def WORKLOAD_PLAN_GAP_ESTIMATE_MINUTES(self) -> int:
+        return self._int("WORKLOAD_PLAN_GAP_ESTIMATE_MINUTES", "45", minimum=1)
+
+    @property
+    def WORKLOAD_PLAN_WINDOW_MORNING_START(self) -> str:
+        return self._time_string("WORKLOAD_PLAN_WINDOW_MORNING_START", "09:00")
+
+    @property
+    def WORKLOAD_PLAN_WINDOW_MORNING_END(self) -> str:
+        return self._time_string("WORKLOAD_PLAN_WINDOW_MORNING_END", "11:00")
+
+    @property
+    def WORKLOAD_PLAN_WINDOW_AFTERNOON_START(self) -> str:
+        return self._time_string("WORKLOAD_PLAN_WINDOW_AFTERNOON_START", "14:00")
+
+    @property
+    def WORKLOAD_PLAN_WINDOW_AFTERNOON_END(self) -> str:
+        return self._time_string("WORKLOAD_PLAN_WINDOW_AFTERNOON_END", "16:00")
+
+    @property
+    def WORKLOAD_PLAN_WINDOW_EVENING_START(self) -> str:
+        return self._time_string("WORKLOAD_PLAN_WINDOW_EVENING_START", "18:00")
+
+    @property
+    def WORKLOAD_PLAN_WINDOW_EVENING_END(self) -> str:
+        return self._time_string("WORKLOAD_PLAN_WINDOW_EVENING_END", "21:00")
+
+    @property
+    def WORKLOAD_PLAN_LEGACY_FALLBACK_HORIZON_DAYS(self) -> int:
+        return self._int("WORKLOAD_PLAN_LEGACY_FALLBACK_HORIZON_DAYS", "90", minimum=1)
+
+    @property
+    def WORKLOAD_PLAN_MIN_AVAILABILITY_MINUTES(self) -> int:
+        return self._int("WORKLOAD_PLAN_MIN_AVAILABILITY_MINUTES", "15", minimum=1)
+
+    @property
+    def WORKLOAD_PLAN_MAX_AVAILABILITY_MINUTES(self) -> int:
+        return self._int("WORKLOAD_PLAN_MAX_AVAILABILITY_MINUTES", "480", minimum=1)
+
+    @property
+    def WORKLOAD_PLAN_DEFAULT_STUDY_DAYS(self) -> str:
+        return os.environ.get("WORKLOAD_PLAN_DEFAULT_STUDY_DAYS", "monday,wednesday,friday")
+
+    @property
+    def WORKLOAD_PLAN_DEFAULT_PREFERRED_WINDOW(self) -> str:
+        return os.environ.get("WORKLOAD_PLAN_DEFAULT_PREFERRED_WINDOW", "evening").strip() or "evening"
+
+    @property
+    def WORKLOAD_PLAN_DEFAULT_AVAILABILITY_MINUTES(self) -> int:
+        return self._int("WORKLOAD_PLAN_DEFAULT_AVAILABILITY_MINUTES", "90", minimum=1)
+
     # ─── LLM provider + capacity (Stage 4.5) ────────────────────────────────
     @property
     def LLM_PROVIDER(self) -> str:
@@ -430,6 +581,20 @@ class Settings:
         if value < minimum:
             raise SettingsError(f"{name} must be >= {minimum}")
         return value
+
+    def _time_string(self, name: str, default: str) -> str:
+        value = os.environ.get(name, default).strip()
+        parts = value.split(":")
+        if len(parts) != 2:
+            raise SettingsError(f"{name} must use HH:MM format")
+        try:
+            hour = int(parts[0])
+            minute = int(parts[1])
+        except ValueError as exc:
+            raise SettingsError(f"{name} must use HH:MM format") from exc
+        if hour < 0 or hour > 23 or minute < 0 or minute > 59:
+            raise SettingsError(f"{name} must be a valid 24-hour time")
+        return f"{hour:02d}:{minute:02d}"
 
     def _required(self, name: str) -> str:
         value = os.environ.get(name)

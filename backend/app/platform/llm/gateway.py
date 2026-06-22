@@ -38,7 +38,9 @@ from app.platform.llm.models.prompt import (
     Usage,
 )
 from app.platform.llm.models.assistant import AssistantAnswer, AssistantGroundedAnswer
+from app.platform.llm.models.forecast_advice import GradeForecastAdvice
 from app.platform.llm.models.quiz import GeneratedQuizPool, PostClassQuiz
+from app.platform.llm.models.recommendation import RecommendationCopy
 from app.platform.llm.models.summary import BriefSummary, DetailedSummary
 from app.platform.llm.provider import LLMProvider, get_provider
 from app.platform.llm.registry import PromptRegistry, get_prompt_registry
@@ -67,6 +69,8 @@ class CompletionResult(TypedDict):
         | GeneratedQuizPool
         | AssistantAnswer
         | AssistantGroundedAnswer
+        | RecommendationCopy
+        | GradeForecastAdvice
     )
     model_id_echoed: str
     usage: Usage
@@ -133,7 +137,9 @@ class LLMGateway:
         | type[PostClassQuiz]
         | type[GeneratedQuizPool]
         | type[AssistantAnswer]
-        | type[AssistantGroundedAnswer],
+        | type[AssistantGroundedAnswer]
+        | type[RecommendationCopy]
+        | type[GradeForecastAdvice],
         context_refs: ContextRefs,
         priority: Priority,
         feature: GatewayFeature,

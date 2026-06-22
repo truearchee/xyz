@@ -9,9 +9,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domains.progress.forecast import (
-    ForecastInput,
-    GradeBoundaryInput,
-    GradeComponentInput,
+    build_forecast_input,
     calculate_forecast,
 )
 from app.domains.progress.schemas import (
@@ -151,22 +149,15 @@ async def _build_module_detail(
         available_targets = [boundary.letter_grade for boundary in bundle.boundaries]
         if target is not None:
             forecast_result = calculate_forecast(
-                ForecastInput(
-                    boundaries=tuple(
-                        GradeBoundaryInput(
-                            letter_grade=boundary.letter_grade,
-                            lower_bound=boundary.lower_bound,
-                        )
+                build_forecast_input(
+                    boundaries=[
+                        (boundary.letter_grade, boundary.lower_bound)
                         for boundary in bundle.boundaries
-                    ),
-                    components=tuple(
-                        GradeComponentInput(
-                            id=str(component.id),
-                            weight=component.weight,
-                            percentage_score=component.percentage_score,
-                        )
+                    ],
+                    components=[
+                        (component.id, component.weight, component.percentage_score)
                         for component in bundle.components
-                    ),
+                    ],
                     target_letter_grade=target.target_letter_grade,
                     on_track_max=bundle.scheme.on_track_max,
                     at_risk_max=bundle.scheme.at_risk_max,
