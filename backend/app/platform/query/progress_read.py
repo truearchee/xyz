@@ -167,7 +167,9 @@ async def list_topic_mastery(
     # Route through the canonical student section-visibility gate (publish_status published + active
     # section + active module + active student membership) so a topic mastered on an unpublished section
     # never surfaces in My Progress. The gate joins ModuleSection on the snapshot's section and supplies
-    # the active-section predicate; the lecture/lab type filter stays local to this read.
+    # the active-section predicate; the lecture/lab type filter stays local to this read. (Stage 8.6 added
+    # an inline publish_status filter here; this supersedes it with the shared gate used by the
+    # gamification reads, so a future read cannot miss a condition.)
     stmt = apply_visible_section_gate(
         select(StudentTopicMasterySnapshot, ModuleSection).where(
             StudentTopicMasterySnapshot.student_id == student_id,

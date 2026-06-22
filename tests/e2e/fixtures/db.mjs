@@ -683,3 +683,79 @@ WHERE transcript_id = ${sqlLiteral(transcriptId)}::uuid
 `);
   return Number(rows.at(-1) ?? 0);
 }
+
+// --- Stage 8.6b: exam-prep quiz-pointer negative states (processing / not-available) --------------
+// A module's auto-generated sections with their week_number — lets a gate pick a covered week
+// deterministically (which week is published-and-ready vs draft) instead of guessing the schedule.
+export function getModuleSectionWeeks(moduleId) {
+  assertUuid(moduleId, 'moduleId');
+  return runPsqlJson(`
+SELECT coalesce(json_agg(
+  json_build_object(
+    'id', id,
+    'title', title,
+    'type', type,
+    'weekNumber', week_number,
+    'orderIndex', order_index,
+    'publishStatus', publish_status
+  )
+  ORDER BY week_number NULLS LAST, order_index
+), '[]'::json)::text
+FROM module_sections
+WHERE course_module_id = ${sqlLiteral(moduleId)}::uuid;
+`);
+}
+
+// E2E-only: deterministically seed an exam-prep "PROCESSING" section without racing the real summary
+// worker. Publishes the section, gives it a COMPLETED active transcript and a RUNNING
+// generate_detailed_summary job with NO summary row — so its detailed_study slot derives GENERATING
+// (precedence.py step 4a). A scope covering this section's week then resolves to
+// available=false / reason_code='processing' → the assistant's quiz pointer shows "being prepared".
+// Mirrors the backend _attach_generating_summary seed (test_quiz_recap_examprep). The job row is NEVER
+// enqueued to RQ (no worker claims a DB-only row — same idiom as seedPendingAssistantTurn) and is
+// timestamped now() (under REAPER_THRESHOLD_SUMMARY_SECONDS, and the stuck-row reaper only runs at
+// worker startup / manual admin trigger) → the GENERATING state is stable for the test's lifetime.
+export function seedExamPrepProcessingSection(sectionId, lecturerEmail) {
+  assertUuid(sectionId, 'sectionId');
+  const row = runPsqlJson(`
+WITH lecturer AS (
+  SELECT id FROM app_users WHERE email = ${sqlLiteral(lecturerEmail)} LIMIT 1
+),
+published AS (
+  UPDATE module_sections SET publish_status = 'published', updated_at = now()
+  WHERE id = ${sqlLiteral(sectionId)}::uuid
+  RETURNING id
+),
+transcript AS (
+  INSERT INTO transcripts (
+    id, module_section_id, source_type, original_file_name, storage_key, mime_type,
+    file_size, checksum, status, uploaded_by_user_id, lifecycle_state
+  )
+  SELECT
+    gen_random_uuid(), ${sqlLiteral(sectionId)}::uuid, 'manual_upload', 'examprep-processing.vtt',
+    'e2e/' || gen_random_uuid()::text || '/examprep-processing.vtt', 'text/vtt', 10,
+    encode(sha256(gen_random_uuid()::text::bytea), 'hex'), 'completed', lecturer.id, 'active'
+  FROM lecturer
+  RETURNING id
+),
+job AS (
+  INSERT INTO ingestion_jobs (
+    id, transcript_id, job_type, status, idempotency_key, started_at, updated_at, created_at
+  )
+  SELECT
+    gen_random_uuid(), transcript.id, 'generate_detailed_summary', 'running',
+    'e2e-examprep-detail-' || gen_random_uuid()::text, now(), now(), now()
+  FROM transcript
+  RETURNING id
+)
+SELECT json_build_object(
+  'sectionId', (SELECT id FROM published),
+  'transcriptId', (SELECT id FROM transcript),
+  'jobId', (SELECT id FROM job)
+)::text;
+`);
+  if (!row?.transcriptId || !row?.jobId || !row?.sectionId) {
+    throw new Error(`Failed to seed exam-prep processing section ${sectionId} (lecturer ${lecturerEmail})`);
+  }
+  return row;
+}

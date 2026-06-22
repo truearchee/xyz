@@ -66,6 +66,10 @@ type StoreValue = {
   get: (conversationId: string) => ConversationState;
   hasAnyPending: boolean;
   ensureOpenForSection: (sectionId: string) => Promise<string>;
+  ensureOpenForMode: (
+    conversationKind: string,
+    opts: { moduleId?: string; sectionId?: string; assessmentScopeId?: string },
+  ) => Promise<string>;
   loadInitial: (conversationId: string) => Promise<void>;
   loadOlder: (conversationId: string) => Promise<void>;
   send: (conversationId: string, content: string) => Promise<void>;
@@ -171,6 +175,40 @@ export function AssistantStoreProvider({ children }: { children: ReactNode }) {
         return await promise;
       } finally {
         delete openInFlight.current[sectionId];
+      }
+    },
+    [loadInitial],
+  );
+
+  // 8.6a: open (or resume) a MODE conversation — homework binds a module (optionally a section). The
+  // backend is idempotent (resume-or-create on the natural key), so a double-click never duplicates; the
+  // in-flight guard (keyed on kind+module+section) just avoids a double navigation. Mirrors
+  // ensureOpenForSection; send/poll/markGone are mode-agnostic and reused.
+  const ensureOpenForMode = useCallback(
+    async (
+      conversationKind: string,
+      opts: { moduleId?: string; sectionId?: string; assessmentScopeId?: string },
+    ): Promise<string> => {
+      const key = `mode:${conversationKind}:${opts.moduleId ?? ""}:${opts.sectionId ?? ""}:${opts.assessmentScopeId ?? ""}`;
+      const pending = openInFlight.current[key];
+      if (pending) return pending;
+      const promise = (async () => {
+        const conv = await api.assistant.createConversation({
+          conversationKind,
+          moduleId: opts.moduleId ?? null,
+          sectionId: opts.sectionId ?? null,
+          assessmentScopeId: opts.assessmentScopeId ?? null,
+        });
+        deletedConversationIds.current.delete(conv.id);
+        setConvs((prev) => (prev[conv.id] ? prev : { ...prev, [conv.id]: { ...EMPTY } }));
+        await loadInitial(conv.id);
+        return conv.id;
+      })();
+      openInFlight.current[key] = promise;
+      try {
+        return await promise;
+      } finally {
+        delete openInFlight.current[key];
       }
     },
     [loadInitial],
@@ -330,6 +368,7 @@ export function AssistantStoreProvider({ children }: { children: ReactNode }) {
       get: (id) => convs[id] ?? EMPTY,
       hasAnyPending: pendingKey.length > 0,
       ensureOpenForSection,
+      ensureOpenForMode,
       loadInitial,
       loadOlder,
       send,
@@ -337,7 +376,7 @@ export function AssistantStoreProvider({ children }: { children: ReactNode }) {
       setDraft,
       markDeleted,
     }),
-    [convs, pendingKey, ensureOpenForSection, loadInitial, loadOlder, send, retry, setDraft, markDeleted],
+    [convs, pendingKey, ensureOpenForSection, ensureOpenForMode, loadInitial, loadOlder, send, retry, setDraft, markDeleted],
   );
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;

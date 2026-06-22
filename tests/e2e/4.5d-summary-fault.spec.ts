@@ -67,6 +67,12 @@ function record(runId: string, field: string, value: string) {
   writeFileSync(manifestPath(runId), `${JSON.stringify(m, null, 2)}\n`);
 }
 
+function composeCommand(): string {
+  return process.env.E2E_COMPOSE_FILES
+    ? `docker compose ${process.env.E2E_COMPOSE_FILES}`
+    : 'docker compose -f docker-compose.yml -f docker-compose.fault.yml';
+}
+
 function recreateAiWorker(fault: 'invalid_output' | 'invalid_input' | null) {
   const env = {
     ...process.env,
@@ -74,7 +80,7 @@ function recreateAiWorker(fault: 'invalid_output' | 'invalid_input' | null) {
     PIPELINE_FAULT_INJECTION_ENABLED: '',
     PIPELINE_FAULT_INJECTION: '',
   };
-  const compose = 'docker compose -f docker-compose.yml -f docker-compose.fault.yml';
+  const compose = composeCommand();
   execSync(`${compose} up -d --force-recreate ai_worker`, { env, stdio: 'inherit' });
   const deadline = Date.now() + 60_000;
   for (;;) {

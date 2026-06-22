@@ -16,7 +16,13 @@ import { ApiError, type ConversationListItem } from "../../../lib/api";
 import { ForbiddenError, api } from "../../../lib/api/wrapper";
 import { useAssistantConversation, useAssistantStore } from "../AssistantStoreProvider";
 import { ConversationView } from "../ConversationView";
+import { ExamPrepStarters } from "../ExamPrepStarters";
+import { HomeworkStarters } from "../HomeworkStarters";
 import { StarterChips } from "../StarterChips";
+import { TimeManagementStarters } from "../TimeManagementStarters";
+
+// 8.6b: the exam-prep quiz pointer is sourced from the quiz domain (the assistant never generates a quiz).
+type QuizPointer = { state: "available" | "preparing" | "unavailable" } | null;
 
 type DetailState = "loading" | "loaded" | "gone" | "error";
 
@@ -36,6 +42,35 @@ export function AssistantWorkspaceConversation({ conversationId }: { conversatio
   const [titleDraft, setTitleDraft] = useState("");
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [quizPointer, setQuizPointer] = useState<QuizPointer>(null);
+
+  // 8.6b: for an exam-prep conversation, resolve the bound scope's quiz availability from the EXISTING quiz
+  // endpoint (the assistant never generates a quiz) → the CTA state on the conversation surface.
+  const examScopeId = detail?.conversationKind === "exam_prep" ? detail.assessmentScopeId : null;
+  const examModuleId = detail?.conversationKind === "exam_prep" ? detail.moduleId : null;
+  useEffect(() => {
+    if (!examScopeId || !examModuleId) {
+      setQuizPointer(null);
+      return;
+    }
+    let mounted = true;
+    void (async () => {
+      try {
+        const scopes = await api.quiz.listExamPrepScopes(examModuleId);
+        const scope = scopes.find((s) => s.id === examScopeId);
+        if (!mounted) return;
+        if (!scope) setQuizPointer(null);
+        else if (scope.available) setQuizPointer({ state: "available" });
+        else if (scope.reasonCode === "processing") setQuizPointer({ state: "preparing" });
+        else setQuizPointer({ state: "unavailable" });
+      } catch {
+        if (mounted) setQuizPointer(null);
+      }
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, [examScopeId, examModuleId]);
 
   useEffect(() => {
     let mounted = true;
@@ -129,23 +164,89 @@ export function AssistantWorkspaceConversation({ conversationId }: { conversatio
       </div>
 
       {detailState === "loaded" && detail && !renaming ? (
-        <h2 data-testid="assistant-conversation-title" style={styles.convTitle}>{detail.displayTitle}</h2>
+        <div style={styles.titleRow}>
+          <h2 data-testid="assistant-conversation-title" style={styles.convTitle}>{detail.displayTitle}</h2>
+          {/* 8.6a: the mode shown as a non-editable LABEL (never a selector — kind is immutable). */}
+          <span data-testid="assistant-mode-label" style={styles.modeLabel}>{detail.groundingChip}</span>
+        </div>
       ) : null}
 
       {detailState === "loaded" && detail ? (
-        <div data-testid="assistant-context-pill" style={styles.pill}>
-          <span style={styles.pillText}>
-            Chatting about: <strong style={styles.pillStrong}>{detail.sectionTitle}</strong> · Grounded in
-            published lecture material
-          </span>
-          <Link
-            href={`/student/modules/${detail.moduleId}/sections/${detail.attachedSectionId}`}
-            data-testid="assistant-open-lecture"
-            style={styles.pillAction}
-          >
-            Open lecture
-          </Link>
-        </div>
+        detail.conversationKind === "exam_prep" ? (
+          <div data-testid="assistant-context-pill" style={styles.pill}>
+            <span style={styles.pillText}>
+              Exam prep ·{" "}
+              <strong style={styles.pillStrong}>{detail.assessmentScopeName ?? detail.moduleTitle}</strong>
+              {detail.coveredWeeks && detail.coveredWeeks.length ? (
+                <> · weeks {detail.coveredWeeks.join(", ")}</>
+              ) : null}{" "}
+              · Grounded in the covered weeks’ material
+            </span>
+            {quizPointer?.state === "available" ? (
+              <Link
+                href={`/student/modules/${detail.moduleId}`}
+                data-testid="assistant-examprep-quiz-cta"
+                style={styles.pillAction}
+              >
+                Practice with the exam-prep quiz
+              </Link>
+            ) : quizPointer?.state === "preparing" ? (
+              <span data-testid="assistant-examprep-quiz-state" style={styles.pillMutedAction}>
+                Practice quiz is being prepared
+              </span>
+            ) : quizPointer?.state === "unavailable" ? (
+              <span data-testid="assistant-examprep-quiz-state" style={styles.pillMutedAction}>
+                Practice quiz not available yet
+              </span>
+            ) : null}
+          </div>
+        ) : detail.conversationKind === "time_management" ? (
+          <div data-testid="assistant-context-pill" style={styles.pill}>
+            <span style={styles.pillText}>
+              Time management ·{" "}
+              <strong style={styles.pillStrong}>Your deadlines and progress</strong> · Structured data, day-level advice
+            </span>
+          </div>
+        ) : detail.conversationKind === "homework_help" ? (
+          <div data-testid="assistant-context-pill" style={styles.pill}>
+            <span style={styles.pillText}>
+              Homework help ·{" "}
+              {detail.sectionTitle ? (
+                <>
+                  Focused on <strong style={styles.pillStrong}>{detail.sectionTitle}</strong>
+                </>
+              ) : (
+                <>
+                  Across <strong style={styles.pillStrong}>{detail.moduleTitle}</strong>
+                </>
+              )}{" "}
+              · Hints and coaching, never the final answer
+            </span>
+            {detail.attachedSectionId ? (
+              <Link
+                href={`/student/modules/${detail.moduleId}/sections/${detail.attachedSectionId}`}
+                data-testid="assistant-open-lecture"
+                style={styles.pillAction}
+              >
+                Open lecture
+              </Link>
+            ) : null}
+          </div>
+        ) : (
+          <div data-testid="assistant-context-pill" style={styles.pill}>
+            <span style={styles.pillText}>
+              Chatting about: <strong style={styles.pillStrong}>{detail.sectionTitle}</strong> · Grounded in
+              published lecture material
+            </span>
+            <Link
+              href={`/student/modules/${detail.moduleId}/sections/${detail.attachedSectionId}`}
+              data-testid="assistant-open-lecture"
+              style={styles.pillAction}
+            >
+              Open lecture
+            </Link>
+          </div>
+        )
       ) : detailState === "loading" ? (
         <p style={styles.muted}>Loading conversation…</p>
       ) : null}
@@ -218,7 +319,17 @@ export function AssistantWorkspaceConversation({ conversationId }: { conversatio
         onDraftChange={conv.setDraft}
         conversationId={conversationId}
         saveSectionId={detail?.attachedSectionId ?? null}
-        starters={<StarterChips scope="workspace" onPick={conv.setDraft} />}
+        starters={
+          detail?.conversationKind === "exam_prep" ? (
+            <ExamPrepStarters scope="workspace" onPick={conv.setDraft} />
+          ) : detail?.conversationKind === "time_management" ? (
+            <TimeManagementStarters scope="workspace" onPick={conv.setDraft} />
+          ) : detail?.conversationKind === "homework_help" ? (
+            <HomeworkStarters scope="workspace" onPick={conv.setDraft} />
+          ) : (
+            <StarterChips scope="workspace" onPick={conv.setDraft} />
+          )
+        }
       />
     </section>
   );
@@ -227,7 +338,12 @@ export function AssistantWorkspaceConversation({ conversationId }: { conversatio
 const styles = {
   shell: { display: "grid", gap: 12, margin: "0 auto", maxWidth: 720 },
   topBar: { alignItems: "center", display: "flex", justifyContent: "space-between" },
+  titleRow: { alignItems: "baseline", display: "flex", flexWrap: "wrap", gap: 8 },
   convTitle: { color: "#111827", fontSize: 18, fontWeight: 600, lineHeight: 1.3, margin: 0 },
+  modeLabel: {
+    background: "#f5f5f7", borderRadius: 9999, color: "#4b5563", fontSize: 11, fontWeight: 600,
+    padding: "2px 8px", whiteSpace: "nowrap",
+  },
   actions: { display: "flex", gap: 8 },
   backLink: { color: "#174a63", fontSize: 14, fontWeight: 600, textDecoration: "none" },
   linkButton: { background: "none", border: "none", color: "#174a63", cursor: "pointer", fontSize: 13, fontWeight: 600, padding: 0 },
@@ -239,6 +355,7 @@ const styles = {
   pillText: { color: "#4b5563", fontSize: 13, lineHeight: 1.4 },
   pillStrong: { color: "#111827", fontWeight: 600 },
   pillAction: { color: "#174a63", fontSize: 13, fontWeight: 600, textDecoration: "none", whiteSpace: "nowrap" },
+  pillMutedAction: { color: "#6b7280", fontSize: 13, fontStyle: "italic", whiteSpace: "nowrap" },
   renameRow: { alignItems: "center", display: "flex", flexWrap: "wrap", gap: 8 },
   renameInput: {
     border: "1px solid #b8c0cc", borderRadius: 6, color: "#111827", flex: 1, fontSize: 14, minWidth: 200, padding: "6px 10px",

@@ -433,24 +433,41 @@ class DeterministicTestProvider:
             return json.dumps(payload)
         if name == "assistant":
             return self._assistant_fixture(rendered, forced_invalid)
+        # 8.6a modes reuse the grounded {answer, isStudyRelated} fixture (same schema, same grounding
+        # pipeline). The mode behavior (e.g. the homework no-answer guardrail) is asserted at the prompt
+        # /payload layer (Layer 2/3) + the rule-11 real-model smoke — NOT by the deterministic double.
+        if name in ("homework_help", "exam_prep", "time_management"):
+            return self._assistant_grounded_fixture(rendered, forced_invalid)
         raise ValueError(f"deterministic provider has no canned output for prompt {name!r}")
 
     @staticmethod
     def _assistant_fixture(rendered: RenderedPrompt, forced_invalid: bool) -> str:
-        answer = (
-            "Here is a concise study-assistant answer. It walks through the idea in "
-            "clear prose so the conversation reads naturally and is easy to follow."
-        )
         # v1 (Stage 8.1): just {"answer": ...}; forced_invalid drops the required key.
         if rendered.prompt_key.version != "v2":
             if forced_invalid:
                 return json.dumps({"wrong": "shape"})  # missing required `answer`
-            return json.dumps({"answer": answer})
+            return json.dumps(
+                {
+                    "answer": (
+                        "Here is a concise study-assistant answer. It walks through the idea in "
+                        "clear prose so the conversation reads naturally and is easy to follow."
+                    )
+                }
+            )
+        # v2 (Stage 8.2): grounded {answer, isStudyRelated}.
+        return DeterministicTestProvider._assistant_grounded_fixture(rendered, forced_invalid)
 
-        # v2 (Stage 8.2): {"answer": ..., "isStudyRelated": bool}. is_study_related is derived
-        # deterministically from the student's LATEST question (the text after the marker), so the
-        # full grounding pipeline (decide_grounding) is exercisable in CI/E2E without a real model.
-        # forced_invalid OMITS isStudyRelated → validator raises InvalidOutput (review #4 fail-safe).
+    @staticmethod
+    def _assistant_grounded_fixture(rendered: RenderedPrompt, forced_invalid: bool) -> str:
+        """The grounded ``{"answer": ..., "isStudyRelated": bool}`` fixture shared by assistant/v2 (8.2)
+        and the 8.6 modes (homework_help, …). ``is_study_related`` is derived deterministically from the
+        student's LATEST question (the text after the marker), so the full grounding pipeline
+        (decide_grounding) is exercisable in CI/E2E without a real model. ``forced_invalid`` OMITS
+        ``isStudyRelated`` → the validator raises InvalidOutput (review #4 fail-safe)."""
+        answer = (
+            "Here is a concise study-assistant answer. It walks through the idea in "
+            "clear prose so the conversation reads naturally and is easy to follow."
+        )
         if forced_invalid:
             return json.dumps({"answer": answer})  # missing required `isStudyRelated`
         latest_question = rendered.content.rsplit(ASSISTANT_LATEST_QUESTION_MARKER, 1)[-1].lower()

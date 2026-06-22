@@ -13,6 +13,7 @@ import {
   AssistantService,
   type ConversationListItem,
   type ConversationRead,
+  type CreateConversationRequest,
   type KeysetPage_MessageRead_,
   type MessageRead,
   type PaginatedResponse_ConversationListItem_,
@@ -544,6 +545,13 @@ export const api = {
     openConversation: (sectionId: string): Promise<ConversationRead> =>
       withAuthRecovery(() =>
         AssistantService.openStudentAssistantConversation(sectionId),
+      ),
+    // 8.6a: create (or resume) a mode conversation — homework_help in 8.6a. Idempotent server-side.
+    createConversation: (
+      requestBody: CreateConversationRequest,
+    ): Promise<ConversationRead> =>
+      withAuthRecovery(() =>
+        AssistantService.createStudentAssistantConversation(requestBody),
       ),
     listConversations: (
       limit = 30,

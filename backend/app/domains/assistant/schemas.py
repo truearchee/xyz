@@ -37,6 +37,8 @@ class ConversationRead(CamelModel):
     id: UUID
     conversation_kind: str
     attached_section_id: UUID | None
+    attached_module_id: UUID | None = None  # 8.6a: set for a homework_help conversation (module binding)
+    attached_assessment_scope_id: UUID | None = None  # 8.6b: set for an exam_prep conversation
     title: str | None = None  # raw stored title (manual rename); null while title_source = 'auto'
     title_source: str = "auto"  # 'auto' | 'manual' — a manual rename is never overwritten (rule 15: no AI titles)
     last_activity_at: datetime | None = None
@@ -44,19 +46,37 @@ class ConversationRead(CamelModel):
     updated_at: datetime
 
 
+# 8.6a-c — mode entry. Each mode is a conversation_kind; binding requirements differ per kind. The
+# handler validates the kind→binding matrix (homework: module required; exam-prep: scope required; time
+# management: no binding). Creation is idempotent (resume-or-create on the natural key), so a
+# double-clicked starter never makes a duplicate.
+class CreateConversationRequest(CamelModel):
+    conversation_kind: str
+    module_id: UUID | None = None
+    section_id: UUID | None = None
+    assessment_scope_id: UUID | None = None
+
+
 class ConversationListItem(CamelModel):
     """One row of the Workspace conversation list (Stage 8.4). ``display_title`` is derived-on-read (the
-    manual title when set, else the lecture/lab title) so old null-title rows render with no backfill;
-    ``grounding_chip`` is the constant "Lecture grounded" in Option A (no ungrounded chat). Excludes
-    soft-deleted AND access-revoked conversations (invariant C) — the list query is the 4.7 gate."""
+    manual title when set, else the lecture/lab title, else a mode-derived fallback) so old null-title rows
+    render with no backfill; ``grounding_chip`` is "Lecture grounded" for the lecture chat and a mode label
+    otherwise. Excludes soft-deleted AND access-revoked conversations (invariant C) — the list query is the
+    4.7 gate. 8.6c: time-management has no module/section/scope binding, so ``module_id`` and
+    ``module_title`` are nullable for that mode only."""
 
     id: UUID
+    conversation_kind: str
     display_title: str
-    module_id: UUID
-    module_title: str
-    attached_section_id: UUID
-    section_title: str
-    section_type: str  # 'lecture' | 'lab'
+    module_id: UUID | None = None
+    module_title: str | None = None
+    attached_section_id: UUID | None = None
+    section_title: str | None = None
+    section_type: str | None = None  # 'lecture' | 'lab' | None (module-bound homework / exam-prep)
+    # 8.6b: set for an exam_prep conversation (read-only scope context for the conversation surface).
+    assessment_scope_id: UUID | None = None
+    assessment_scope_name: str | None = None
+    covered_weeks: list[int] | None = None
     last_message_preview: str | None = None
     last_activity_at: datetime
     message_count: int

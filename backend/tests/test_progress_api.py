@@ -11,6 +11,7 @@ from app.platform.db.models import (
     AppUser,
     CourseMembership,
     CourseModule,
+    ModuleSection,
     QuizAttempt,
     QuizDefinition,
     StudentGradeRecord,
@@ -153,6 +154,35 @@ async def test_progress_json_is_current_student_only_and_creates_no_ai_log(
     assert response.json()["benchmark"]["suppressed"] is False
     after = await db_session.scalar(select(func.count()).select_from(AIRequestLog))
     assert after == before
+
+
+async def test_module_progress_omits_topic_mastery_for_unpublished_sections(
+    auth_client,
+    db_session,
+    jwt_factory,
+    mock_jwks_client,
+):
+    summary = await seed_progress_dataset(db_session, prefix="stage9-topic-visibility", reset=True, cohort_size=6)
+    user = await _user_by_email(db_session, summary.student_emails_by_key["d"])
+    hidden_section = await db_session.scalar(
+        select(ModuleSection).where(
+            ModuleSection.course_module_id == summary.module_two_id,
+            ModuleSection.title == "M2 Financial Modelling",
+        )
+    )
+    assert hidden_section is not None
+    hidden_section.publish_status = "unpublished"
+    await db_session.commit()
+
+    response = await auth_client.get(
+        f"/student/modules/{summary.module_two_id}/progress",
+        headers=_headers(user, jwt_factory),
+    )
+    assert response.status_code == 200, response.text
+    topics = response.json()["topics"]
+    assert str(hidden_section.id) not in {topic["sectionId"] for topic in topics}
+    assert "M2 Financial Modelling" not in {topic["title"] for topic in topics}
+    assert "M2 Applied Lab" in {topic["title"] for topic in topics}
 
 
 async def test_benchmark_student_average_is_caller_only_and_hides_other_student_averages(

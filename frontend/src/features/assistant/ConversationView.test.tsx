@@ -86,3 +86,24 @@ describe("ConversationView — Stage 8.5 save-to-glossary affordance gating", ()
     expect(screen.queryByTestId("save-to-glossary")).toBeNull();
   });
 });
+
+describe("ConversationView — Stage 8.6a mode starters slot + homework gating", () => {
+  it("renders whatever starters node it is handed (homework mode passes HomeworkStarters)", () => {
+    render(
+      <ConversationView
+        {...baseProps}
+        messages={[]}
+        conversationId="c1"
+        saveSectionId={null}
+        starters={<div data-testid="workspace-homework-starters">homework</div>}
+      />,
+    );
+    expect(screen.getByTestId("workspace-homework-starters")).toBeTruthy();
+  });
+
+  it("keeps SaveToGlossary hidden for a module-only homework reply (no saveSectionId)", () => {
+    // A module-bound homework conversation has no section → saveSectionId is null → no glossary save.
+    render(<ConversationView {...baseProps} messages={[msg({})]} conversationId="c1" saveSectionId={null} />);
+    expect(screen.queryByTestId("save-to-glossary")).toBeNull();
+  });
+});

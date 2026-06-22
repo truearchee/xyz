@@ -96,3 +96,119 @@ async def retrieve_section_chunks(
         )
         for row in result.all()
     ]
+
+
+async def retrieve_sections_chunks(
+    db: AsyncSession,
+    *,
+    student_id: UUID,
+    module_id: UUID,
+    section_ids: list[UUID],
+    query_vector: list[float],
+    top_k: int,
+) -> list[RetrievedChunk]:
+    """Stage 8.6b (exam-prep). The same EXACT pgvector scan + SAME 4.7 gate as ``retrieve_section_chunks``,
+    scoped to a SPECIFIC SET of sections (an exam scope's ready covered-weeks sections) via
+    ``ModuleSection.id IN (section_ids)`` — ONE query, nearest ``top_k`` by cosine distance, NO ANN index.
+    Empty ``section_ids`` → no scan. A chunk from outside the set / unpublished / unassigned can never enter
+    the candidate set (the WHERE pins module + publish/active + membership)."""
+    if not section_ids:
+        return []
+    distance = TranscriptChunk.embedding.cosine_distance(query_vector).label("distance")
+    result = await db.execute(
+        select(
+            TranscriptChunk.id,
+            distance,
+            TranscriptChunk.token_count,
+            TranscriptChunk.text,
+        )
+        .join(Transcript, Transcript.id == TranscriptChunk.transcript_id)
+        .join(ModuleSection, ModuleSection.id == Transcript.module_section_id)
+        .join(CourseModule, CourseModule.id == ModuleSection.course_module_id)
+        .join(CourseMembership, CourseMembership.module_id == CourseModule.id)
+        .where(
+            CourseModule.id == module_id,
+            ModuleSection.id.in_(section_ids),
+            ModuleSection.publish_status == "published",
+            ModuleSection.status == "active",
+            CourseModule.is_active.is_(True),
+            CourseMembership.user_id == student_id,
+            CourseMembership.role == "student",
+            CourseMembership.status == "active",
+            Transcript.lifecycle_state == "active",
+            TranscriptChunk.embedding.is_not(None),
+            TranscriptChunk.embedding_model == DEFAULT_EMBEDDING_CONFIG.model_name,
+            TranscriptChunk.embedding_version == DEFAULT_EMBEDDING_CONFIG.embedding_version,
+        )
+        .order_by(distance.asc())
+        .limit(top_k)
+    )
+    return [
+        RetrievedChunk(
+            chunk_id=row.id,
+            distance=float(row.distance),
+            token_count=int(row.token_count),
+            text=row.text,
+        )
+        for row in result.all()
+    ]
+
+
+async def retrieve_module_chunks(
+    db: AsyncSession,
+    *,
+    student_id: UUID,
+    module_id: UUID,
+    query_vector: list[float],
+    top_k: int,
+) -> list[RetrievedChunk]:
+    """Stage 8.6a (homework, module-scoped). The same EXACT pgvector cosine scan + SAME 4.7 visibility
+    gate as ``retrieve_section_chunks``, but scoped to a whole MODULE rather than a single section: it
+    drops the single-section / single-transcript pins and instead scans every published+active section of
+    ``module_id`` (in an active module the student is an active student-member of) whose ACTIVE transcript
+    has same-model embedded chunks. ONE query (``section_id IN (...)`` is implicit via the join), nearest
+    ``top_k`` by cosine distance — NO ANN index (exact scan only; the candidate set is small at MVP scale).
+
+    Zero rows when the module is not visible / has no ready content / no same-model embeddings — the caller
+    maps that, never this surface. A chunk from another module, an unpublished section, or a transcript the
+    student isn't entitled to can NEVER enter the candidate set (the WHERE pins module + publish/active +
+    membership), so injection-looking chunk text is harmless."""
+    distance = TranscriptChunk.embedding.cosine_distance(query_vector).label("distance")
+    result = await db.execute(
+        select(
+            TranscriptChunk.id,
+            distance,
+            TranscriptChunk.token_count,
+            TranscriptChunk.text,
+        )
+        .join(Transcript, Transcript.id == TranscriptChunk.transcript_id)
+        .join(ModuleSection, ModuleSection.id == Transcript.module_section_id)
+        .join(CourseModule, CourseModule.id == ModuleSection.course_module_id)
+        .join(CourseMembership, CourseMembership.module_id == CourseModule.id)
+        .where(
+            CourseModule.id == module_id,
+            # ── same published+assigned gate as 4.7 (module-scoped) ──
+            ModuleSection.publish_status == "published",
+            ModuleSection.status == "active",
+            CourseModule.is_active.is_(True),
+            CourseMembership.user_id == student_id,
+            CourseMembership.role == "student",
+            CourseMembership.status == "active",
+            # ── scope to each section's still-active transcript's same-model embedded chunks ──
+            Transcript.lifecycle_state == "active",
+            TranscriptChunk.embedding.is_not(None),
+            TranscriptChunk.embedding_model == DEFAULT_EMBEDDING_CONFIG.model_name,
+            TranscriptChunk.embedding_version == DEFAULT_EMBEDDING_CONFIG.embedding_version,
+        )
+        .order_by(distance.asc())
+        .limit(top_k)
+    )
+    return [
+        RetrievedChunk(
+            chunk_id=row.id,
+            distance=float(row.distance),
+            token_count=int(row.token_count),
+            text=row.text,
+        )
+        for row in result.all()
+    ]
