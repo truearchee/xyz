@@ -69,7 +69,7 @@ Stage 8     Assistant                                  IN PROGRESS — ✅ 8.1 F
 ✅ **8.6c FULLY VERIFIED (2026-06-20)** — Time-management assistant mode closes the last Stage 8.6 mode before owner review: conversational-only, one active per student, current-student structured deadlines/progress only (overdue + next 14 days + weak topics + grade/progress summary), day-level advice only, no saved plan/calendar/.ics/Stage 11 artifact, V2/Cerebras route smoke PASS, migration 0044 single head, backend mode pytest 32 + dev-reseed 3 + drift/ruff/py_compile + tsc + vitest 20, standalone 8.6c browser gate and full active Playwright **25/25** on the alt-port stack. Stage 6 screenshot PNG churn fixed by making screenshot capture opt-in. See [[steps/stage-08/8.6c-time-management-mode]], [[steps/stage-08/8.6-real-provider-smoke]].
 ✅ Stage 9     My Progress                              FULLY VERIFIED — browser gate GREEN; full active Playwright 16/16; backend 542 plus focused progress 18 passed; migrations 0038-0039 now chained after Stage 8.2 head 0033; guarded demo seed reset verified; privacy/no-AI/accessibility assertions hardened, including caller-owned benchmark average plus aggregate-only class comparison
 ✅ Stage 10    Gamification                               FULLY VERIFIED — Stage 10 gate A/B/C GREEN; full active Playwright 24/24 on clean standard stack; required fault gates green
-Stage 11    Proactive analytics                        NOT STARTED
+✅ Stage 11    Proactive analytics                        REBASED ONTO main (head 0082) + RECONCILED — PR open, AWAITING OWNER MERGE (11.1–11.6 all FULLY VERIFIED on the combined code) — Landing: migration chain re-parented to single head `0082 -> 0056 -> 0057 -> 0058 -> 0059` (clean upgrade→base→upgrade); product reconciliation `studied_section` COUNTS AS qualifying activity in `inactive_recently` via a config-backed event-type set, `risk-v1` amended in place (ADR-060); My-Progress `ForecastAdviceCard` coexists with Stage 10 `GamificationPanel`; Stage 9 AI-free gate composes PR #14 id-set-diff + 11.6 forecast-advice scoping; combined verification (unique image, clean DB, deterministic provider): backend **804 pytest**, frontend tsc + **42 vitest**, full active Playwright **33 success + 2 fault**; no rule-11 smoke (deterministic change, no LLM path); one rule-10 flag open (`topic_deadline_gap` publish-gate divergence). Sub-stages: ✅ 11.1 scheduler/risk (incl. the **AgentRun requeue recovery maintenance fix — folded into 11.1, NOT a new stage**); ✅ 11.2 student detail + recommendations; ✅ 11.3 assessment analysis + question insights; ✅ 11.4 workload planner (migration 0058); ✅ 11.5 calendar `.ics` export (cross-timezone/DST gate, no AI/no migration); ✅ **11.6 grade-forecast advice** (migration 0059; AI EXPLAINS the Stage 9 forecast — `calculate_forecast` reused via one `build_forecast_input` path, no new grade math; route `grade_forecast_advice/v1` = K2-Think-v2/cerebras, ADR-059; numeric/contradiction + student-copy-safety validators; tone-neutral advice card; rule-11 smoke passed on its own branch, model echo `MBZUAI-IFM/K2-Think-v2`). Alembic head `0059`.
 Stage 12    Release hardening                          NOT STARTED
 ```
 
@@ -685,7 +685,13 @@ Streaks (timezone-aware, scheduled-day-based attendance), badges, progress — a
 
 ## Stage 11 — Proactive AI Agent & Analytics
 
-**Status:** NOT STARTED.
+**Status:** IN PROGRESS. 11.1 (roster risk + scheduler), 11.2 (student detail + recommendations), and 11.3
+(assessment analysis + question insights) are **FULLY VERIFIED**. Current Alembic head remains `0057`; 11.3 added
+no migration and no AI. Latest 11.3 evidence: backend `661 passed`; frontend type-check + unit `12 passed`; 11.3
+browser gate `1 passed`; final full active Playwright `24 passed (8.4m)`. Remaining Stage 11 sub-sessions are not
+started. See [[steps/stage-11/11.1-roster-risk-scheduler]], [[steps/stage-11/11.2-student-detail-recommendations]],
+[[steps/stage-11/11.2-real-provider-smoke]], [[steps/stage-11/11.3-assessment-analysis-question-insights]], and
+[[steps/stage-11/findings-11.1-gate-run]].
 
 **v3 addition:** the backend scope explicitly includes a **scheduler component** (rq-scheduler or a cron container). RQ alone cannot express "daily 6:00 AM recalculation" or "48-hour pre-deadline check" — every 11.x spec that assumes scheduled triggers depends on this existing, so it lands in 11.1.
 

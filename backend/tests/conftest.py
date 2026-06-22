@@ -29,6 +29,12 @@ TRUNCATE_TABLES = """
 TRUNCATE TABLE
     student_badges,
     student_streak_state,
+    workload_plan_items,
+    workload_plans,
+    student_availability,
+    recommendations,
+    student_risk_snapshots,
+    agent_runs,
     student_topic_mastery_snapshots,
     student_progress_snapshots,
     student_target_grade_goals,

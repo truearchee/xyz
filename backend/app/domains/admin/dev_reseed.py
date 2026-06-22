@@ -35,7 +35,7 @@ from app.platform.storage.base import StorageProvider
 from app.platform.storage.keys import generate_section_asset_storage_key
 
 
-EXPECTED_ALEMBIC_VERSION = "0082"  # Merge Stage 10 (0081) and Stage 8.6 (0044) migration heads.
+EXPECTED_ALEMBIC_VERSION = "0059"  # Stage 11 chain (0056-0059) re-parented onto the rebased main head 0082.
 REFERENCE_COURSE_START_DATE = date(2026, 5, 11)
 REFERENCE_COURSE_END_DATE = date(2026, 6, 26)
 REFERENCE_WEEK_START_DAY = "monday"

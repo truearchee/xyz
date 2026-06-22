@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { StudentRecommendationBanner } from "../../../features/analytics/StudentRecommendationBanner";
 import { AssignedModulesList } from "../../../features/modules/AssignedModulesList";
 
 const navLinkClass =
@@ -25,6 +26,7 @@ export default function StudentPage() {
           </Link>
         </nav>
       </div>
+      <StudentRecommendationBanner />
       <AssignedModulesList moduleHrefPrefix="/student/modules" />
     </section>
   );

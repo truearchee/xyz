@@ -34,6 +34,7 @@ from app.platform.llm.errors import (
     RateLimited,
 )
 from app.platform.llm.models.assistant import ASSISTANT_LATEST_QUESTION_MARKER
+from app.platform.llm.models.forecast_advice import GRADE_FORECAST_ADVICE_SECTION_TYPE
 from app.platform.llm.models.prompt import Backend, RenderedPrompt, Usage
 
 VALID_FAULTS = (
@@ -438,7 +439,37 @@ class DeterministicTestProvider:
         # /payload layer (Layer 2/3) + the rule-11 real-model smoke — NOT by the deterministic double.
         if name in ("homework_help", "exam_prep", "time_management"):
             return self._assistant_grounded_fixture(rendered, forced_invalid)
+        if name == "recommendation_copy":
+            if forced_invalid:
+                return json.dumps({"wrong": "shape"})
+            return self._recommendation_copy_fixture(rendered)
+        if name == "grade_forecast_advice":
+            if forced_invalid:
+                return json.dumps({"wrong": "shape"})
+            return self._grade_forecast_advice_fixture(rendered)
         raise ValueError(f"deterministic provider has no canned output for prompt {name!r}")
+
+    @staticmethod
+    def _recommendation_copy_fixture(rendered: RenderedPrompt) -> str:
+        prompt_blob = rendered.content.rsplit("Section type: recommendation", 1)[-1].strip()
+        payload = json.loads(prompt_blob).get("deterministicPayload") or {}
+        return json.dumps(
+            {
+                "lecturerDraft": str(payload.get("lecturerTemplate") or ""),
+                "studentNudge": str(payload.get("studentTemplate") or ""),
+            }
+        )
+
+    @staticmethod
+    def _grade_forecast_advice_fixture(rendered: RenderedPrompt) -> str:
+        # Hermetic E2E/CI advice (Stage 11.6): echo the deterministic template advice from the payload,
+        # which is validator-safe by construction. The marker MUST match the section_type the worker
+        # passes (GRADE_FORECAST_ADVICE_SECTION_TYPE), so the AI render path is exercised without a real
+        # model and the numeric/contradiction/safety validators still pass.
+        marker = f"Section type: {GRADE_FORECAST_ADVICE_SECTION_TYPE}"
+        prompt_blob = rendered.content.rsplit(marker, 1)[-1].strip()
+        payload = json.loads(prompt_blob).get("deterministicPayload") or {}
+        return json.dumps({"advice": str(payload.get("templateAdvice") or "")})
 
     @staticmethod
     def _assistant_fixture(rendered: RenderedPrompt, forced_invalid: bool) -> str:

@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.routers.analytics import router as analytics_router
 from app.api.routers.admin import router as admin_router
 from app.api.routers.assessments import router as assessments_router
 from app.api.routers.assistant import router as assistant_router
@@ -39,6 +40,7 @@ def create_app() -> FastAPI:
     app.include_router(assistant_router)
     app.include_router(progress_router)
     app.include_router(gamification_router)
+    app.include_router(analytics_router)
     return app
 
 

@@ -3,16 +3,36 @@ services:
     env_file:
       - .env
       - .env.e2e
+    environment:
+      LLM_PROVIDER: ${LLM_PROVIDER:-deterministic}
 
   worker:
     env_file:
       - .env
       - .env.e2e
+    environment:
+      LLM_PROVIDER: ${LLM_PROVIDER:-deterministic}
+
+  ai_worker:
+    env_file:
+      - .env
+      - .env.e2e
+    environment:
+      LLM_PROVIDER: ${LLM_PROVIDER:-deterministic}
 
   embedding_worker:
     env_file:
       - .env
       - .env.e2e
+    environment:
+      LLM_PROVIDER: ${LLM_PROVIDER:-deterministic}
+
+  scheduler:
+    env_file:
+      - .env
+      - .env.e2e
+    environment:
+      LLM_PROVIDER: ${LLM_PROVIDER:-deterministic}
 
   frontend:
     env_file:

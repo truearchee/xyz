@@ -5,7 +5,7 @@ session: "9"
 slug: my-progress-dashboard
 status: fully-verified
 created: 2026-06-18
-updated: 2026-06-21
+updated: 2026-06-22
 spec: knowledge/specs/stage-09/9-my-progress-dashboard.md
 plan: knowledge/plans/stage-09/9-my-progress-dashboard.md
 commit: "uncommitted"
@@ -175,3 +175,16 @@ runs this workspace on:
 - 2026-06-21 12:19 +04 — [Session 8.6d] `list_topic_mastery()` now filters to published sections only;
   Stage 9 module progress regression pins hidden topic-mastery rows disappearing from student-visible
   progress output.
+- 2026-06-20 12:06 — [Session 11.1] mounted the student gentle risk card on `ProgressDashboard` and
+  bumped `seed_progress_demo.py`'s expected Alembic head to `0056`. Stage 9 forecast math unchanged.
+  See [[steps/stage-11/11.1-roster-risk-scheduler]].
+- 2026-06-20 17:11 — [Session 11.2] mounted the primary student recommendation nudge on
+  `ProgressDashboard`; Stage 9 forecast math and target-grade behavior unchanged. See
+  [[steps/stage-11/11.2-student-detail-recommendations]].
+- 2026-06-20 17:20 — [Session 11.2] bumped `seed_progress_demo.py`'s expected Alembic
+  head to `0057` after the recommendations migration. Demo seed behavior unchanged. See
+  [[steps/stage-11/11.2-student-detail-recommendations]].
+- 2026-06-20 23:59 — [Session 11.4] mounted the compact student workload planner on
+  `ProgressDashboard` and renamed its availability affordance to `Update availability` so Stage 9's no-Save
+  assertion remains true. Forecast math and target-grade behavior unchanged. See
+  [[steps/stage-11/11.4-workload-planner]].

@@ -17,6 +17,8 @@ import {
 } from "../../../lib/api/upload";
 import { Badge } from "../../../components/ui/Badge";
 import { ForbiddenError, api } from "../../../lib/api/wrapper";
+import { LecturerAssessmentInsightsPanel } from "../../analytics/LecturerAssessmentInsightsPanel";
+import { LecturerRosterRiskPanel } from "../../analytics/LecturerRosterRiskPanel";
 import { AssessmentScopePanel } from "../../quiz/AssessmentScopePanel";
 import { SectionAssetList } from "./SectionAssetList";
 import { SectionMetadataEditor } from "./SectionMetadataEditor";
@@ -325,6 +327,10 @@ export function LecturerModuleDetail({ moduleId }: LecturerModuleDetailProps) {
           </Badge>
         ) : null}
       </header>
+
+      <LecturerRosterRiskPanel moduleId={moduleId} />
+
+      <LecturerAssessmentInsightsPanel moduleId={moduleId} />
 
       <AssessmentScopePanel moduleId={moduleId} />
 

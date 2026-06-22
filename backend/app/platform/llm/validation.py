@@ -15,7 +15,9 @@ from pydantic import ValidationError
 
 from app.platform.llm.errors import InvalidOutput
 from app.platform.llm.models.assistant import AssistantAnswer, AssistantGroundedAnswer
+from app.platform.llm.models.forecast_advice import GradeForecastAdvice
 from app.platform.llm.models.quiz import GeneratedQuizPool, PostClassQuiz
+from app.platform.llm.models.recommendation import RecommendationCopy
 from app.platform.llm.models.summary import BriefSummary, DetailedSummary
 
 BRIEF_MIN_CHARS = 20
@@ -26,6 +28,10 @@ BRIEF_MAX_CHARS = 2000
 # NO refusal-marker rejection here — a polite redirect is valid output, not a refusal to reject.
 ASSISTANT_MIN_CHARS = 1
 ASSISTANT_MAX_CHARS = 12000
+
+# Grade-forecast advice (Stage 11.6) is a single short supportive paragraph. The cap bounds a runaway
+# reasoning-model wall of text while leaving room for the honest+constructive impossible-case copy.
+ADVICE_MAX_CHARS = 900
 
 # Quiz structure + size limits (Stage 5b §5). The validator is the AUTHORITY regardless of the
 # generation mechanism. "No HTML" = ESCAPE-ON-DISPLAY, not reject-on-angle-bracket: legitimate
@@ -161,7 +167,9 @@ class OutputValidator:
         | type[PostClassQuiz]
         | type[GeneratedQuizPool]
         | type[AssistantAnswer]
-        | type[AssistantGroundedAnswer],
+        | type[AssistantGroundedAnswer]
+        | type[RecommendationCopy]
+        | type[GradeForecastAdvice],
         section_type: str,
     ) -> (
         BriefSummary
@@ -170,6 +178,8 @@ class OutputValidator:
         | GeneratedQuizPool
         | AssistantAnswer
         | AssistantGroundedAnswer
+        | RecommendationCopy
+        | GradeForecastAdvice
     ):
         if output_schema is BriefSummary:
             return self._validate_brief(raw_text)
@@ -183,6 +193,10 @@ class OutputValidator:
             return self._validate_assistant(raw_text)
         if output_schema is AssistantGroundedAnswer:
             return self._validate_assistant_grounded(raw_text)
+        if output_schema is RecommendationCopy:
+            return self._validate_recommendation_copy(raw_text)
+        if output_schema is GradeForecastAdvice:
+            return self._validate_grade_forecast_advice(raw_text)
         raise InvalidOutput(
             f"unsupported output schema: {getattr(output_schema, '__name__', output_schema)!r}",
             error_code="unsupported_schema",
@@ -192,6 +206,48 @@ class OutputValidator:
         # Tolerant extract → strict shape; select the LAST object that fully validates, so a
         # reasoning model's inline thinking + narrated example never reaches the student (§7).
         return _select_last_valid(_candidate_objects(raw_text), self._validate_brief_object)
+
+    def _validate_recommendation_copy(self, raw_text: str) -> RecommendationCopy:
+        return _select_last_valid(
+            _candidate_objects(raw_text),
+            self._validate_recommendation_copy_object,
+        )
+
+    def _validate_recommendation_copy_object(self, data: dict) -> RecommendationCopy:
+        try:
+            copy = RecommendationCopy.model_validate(data)
+        except ValidationError as exc:
+            raise InvalidOutput(
+                f"recommendation copy failed schema validation: {exc.error_count()} error(s)",
+                error_code="schema",
+            ) from exc
+        if not copy.lecturer_draft.strip():
+            raise InvalidOutput("recommendation lecturer draft is empty", error_code="too_short")
+        if not copy.student_nudge.strip():
+            raise InvalidOutput("recommendation student nudge is empty", error_code="too_short")
+        if len(copy.lecturer_draft) > 2000 or len(copy.student_nudge) > 1000:
+            raise InvalidOutput("recommendation copy is too long", error_code="too_long")
+        return copy
+
+    def _validate_grade_forecast_advice(self, raw_text: str) -> GradeForecastAdvice:
+        return _select_last_valid(
+            _candidate_objects(raw_text),
+            self._validate_grade_forecast_advice_object,
+        )
+
+    def _validate_grade_forecast_advice_object(self, data: dict) -> GradeForecastAdvice:
+        try:
+            advice = GradeForecastAdvice.model_validate(data)
+        except ValidationError as exc:
+            raise InvalidOutput(
+                f"grade forecast advice failed schema validation: {exc.error_count()} error(s)",
+                error_code="schema",
+            ) from exc
+        if not advice.advice.strip():
+            raise InvalidOutput("grade forecast advice is empty", error_code="too_short")
+        if len(advice.advice) > ADVICE_MAX_CHARS:
+            raise InvalidOutput("grade forecast advice is too long", error_code="too_long")
+        return advice
 
     def _validate_brief_object(self, data: dict) -> BriefSummary:
         try:

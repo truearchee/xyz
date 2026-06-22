@@ -2,7 +2,7 @@
 type: architecture
 stage: 04
 created: 2026-06-01
-updated: 2026-06-01 19:58
+updated: 2026-06-22
 related-session: knowledge/specs/stage-04/4.2-transcript-parse-segments.md
 ---
 
@@ -17,6 +17,14 @@ related-session: knowledge/specs/stage-04/4.2-transcript-parse-segments.md
 - Report: [[steps/stage-04/4.3-transcript-chunking]]
 - Architecture: [[architecture/db-spine]]
 - Architecture: [[architecture/storage]]
+- Spec: [[specs/stage-11/11.1-roster-risk-scheduler]]
+- Report: [[steps/stage-11/11.1-roster-risk-scheduler]]
+- Spec: [[specs/stage-11/11.7-agent-run-requeue-recovery]]
+- Report: [[steps/stage-11/11.7-agent-run-requeue-recovery]]
+- Spec: [[specs/stage-11/11.2-student-detail-recommendations]]
+- Report: [[steps/stage-11/11.2-student-detail-recommendations]]
+- Decision: [[decisions/adr-056-stage-11-scheduler-risk-contract]]
+- Decision: [[decisions/adr-057-stage-11-recommendation-copy-route]]
 - Decision: [[decisions/adr-017-ingestion-job-worker-spine]]
 - Decision: [[decisions/adr-019-transcript-parse-strategy]]
 - Decision: [[decisions/adr-020-transcript-chunk-normalization-versioning]]
@@ -73,4 +81,32 @@ workers executes) and on an admin trigger: it re-enqueues never-enqueued/stuck-q
 crashed `running` jobs `failed`+`crashed` (fenced) — so the after-commit enqueue-failure path that leaves
 rows `queued` now self-heals. Every run writes a `MaintenanceRun`. `scripts/reenqueue_summaries.py` was
 removed (the reaper subsumes it). RQ-scheduler-driven retry stays disabled (F-4.5-47); the retry endpoint
-is the product retry surface. 11.1 will point a cron at the reaper/reconciliation entrypoints.
+is the product retry surface.
+
+## Scheduler service (Stage 11.1)
+Stage 11.1 adds a separate `scheduler` Docker service running `python -m app.platform.scheduler.runner`.
+It is not an RQ worker and it does not perform heavy computation in-process. Each tick takes a Postgres
+advisory lock, records or reuses a due `AgentRun`, commits it, and enqueues `app.domains.analytics.jobs.run_agent`
+onto the existing `ingestion` queue with stable job id `agent-run-{run_id}`.
+
+Session 11.7 tightened the queue handoff: a committed `queued` or `failed` `AgentRun` is re-enqueueable on a
+later scheduler tick or manual trigger, but only after reconciling the stable RQ job id. If RQ already has a live
+job (`queued`, `started`, `deferred`, or `scheduled`) for `agent-run-{run_id}`, the enqueue is suppressed. Stale
+non-live RQ jobs are deleted before the same stable id is enqueued again.
+
+The scheduler uses the single-tenant `INSTITUTION_TIMEZONE` and `SCHEDULER_DAILY_HOUR` settings for the
+daily 06:00 local run. Duplicate scheduler instances skip work through the advisory lock, and duplicate
+manual/scheduled triggers resolve through the `agent_runs.idempotency_key`.
+
+The Stage 11.1 job is deterministic and AI-free. It computes `risk-v1` snapshots and writes zero
+`AIRequestLog` rows.
+
+## Recommendation copy jobs (Stage 11.2)
+Stage 11.2 keeps recommendation creation in the deterministic `AgentRun` path, then enriches copy lazily through
+the existing `ai` queue. Recommendation reads enqueue `app.domains.analytics.recommendation_ai.generate_recommendation_copy`
+only when the cached AI copy is missing or stale for the current `input_hash` and prompt version.
+
+The queued job uses `LLMGateway.complete` with BACKGROUND priority and prompt `recommendation_copy/v1`. It writes
+AI text/provenance only after schema validation plus recommendation numeric/fact and student-copy safety
+validators pass. If validation or provider output fails, the persisted recommendation remains usable through the
+deterministic template fallback.

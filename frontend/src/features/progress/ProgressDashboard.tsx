@@ -13,6 +13,9 @@ import type {
 } from "../../lib/api";
 import { api } from "../../lib/api/wrapper";
 import { GamificationPanel } from "../gamification/GamificationPanel";
+import { ForecastAdviceCard } from "./ForecastAdviceCard";
+import { StudentRiskCard } from "../analytics/StudentRiskCard";
+import { StudentWorkloadPlanner } from "../analytics/StudentWorkloadPlanner";
 
 type LoadState = "loading" | "ready" | "error";
 
@@ -162,11 +165,14 @@ export function ProgressDashboard() {
         <section aria-label="Selected module progress" style={styles.detailColumn}>
           {detail ? (
             <>
+              <StudentRiskCard moduleId={detail.moduleId} />
+              <StudentWorkloadPlanner moduleId={detail.moduleId} compact />
               <ForecastPanel
                 detail={detail}
                 targetStatus={targetStatus}
                 onTargetChange={(target) => void updateTarget(target)}
               />
+              <ForecastAdviceCard moduleId={detail.moduleId} />
               <BenchmarkCard benchmark={detail.benchmark} />
               <TrendCard trend={detail.trend} />
               <TopicMasteryCard topics={detail.topics} />

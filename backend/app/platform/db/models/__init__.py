@@ -1,4 +1,5 @@
 from app.platform.db.models.ai_request_log import AIRequestLog
+from app.platform.db.models.agent_run import AgentRun
 from app.platform.db.models.answer_option import AnswerOption
 from app.platform.db.models.assessment_scope import AssessmentScope
 from app.platform.db.models.assistant_conversation import AssistantConversation
@@ -7,6 +8,7 @@ from app.platform.db.models.base import Base
 from app.platform.db.models.course_membership import CourseMembership
 from app.platform.db.models.course_grade_scheme import CourseGradeScheme
 from app.platform.db.models.course_module import CourseModule
+from app.platform.db.models.forecast_advice import StudentForecastAdvice
 from app.platform.db.models.generated_lecture_summary import GeneratedLectureSummary
 from app.platform.db.models.grade_boundary import GradeBoundary
 from app.platform.db.models.grade_component import GradeComponent
@@ -25,13 +27,16 @@ from app.platform.db.models.pool_question import PoolQuestion
 from app.platform.db.models.quiz_attempt import QuizAttempt
 from app.platform.db.models.quiz_definition import QuizDefinition
 from app.platform.db.models.quiz_question import QuizQuestion
+from app.platform.db.models.recommendation import Recommendation
 from app.platform.db.models.section_asset import SectionAsset
 from app.platform.db.models.section_question_pool import SectionQuestionPool
 from app.platform.db.models.student_activity_event import StudentActivityEvent
 from app.platform.db.models.student_answer import StudentAnswer
+from app.platform.db.models.student_availability import StudentAvailability
 from app.platform.db.models.student_badge import StudentBadge
 from app.platform.db.models.student_grade_record import StudentGradeRecord
 from app.platform.db.models.student_progress_snapshot import StudentProgressSnapshot
+from app.platform.db.models.student_risk_snapshot import StudentRiskSnapshot
 from app.platform.db.models.student_streak_state import StudentStreakState
 from app.platform.db.models.student_target_grade_goal import StudentTargetGradeGoal
 from app.platform.db.models.student_topic_mastery_snapshot import StudentTopicMasterySnapshot
@@ -39,9 +44,12 @@ from app.platform.db.models.transcript import Transcript
 from app.platform.db.models.transcript_chunk import TranscriptChunk
 from app.platform.db.models.transcript_segment import TranscriptSegment
 from app.platform.db.models.user import AppUser
+from app.platform.db.models.workload_plan import WorkloadPlan
+from app.platform.db.models.workload_plan_item import WorkloadPlanItem
 
 __all__ = [
     "AIRequestLog",
+    "AgentRun",
     "AnswerOption",
     "AppUser",
     "AssessmentScope",
@@ -69,17 +77,23 @@ __all__ = [
     "QuizAttempt",
     "QuizDefinition",
     "QuizQuestion",
+    "Recommendation",
     "SectionAsset",
     "SectionQuestionPool",
     "StudentActivityEvent",
     "StudentAnswer",
+    "StudentAvailability",
     "StudentBadge",
+    "StudentForecastAdvice",
     "StudentGradeRecord",
     "StudentProgressSnapshot",
+    "StudentRiskSnapshot",
     "StudentStreakState",
     "StudentTargetGradeGoal",
     "StudentTopicMasterySnapshot",
     "Transcript",
     "TranscriptChunk",
     "TranscriptSegment",
+    "WorkloadPlan",
+    "WorkloadPlanItem",
 ]

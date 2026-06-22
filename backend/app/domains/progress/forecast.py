@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from decimal import Decimal
+from typing import Any
 
 
 HUNDRED = Decimal("100")
@@ -48,6 +50,40 @@ class ForecastResult:
 
 class ForecastError(ValueError):
     pass
+
+
+def build_forecast_input(
+    *,
+    boundaries: Iterable[tuple[str, Decimal]],
+    components: Iterable[tuple[Any, Decimal, Decimal | None]],
+    target_letter_grade: str,
+    on_track_max: Decimal = Decimal("70"),
+    at_risk_max: Decimal = Decimal("85"),
+) -> ForecastInput:
+    """Assemble a ``ForecastInput`` from read-model rows — the single assembly path.
+
+    The progress dashboard (Stage 9) and the analytics agent (Stage 11) compute the SAME forecast from
+    the same data by routing through this one helper (zero drift). ``boundaries`` are
+    ``(letter_grade, lower_bound)`` pairs; ``components`` are ``(id, weight, percentage_score)`` triples.
+    The grade math itself lives ONLY in :func:`calculate_forecast`; this function does no arithmetic.
+    """
+    return ForecastInput(
+        boundaries=tuple(
+            GradeBoundaryInput(letter_grade=letter, lower_bound=lower)
+            for letter, lower in boundaries
+        ),
+        components=tuple(
+            GradeComponentInput(
+                id=str(component_id),
+                weight=weight,
+                percentage_score=percentage_score,
+            )
+            for component_id, weight, percentage_score in components
+        ),
+        target_letter_grade=target_letter_grade,
+        on_track_max=on_track_max,
+        at_risk_max=at_risk_max,
+    )
 
 
 def calculate_forecast(input_: ForecastInput) -> ForecastResult:

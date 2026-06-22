@@ -17,6 +17,8 @@ GatewayFeature = Literal[
     "quiz_pool",
     "glossary_definition",
     "assistant",
+    "recommendation_copy",
+    "grade_forecast_advice",
 ]
 SummaryFeature = GatewayFeature
 # Features that MUST carry an ingestion_job_id (transcript-ingestion-bound calls). Enforced at the
