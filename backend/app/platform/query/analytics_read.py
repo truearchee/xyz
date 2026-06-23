@@ -9,9 +9,13 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import and_, func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.platform.query.section_visibility import (
+    apply_visible_section_gate,
+    visible_section_exists,
+)
 from app.platform.db.models import (
     AgentRun,
     AnswerOption,
@@ -189,13 +193,19 @@ async def lecturer_has_module(db: AsyncSession, *, lecturer_id: UUID, module_id:
 
 
 async def student_has_module(db: AsyncSession, *, student_id: UUID, module_id: UUID) -> bool:
+    # Active student membership AND an active module: a deactivated module must not serve student-facing
+    # analytics (risk / workload / forecast) to a still-enrolled student. This is the entry gate every
+    # /student analytics endpoint runs through, so the active-module check belongs here.
     return bool(
         await db.scalar(
-            select(CourseMembership.id).where(
+            select(CourseMembership.id)
+            .join(CourseModule, CourseModule.id == CourseMembership.module_id)
+            .where(
                 CourseMembership.user_id == student_id,
                 CourseMembership.module_id == module_id,
                 CourseMembership.role == "student",
                 CourseMembership.status == "active",
+                CourseModule.is_active.is_(True),
             )
         )
     )
@@ -394,7 +404,18 @@ async def get_grade_forecast_inputs(
                     StudentGradeRecord.student_id == student_id,
                 ),
             )
-            .where(GradeComponent.scheme_id == scheme.id)
+            .where(
+                GradeComponent.scheme_id == scheme.id,
+                # A component tied to a non-visible section must not move the forecast the student reads.
+                # Carve-out: a scheme-level component (module_section_id NULL) is legitimately section-less
+                # and MUST still count — so this is an OR, not a blanket inner join.
+                or_(
+                    GradeComponent.module_section_id.is_(None),
+                    visible_section_exists(
+                        GradeComponent.module_section_id, student_id=student_id
+                    ),
+                ),
+            )
             .order_by(GradeComponent.sort_order.asc(), GradeComponent.id.asc())
         )
     ).all()
@@ -435,6 +456,11 @@ async def get_workload_module_context(
             .where(
                 ModuleSection.course_module_id == module_id,
                 ModuleSection.status == "active",
+                # Only published sections feed the student's workload plan / .ics — a draft section with a
+                # due_at must not leak its title/type/week/due-date. Mirrors the published-gated deadline
+                # query in export_student_workload_calendar so generation and export agree. (The module is
+                # already confirmed active above; this read is reached only behind student_has_module.)
+                ModuleSection.publish_status == "published",
                 ModuleSection.due_at.is_not(None),
                 ModuleSection.due_at >= source_cutoff_at,
             )
@@ -543,6 +569,16 @@ async def count_missed_recent_quizzes(
             .where(
                 QuizDefinition.module_id == module_id,
                 QuizDefinition.created_at <= source_cutoff_at,
+                # A quiz pinned to a non-visible section (unpublished / inactive-module / lost-membership)
+                # must not count toward the student's "missed recent quizzes" — that would let the section's
+                # existence influence the student's risk tier. A section-less quiz (recap / exam_prep /
+                # mistakes_bank, module_section_id NULL) carries no section identity and still counts.
+                or_(
+                    QuizDefinition.module_section_id.is_(None),
+                    visible_section_exists(
+                        QuizDefinition.module_section_id, student_id=student_id
+                    ),
+                ),
             )
             .order_by(QuizDefinition.created_at.desc(), QuizDefinition.id.desc())
             .limit(limit)
@@ -622,6 +658,10 @@ async def has_upcoming_work(
             .where(
                 ModuleSection.course_module_id == module_id,
                 ModuleSection.status == "active",
+                # Only published sections count as "upcoming work": a draft future-dated section must not
+                # flip the inactivity reason / risk tier for a student who cannot see it. Consistent with
+                # the workload and calendar-export deadline reads.
+                ModuleSection.publish_status == "published",
                 ModuleSection.due_at.is_not(None),
                 ModuleSection.due_at > source_cutoff_at,
             )
@@ -639,24 +679,25 @@ async def earliest_topic_deadline_gap(
     within_hours: int,
 ) -> TopicDeadlineGap | None:
     deadline_cutoff = source_cutoff_at + timedelta(hours=within_hours)
-    row = (
-        await db.execute(
-            select(ModuleSection.title, ModuleSection.due_at)
-            .select_from(StudentTopicMasterySnapshot)
-            .join(ModuleSection, ModuleSection.id == StudentTopicMasterySnapshot.module_section_id)
-            .where(
-                StudentTopicMasterySnapshot.student_id == student_id,
-                StudentTopicMasterySnapshot.module_id == module_id,
-                StudentTopicMasterySnapshot.status_label == "needs_attention",
-                ModuleSection.status == "active",
-                ModuleSection.due_at.is_not(None),
-                ModuleSection.due_at > source_cutoff_at,
-                ModuleSection.due_at <= deadline_cutoff,
-            )
-            .order_by(ModuleSection.due_at.asc(), ModuleSection.id.asc())
-            .limit(1)
-        )
-    ).one_or_none()
+    # Route the snapshot→section join through the canonical visibility gate (published + active section +
+    # active module + active student membership). Without it a topic mastered on a section that is now
+    # unpublished leaks the section's title verbatim into the student's risk reason / recommendation text
+    # (and is frozen into StudentRiskSnapshot by the scheduler). Mirrors progress_read.list_topic_mastery.
+    stmt = apply_visible_section_gate(
+        select(ModuleSection.title, ModuleSection.due_at)
+        .select_from(StudentTopicMasterySnapshot)
+        .where(
+            StudentTopicMasterySnapshot.student_id == student_id,
+            StudentTopicMasterySnapshot.module_id == module_id,
+            StudentTopicMasterySnapshot.status_label == "needs_attention",
+            ModuleSection.due_at.is_not(None),
+            ModuleSection.due_at > source_cutoff_at,
+            ModuleSection.due_at <= deadline_cutoff,
+        ),
+        student_id=student_id,
+        section_id_col=StudentTopicMasterySnapshot.module_section_id,
+    ).order_by(ModuleSection.due_at.asc(), ModuleSection.id.asc()).limit(1)
+    row = (await db.execute(stmt)).one_or_none()
     if row is None:
         return None
     return TopicDeadlineGap(title=row.title, due_at=row.due_at)

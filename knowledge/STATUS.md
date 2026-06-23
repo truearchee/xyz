@@ -1,6 +1,34 @@
 # Status
 
-_Last updated: 2026-06-22 — **Stage 11 REBASED onto current `main` (head `0082`) and reconciled against Stage 10 + Stage 8.6; PR open, awaiting owner merge.** Migration chain re-parented to single head `0082 -> 0056 -> 0057 -> 0058 -> 0059` (clean upgrade→base→upgrade round-trip). Product reconciliation: `studied_section` now COUNTS AS qualifying activity in `inactive_recently` via a config-backed event-type set (`risk-v1` amended in place; ADR-060). Shared surfaces reconciled: My-Progress `ForecastAdviceCard` coexists with Stage 10's `GamificationPanel`; the Stage 9 AI-free gate composes PR #14's id-set-diff with 11.6's forecast-advice scoping. The AgentRun requeue recovery is folded into **11.1** (a maintenance fix, NOT a roadmap stage "11.7"). Verified on the combined code in an isolated env (unique image `baghdad-stage11-landing`, clean DB, deterministic provider): backend **804 passed**, frontend `tsc` + **42 vitest**, full active Playwright **33 success + 2 fault**. No rule-11 smoke (deterministic risk change, no LLM path touched). One rule-10 flag open: `topic_deadline_gap` does not apply the published-section gate ([[steps/stage-11/findings-stage11-landing-reconciliation]]). Per owner: pushed + PR opened; the owner merges the PR._
+_Last updated: 2026-06-22 — **Stage 11 REBASED onto current `main` (head `0082`) and reconciled against Stage 10 + Stage 8.6; PR open, awaiting owner merge.** Migration chain re-parented to single head `0082 -> 0056 -> 0057 -> 0058 -> 0059` (clean upgrade→base→upgrade round-trip). Product reconciliation: `studied_section` now COUNTS AS qualifying activity in `inactive_recently` via a config-backed event-type set (`risk-v1` amended in place; ADR-060). Shared surfaces reconciled: My-Progress `ForecastAdviceCard` coexists with Stage 10's `GamificationPanel`; the Stage 9 AI-free gate composes PR #14's id-set-diff with 11.6's forecast-advice scoping. The AgentRun requeue recovery is folded into **11.1** (a maintenance fix, NOT a roadmap stage "11.7"). Verified on the combined code in an isolated env (unique image `baghdad-stage11-landing`, clean DB, deterministic provider): backend **804 passed**, frontend `tsc` + **42 vitest**, full active Playwright **33 success + 2 fault**. No rule-11 smoke (deterministic risk change, no LLM path touched). **Landing rule-10 flag F-LAND-1 now RESOLVED** on `fix/stage11-section-visibility-leak` (Stage 11 already merged to `main` via #15/#16 WITHOUT this fix, so the leak is live on `main`; this ships as a direct follow-up fix PR onto `main`): the Stage 10.x section-visibility leak class had recurred across FIVE Stage 11 student-facing analytics reads (`earliest_topic_deadline_gap`, `get_workload_module_context`, `get_grade_forecast_inputs`, `count_missed_recent_quizzes`, `has_upcoming_work`) plus a deactivated-module gap in `student_has_module`; all now route through the canonical `section_visibility` gate (NULL-section carve-out for scheme-level grade components / module-level quizzes). 12 new read-model + scheduler-recompute regression tests (proven red without the fix). See [[steps/stage-11/findings-stage11-section-visibility-fix]]. Per owner: pushed + PR opened; the owner merges the PR._
+
+## Stage 11 Section-Visibility Leak Fix (resolves landing F-LAND-1) — Verified
+- **Branch:** `fix/stage11-section-visibility-leak`, rebased onto current `origin/main` (which already
+  contains Stage 11 via #15/#16). Lands as a **direct follow-up fix PR to `main`** — the leak is live on
+  `main`. No migration (read-model + query-helper change only); `main` stays single-head `0059`.
+- **Stage 12 backlog (recorded, not fixed here):** (a) `${LLM_PROVIDER}` `.env`→compose substitution leak
+  (test-infra); (b) `seed.mjs` `listAuthUsers` page-1/1000 cap breaks reseed past ~1000 shared auth users
+  (~1008 now) — needs paginated lookup / clean test-auth strategy; cleanup is guard-blocked (owner).
+  See [[open-questions]] and [[steps/stage-11/findings-stage11-section-visibility-fix]].
+- **Scope (student-reachable reads only; lecturer reads deliberately not over-gated):**
+  `analytics_read.earliest_topic_deadline_gap` (→ `apply_visible_section_gate`),
+  `get_workload_module_context` + `has_upcoming_work` (added `publish_status == "published"`),
+  `get_grade_forecast_inputs` + `count_missed_recent_quizzes` (`or_(section_id IS NULL,
+  visible_section_exists(...))` — NULL-section carve-out keeps scheme-level components / module-level
+  quizzes counting), `student_has_module` (added `CourseModule.is_active`).
+- **One source of truth:** `section_visibility.py` factored to `_visible_section_predicates`, shared by
+  `apply_visible_section_gate` (inner-join) + new `visible_section_exists` (EXISTS, carve-out reads).
+- **Tests:** `backend/tests/test_analytics_section_visibility.py` (12) — per-read unpublished/inactive-
+  module/lost-membership exclusion, NULL-section still-counts, visible-still-surfaces guards, and a
+  scheduler-recompute test (unpublish → recomputed `StudentRiskSnapshot` drops the stale title). Proven
+  red (9/12 fail) with the fix reverted.
+- **Backend:** `pytest -q` → **809 passed**, 4 skipped, 3 pre-existing host-only env failures (embedding
+  default + two AI-provider tests; fail identically on unmodified branch).
+- **E2E (rule 14, `--workers=1`, deterministic, clean DB, local Supabase):** full active Playwright
+  **34 passed / 1**; the lone failure `7-glossary` was a missing `SUPABASE_SERVICE_ROLE_KEY` in the
+  Playwright process env (only spec using the GoTrue admin API), re-verified **green** with the key →
+  effective **35/35**. 11.1 gate green standalone. All analytics specs (11.1–11.6, 9, 10 incl. Scenario
+  D) passed. See [[steps/stage-11/findings-stage11-section-visibility-fix]].
 
 ## Current branch
 - Branch: `stage-11-ai-analytics`
