@@ -15,7 +15,7 @@ class ModuleAccessRow:
     membership_id: UUID
     module_id: UUID
     is_active: bool
-    can_publish: bool | None
+    membership_role: str
 
 
 @dataclass(frozen=True)
@@ -43,6 +43,7 @@ async def get_active_module_access(
             CourseMembership.id.label("membership_id"),
             CourseMembership.module_id,
             CourseModule.is_active,
+            CourseMembership.role.label("membership_role"),
         )
         .join(CourseModule, CourseMembership.module_id == CourseModule.id)
         .where(
@@ -60,7 +61,7 @@ async def get_active_module_access(
         membership_id=row.membership_id,
         module_id=row.module_id,
         is_active=row.is_active,
-        can_publish=None,
+        membership_role=row.membership_role,
     )
 
 
