@@ -140,8 +140,16 @@ async function supabaseAdminFetch(env, path, init = {}) {
 }
 
 async function listAuthUsers(env) {
-  const body = await supabaseAdminFetch(env, '/auth/v1/admin/users?per_page=1000&page=1');
-  return Array.isArray(body?.users) ? body.users : [];
+  // Paginate: the local Supabase project can hold >1000 accumulated users from prior gate runs, and the
+  // standing E2E fixtures may sit beyond page 1. Fetching only page 1 would miss them and re-create (409).
+  const all = [];
+  for (let page = 1; page <= 50; page += 1) {
+    const body = await supabaseAdminFetch(env, `/auth/v1/admin/users?per_page=1000&page=${page}`);
+    const users = Array.isArray(body?.users) ? body.users : [];
+    all.push(...users);
+    if (users.length < 1000) break;
+  }
+  return all;
 }
 
 async function ensureAuthUser(env, user) {
