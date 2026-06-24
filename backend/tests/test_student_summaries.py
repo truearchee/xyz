@@ -703,9 +703,16 @@ async def test_rows_DPI_byte_identical_404(db_session, auth_client, jwt_factory,
     rI = await auth_client.get(f"/student/sections/{inactive_section.id}/summaries", headers=h)
     for r in (rD, rP, rI):
         assert r.status_code == 404
-    # byte-identical bodies (S2) — assert on bytes, not just status
-    assert rD.content == rP.content == rI.content
-    assert rD.json() == {"detail": SECTION_NOT_FOUND}
+    # Information-hiding (S2): the three 404s must be indistinguishable by resource. Stage 12a adds a
+    # per-request correlation id (error.request_id / X-Request-ID) that is unique per request and
+    # resource-independent, so it carries no existence signal — normalize it out before comparing.
+    normalized = []
+    for r in (rD, rP, rI):
+        body = r.json()
+        body.get("error", {}).pop("request_id", None)
+        normalized.append(body)
+    assert normalized[0] == normalized[1] == normalized[2]
+    assert rD.json()["detail"] == SECTION_NOT_FOUND
 
 
 async def test_rowR_non_student_forbidden_403(db_session, auth_client, jwt_factory, mock_jwks_client):
@@ -717,7 +724,7 @@ async def test_rowR_non_student_forbidden_403(db_session, auth_client, jwt_facto
 
     resp = await auth_client.get(f"/student/sections/{section.id}/summaries", headers=_headers(lecturer, jwt_factory))
     assert resp.status_code == 403
-    assert resp.json() == {"detail": STUDENT_SUMMARY_FORBIDDEN}
+    assert resp.json()["detail"] == STUDENT_SUMMARY_FORBIDDEN
 
 
 async def test_rowA_unauthenticated_401(db_session, auth_client, jwt_factory, mock_jwks_client):

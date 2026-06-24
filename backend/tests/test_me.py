@@ -265,4 +265,4 @@ async def test_me_rejects_inactive_user_before_response(
     response = await auth_client.get("/me", headers=_headers(inactive, jwt_factory))
 
     assert response.status_code == 403
-    assert response.json() == {"detail": "Account is inactive"}
+    assert response.json()["detail"] == "Account is inactive"

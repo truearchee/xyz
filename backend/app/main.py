@@ -1,5 +1,7 @@
 from fastapi import FastAPI
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.api.routers.analytics import router as analytics_router
 from app.api.routers.admin import router as admin_router
@@ -16,6 +18,12 @@ from app.api.routers.quiz import router as quiz_router
 from app.api.routers.student_summaries import router as student_summaries_router
 from app.api.routers.transcripts import router as transcripts_router
 from app.platform.config import settings
+from app.platform.http.errors import (
+    http_exception_handler,
+    unhandled_exception_handler,
+    validation_exception_handler,
+)
+from app.platform.http.request_id import RequestIdMiddleware
 
 
 def create_app() -> FastAPI:
@@ -27,6 +35,15 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    # Outermost user middleware: stamp every request with a correlation id and echo
+    # X-Request-ID on every response (Stage 12a).
+    app.add_middleware(RequestIdMiddleware)
+    # Consistent error envelope + no raw default 500 bodies (Stage 12a). Registering the
+    # Starlette base catches FastAPI's HTTPException subclass too; the Exception handler is
+    # the catch-all 500.
+    app.add_exception_handler(StarletteHTTPException, http_exception_handler)
+    app.add_exception_handler(RequestValidationError, validation_exception_handler)
+    app.add_exception_handler(Exception, unhandled_exception_handler)
     app.include_router(health_router)
     app.include_router(me_router)
     app.include_router(admin_router)
