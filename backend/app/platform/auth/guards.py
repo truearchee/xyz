@@ -39,10 +39,14 @@ async def require_module_access(
             detail="Module not found",
         )
 
+    # Publish capability is membership-derived (Stage 12a): it mirrors the content-service
+    # enforcement gate (`_get_assigned_lecturer_section`), which requires BOTH the global
+    # lecturer role AND an active `lecturer` membership in this module. Deriving it from the
+    # global role alone (the prior behaviour) over-reported `canPublish` for a lecturer who
+    # holds only a non-lecturer membership here. `get_active_module_access` already filters to
+    # an active membership, so we only need the membership role.
     can_publish = (
-        access.can_publish
-        if access.can_publish is not None
-        else current_user.role == "lecturer"
+        current_user.role == "lecturer" and access.membership_role == "lecturer"
     )
     return ModuleAccessContext(
         module_id=access.module_id,

@@ -94,7 +94,7 @@ async def test_missing_authorization_header_returns_401(auth_client) -> None:
     response = await auth_client.get("/health/authed")
 
     assert response.status_code == 401
-    assert response.json() == {"detail": "Authorization header required"}
+    assert response.json()["detail"] == "Authorization header required"
     assert response.headers["WWW-Authenticate"] == "Bearer"
 
 
@@ -107,7 +107,7 @@ async def test_malformed_authorization_header_returns_401(auth_client) -> None:
         )
 
         assert response.status_code == 401
-        assert response.json() == {"detail": "Invalid authentication credentials"}
+        assert response.json()["detail"] == "Invalid authentication credentials"
         assert response.headers["WWW-Authenticate"] == "Bearer"
 
 
@@ -161,7 +161,7 @@ async def test_valid_token_for_inactive_user_returns_403(
     )
 
     assert response.status_code == 403
-    assert response.json() == {"detail": "Account is inactive"}
+    assert response.json()["detail"] == "Account is inactive"
 
 
 @pytest.mark.anyio
@@ -178,7 +178,7 @@ async def test_valid_token_for_unknown_user_returns_401(
     )
 
     assert response.status_code == 401
-    assert response.json() == {"detail": "Invalid authentication credentials"}
+    assert response.json()["detail"] == "Invalid authentication credentials"
     assert response.headers["WWW-Authenticate"] == "Bearer"
 
 

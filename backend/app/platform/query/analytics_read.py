@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.platform.query.section_visibility import (
     apply_visible_section_gate,
+    published_active_section_conditions,
     visible_section_exists,
 )
 from app.platform.db.models import (
@@ -455,12 +456,10 @@ async def get_workload_module_context(
             )
             .where(
                 ModuleSection.course_module_id == module_id,
-                ModuleSection.status == "active",
-                # Only published sections feed the student's workload plan / .ics — a draft section with a
-                # due_at must not leak its title/type/week/due-date. Mirrors the published-gated deadline
-                # query in export_student_workload_calendar so generation and export agree. (The module is
-                # already confirmed active above; this read is reached only behind student_has_module.)
-                ModuleSection.publish_status == "published",
+                # Student-facing workload deadlines use the shared section-level half of the visibility
+                # gate. Membership/module activity is caller-enforced (`student_has_module`), while this
+                # read enumerates ModuleSection 1:many and therefore cannot use the 1:1 join gate.
+                *published_active_section_conditions(),
                 ModuleSection.due_at.is_not(None),
                 ModuleSection.due_at >= source_cutoff_at,
             )
@@ -657,11 +656,9 @@ async def has_upcoming_work(
             select(ModuleSection.id)
             .where(
                 ModuleSection.course_module_id == module_id,
-                ModuleSection.status == "active",
-                # Only published sections count as "upcoming work": a draft future-dated section must not
-                # flip the inactivity reason / risk tier for a student who cannot see it. Consistent with
-                # the workload and calendar-export deadline reads.
-                ModuleSection.publish_status == "published",
+                # Upcoming work is student-facing risk input; unpublished/inactive sections must not flip
+                # the student's inactivity reason or risk tier.
+                *published_active_section_conditions(),
                 ModuleSection.due_at.is_not(None),
                 ModuleSection.due_at > source_cutoff_at,
             )

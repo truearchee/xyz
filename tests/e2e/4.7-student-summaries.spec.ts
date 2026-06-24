@@ -293,10 +293,18 @@ test('4.7 student summaries browser gate', async ({ browser }) => {
     const draftFetch = await apiJson<{ detail: string }>(apiStudent, 'GET', `/student/sections/${a4.id}/summaries`);
     expect(draftFetch.status).toBe(404);
 
-    // G5 — unenrolled (module B) → existing published section → 404 (row P), body BYTE-IDENTICAL to G4.
+    // G5 — unenrolled (module B) → existing published section → 404 (row P), body indistinguishable from G4.
+    // Stage 12a adds a per-request error.request_id that is unique per request and resource-independent (it
+    // carries no existence signal), so compare the two 404 bodies modulo that id — the S2 information-hiding
+    // guarantee (a student cannot tell "unpublished" from "not enrolled") is what's asserted, not the id.
     const otherModuleFetch = await apiJson<{ detail: string }>(apiStudent, 'GET', `/student/sections/${b1.id}/summaries`);
     expect(otherModuleFetch.status).toBe(404);
-    expect(JSON.stringify(otherModuleFetch.body)).toBe(JSON.stringify(draftFetch.body));
+    const stripRequestId = (body: unknown): string => {
+      const clone = JSON.parse(JSON.stringify(body)) as { error?: { request_id?: string } };
+      if (clone.error) delete clone.error.request_id;
+      return JSON.stringify(clone);
+    };
+    expect(stripRequestId(otherModuleFetch.body)).toBe(stripRequestId(draftFetch.body));
 
     // G6 — non-student (lecturer) on the student endpoint → 403 (row R).
     const lecturerOnStudent = await apiJson(apiLecturer, 'GET', `/student/sections/${a1.id}/summaries`);

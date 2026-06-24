@@ -336,6 +336,42 @@ async def test_co_lecturer_detail_can_publish_true(
 
 
 @pytest.mark.anyio
+async def test_lecturer_with_student_membership_can_publish_false(
+    auth_client: AsyncClient,
+    db_session: AsyncSession,
+    jwt_factory,
+    mock_jwks_client,
+) -> None:
+    # Stage 12a display-alignment: a global-role lecturer who holds only a *student*
+    # membership in this module cannot publish here — the content-service gate
+    # (`_get_assigned_lecturer_section`) requires an active `lecturer` membership.
+    # `canPublish` must mirror that; the prior global-role derivation wrongly reported `true`.
+    owner = await _create_user(db_session, email="align-owner@example.com", role="lecturer")
+    visiting_lecturer = await _create_user(
+        db_session,
+        email="align-visiting-lecturer@example.com",
+        role="lecturer",
+    )
+    module = await _create_module(db_session, owner_id=owner.id, title="Visited")
+    await _create_membership(
+        db_session,
+        user_id=visiting_lecturer.id,
+        module_id=module.id,
+        role="student",
+    )
+
+    response = await auth_client.get(
+        f"/modules/{module.id}",
+        headers=_headers(visiting_lecturer, jwt_factory),
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["globalRole"] == "lecturer"
+    assert data["canPublish"] is False
+
+
+@pytest.mark.anyio
 async def test_historical_reassignment_resolves_active_membership(
     auth_client: AsyncClient,
     db_session: AsyncSession,

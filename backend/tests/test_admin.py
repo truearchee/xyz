@@ -238,7 +238,7 @@ async def test_student_token_on_admin_endpoints_returns_403(
         response = await auth_client.request(method, path, headers=headers, json=body)
 
         assert response.status_code == 403
-        assert response.json() == {"detail": "Insufficient permissions"}
+        assert response.json()["detail"] == "Insufficient permissions"
 
 
 @pytest.mark.anyio
@@ -254,7 +254,7 @@ async def test_lecturer_token_on_admin_endpoints_returns_403(
         response = await auth_client.request(method, path, headers=headers, json=body)
 
         assert response.status_code == 403
-        assert response.json() == {"detail": "Insufficient permissions"}
+        assert response.json()["detail"] == "Insufficient permissions"
 
 
 @pytest.mark.anyio

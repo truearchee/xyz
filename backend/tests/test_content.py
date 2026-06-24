@@ -1946,6 +1946,81 @@ async def test_publish_notes_authz_archived_mismatch_and_validation_timing(
 
 
 @pytest.mark.anyio
+async def test_unpublish_authz_membership_boundary(
+    auth_client: AsyncClient,
+    db_session: AsyncSession,
+    jwt_factory,
+    mock_jwks_client,
+) -> None:
+    # Stage 12a regression lock: the unpublish mutation is membership-gated exactly like publish
+    # (publish/notes were already covered; unpublish was only exercised for transition validity).
+    # A student or admin is role-forbidden (403 CONTENT_FORBIDDEN); a lecturer with no active
+    # membership in the module gets the information-hiding 404 (never 403, never 401 — rule 5).
+    lecturer = await _create_user(db_session, email="unpub-lecturer@example.com", role="lecturer")
+    unassigned_lecturer = await _create_user(
+        db_session, email="unpub-unassigned@example.com", role="lecturer"
+    )
+    student = await _create_user(db_session, email="unpub-student@example.com")
+    admin = await _create_user(db_session, email="unpub-admin@example.com", role="admin")
+    module = await _create_module(db_session, owner_id=lecturer.id)
+    await _create_membership(db_session, user_id=lecturer.id, module_id=module.id, role="lecturer")
+    await _create_membership(db_session, user_id=student.id, module_id=module.id, role="student")
+    section = await _create_section(db_session, module_id=module.id, publish_status="published")
+    path = f"/modules/{module.id}/sections/{section.id}/unpublish"
+
+    for user in (student, admin):
+        response = await auth_client.post(path, headers=_headers(user, jwt_factory))
+        assert response.status_code == 403  # role-forbidden, not 401 (session kept)
+        assert response.json()["detail"] == "CONTENT_FORBIDDEN"
+
+    unassigned_response = await auth_client.post(
+        path, headers=_headers(unassigned_lecturer, jwt_factory)
+    )
+    assert unassigned_response.status_code == 404  # info-hiding, not 403 and not 401
+    assert unassigned_response.json()["detail"] == "SECTION_NOT_FOUND"
+
+
+@pytest.mark.anyio
+async def test_authz_denial_carries_error_envelope_and_request_id(
+    auth_client: AsyncClient,
+    db_session: AsyncSession,
+    jwt_factory,
+    mock_jwks_client,
+) -> None:
+    # Stage 12a: real domain authz denials flow through the global error envelope — the response
+    # carries error.{code,message,request_id} AND the X-Request-ID header, the legacy `detail` is
+    # preserved (additive), and the status is never 401 for an authenticated-but-unauthorized caller.
+    lecturer = await _create_user(db_session, email="env-lecturer@example.com", role="lecturer")
+    unassigned_lecturer = await _create_user(
+        db_session, email="env-unassigned@example.com", role="lecturer"
+    )
+    student = await _create_user(db_session, email="env-student@example.com")
+    module = await _create_module(db_session, owner_id=lecturer.id)
+    await _create_membership(db_session, user_id=lecturer.id, module_id=module.id, role="lecturer")
+    await _create_membership(db_session, user_id=student.id, module_id=module.id, role="student")
+    section = await _create_section(db_session, module_id=module.id)
+    path = f"/modules/{module.id}/sections/{section.id}/publish"
+
+    # 403 role-forbidden (student): coded envelope + additive detail + X-Request-ID.
+    forbidden = await auth_client.post(path, headers=_headers(student, jwt_factory))
+    assert forbidden.status_code == 403
+    body = forbidden.json()
+    assert body["error"]["code"] == "CONTENT_FORBIDDEN"
+    assert body["error"]["message"] == "CONTENT_FORBIDDEN"
+    assert body["error"]["request_id"]
+    assert body["detail"] == "CONTENT_FORBIDDEN"  # additive: legacy field preserved
+    assert forbidden.headers["X-Request-ID"] == body["error"]["request_id"]
+
+    # 404 information-hiding (unassigned lecturer): same envelope shape, never 401.
+    not_found = await auth_client.post(path, headers=_headers(unassigned_lecturer, jwt_factory))
+    assert not_found.status_code == 404
+    nf_body = not_found.json()
+    assert nf_body["error"]["code"] == "SECTION_NOT_FOUND"
+    assert nf_body["error"]["request_id"]
+    assert not_found.headers["X-Request-ID"] == nf_body["error"]["request_id"]
+
+
+@pytest.mark.anyio
 async def test_publish_and_notes_no_ops_do_not_commit_or_bump_updated_at(
     db_session: AsyncSession,
     jwt_factory,
