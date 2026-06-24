@@ -32,12 +32,18 @@ from sqlalchemy.sql import Select
 from app.platform.db.models import CourseMembership, CourseModule, ModuleSection
 
 
+def _published_active_section_predicates() -> tuple[ColumnElement[bool], ...]:
+    return (
+        ModuleSection.publish_status == "published",
+        ModuleSection.status == "active",
+    )
+
+
 def _visible_section_predicates(student_id: UUID) -> tuple[ColumnElement[bool], ...]:
     """The canonical "section is visible to this student" predicate, in ONE place. Both the join gate
     and the EXISTS helper consume it so they can never drift apart."""
     return (
-        ModuleSection.publish_status == "published",
-        ModuleSection.status == "active",
+        *_published_active_section_predicates(),
         CourseModule.is_active.is_(True),
         CourseMembership.user_id == student_id,
         CourseMembership.role == "student",
@@ -83,3 +89,13 @@ def visible_section_exists(
         .where(ModuleSection.id == section_id_col, *_visible_section_predicates(student_id))
         .exists()
     )
+
+
+def published_active_section_conditions() -> tuple[ColumnElement[bool], ...]:
+    """The SECTION-LEVEL half of the visibility gate, for the rare student-facing read that enumerates a
+    module's sections directly off ``ModuleSection`` (1:many) and so cannot use ``apply_visible_section_gate``
+    (which joins ``ModuleSection`` 1:1 via a section-id column). The active-module / active-student-membership
+    dimensions are the **caller's** responsibility here — it must already have authorised the student's module
+    access. Kept in this module so the publish/active section rule has ONE definition and is never re-typed
+    inline per call-site (the duplication that made this leak class recur)."""
+    return _published_active_section_predicates()
