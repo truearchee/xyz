@@ -44,6 +44,8 @@ The legacy shared-secret HS256 path is intentionally not implemented because the
 
 `ModuleAccessContext` is frozen and exists only after authorization succeeds. It carries `module_id`, `is_active`, `global_role`, `can_publish`, and `membership_id`. Access requires both an active membership and `course_modules.is_active = true`; missing access, archived membership, inactive module, and cross-tenant requests return `404`.
 
+`can_publish` is **membership-derived** (Stage 12a): it is true only when the caller holds the global `lecturer` role AND an active `lecturer` membership in the module, mirroring the content-service publish gate (`_get_assigned_lecturer_section`). It is a display signal exposed on `ModuleDetail`, not itself an enforcement boundary — every content mutation re-checks active lecturer membership at the service layer. The prior derivation fell back to the global role alone and over-reported `canPublish` for a global-role lecturer holding only a non-lecturer membership in the module.
+
 `platform/query/` is for read/context projections only. It owns the membership/module joins needed by authorization but does not make business decisions.
 
 ## Route boundary
@@ -59,3 +61,17 @@ Module-gated routes consume `Depends(require_module_access)` and do not hand-rol
 the gamification service. It has no `student_id` parameter: all gamification reads are for the
 authenticated caller, non-students receive 403, and badge/streak persistence is server-derived from
 the caller's existing schedule and activity events.
+
+## HTTP error envelope + request id (Stage 12a)
+`backend/app/platform/http/` holds the cross-cutting request/response boundary added in Stage 12a:
+- `request_id.py` — `RequestIdMiddleware` (pure-ASGI) stamps every request with an `X-Request-ID`
+  (incoming header honoured, else a generated `uuid7`), stores it on `scope["state"]`, and echoes it on
+  every response header. `get_request_id(request)` reads it (generate-on-miss) for the handlers.
+- `errors.py` — global handlers giving every error response a uniform `{"error": {"code","message","request_id"}}`
+  object. The change is **additive**: the legacy `detail` field is preserved alongside `error` (decision
+  D2 / ADR-061), so existing frontend `body.detail` readers and the 401/403 wrapper mapping (rule 5) are
+  unchanged. The catch-all 500 emits the clean `error`-only body with no stack trace or internal text.
+  Domain code strings (`CONTENT_FORBIDDEN`, `SECTION_NOT_FOUND`, …) are carried verbatim as `error.code`.
+New or changed code should read `error`, not `detail`; the deferred clean removal of `detail` is tracked
+in ADR-061. The 401-vs-403 contract is unchanged — handlers preserve status codes and the `WWW-Authenticate`
+header. Registered in `app/main.py:create_app`.
