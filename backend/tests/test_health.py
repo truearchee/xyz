@@ -1,6 +1,7 @@
 from httpx import AsyncClient
 import pytest
 
+import app.api.routers.health as health_router
 from app.main import app
 from app.platform.config import settings
 
@@ -56,3 +57,48 @@ async def test_health_cors_rejects_unlisted_origin():
         )
     assert response.status_code == 200
     assert response.headers.get("access-control-allow-origin") != "http://evil.example"
+
+
+# ─── Readiness probe (12f): /health/ready is 200 only when DB AND Redis are reachable ───
+
+async def _async_true() -> bool:
+    return True
+
+
+async def _async_false() -> bool:
+    return False
+
+
+@pytest.mark.anyio
+async def test_readiness_ok_when_both_dependencies_reachable(monkeypatch):
+    monkeypatch.setattr(health_router, "_check_database", _async_true)
+    monkeypatch.setattr(health_router, "_check_redis", lambda: True)
+    async with AsyncClient(app=app, base_url="http://test") as client:
+        response = await client.get("/health/ready")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "ready"
+    assert body["checks"] == {"database": True, "redis": True}
+
+
+@pytest.mark.anyio
+async def test_readiness_503_when_redis_unreachable(monkeypatch):
+    monkeypatch.setattr(health_router, "_check_database", _async_true)
+    monkeypatch.setattr(health_router, "_check_redis", lambda: False)
+    async with AsyncClient(app=app, base_url="http://test") as client:
+        response = await client.get("/health/ready")
+    assert response.status_code == 503
+    body = response.json()
+    # Routed through the Stage 12a error envelope (dict detail -> code lifted).
+    assert body["error"]["code"] == "NOT_READY"
+    assert body["detail"]["checks"] == {"database": True, "redis": False}
+
+
+@pytest.mark.anyio
+async def test_readiness_503_when_database_unreachable(monkeypatch):
+    monkeypatch.setattr(health_router, "_check_database", _async_false)
+    monkeypatch.setattr(health_router, "_check_redis", lambda: True)
+    async with AsyncClient(app=app, base_url="http://test") as client:
+        response = await client.get("/health/ready")
+    assert response.status_code == 503
+    assert response.json()["detail"]["checks"]["database"] is False
