@@ -44,8 +44,14 @@ retention window must not silently exceed the course lifetime by an unbounded am
   the course-deletion cascade (primary rows + loss-safe, prefix-scoped object-store deletion, reusing the 4.6
   reconciliation patterns) is **not built in Stage 12**. It is an explicit gate item in
   `docs/go-live-checklist.md`: **enable the course-deletion retention mechanism before any real-student data**.
-- When built, the cascade must reuse the 4.6 reconciliation job's loss-safe, prefix-scoped, deletion-capped
-  patterns for the object-store half; the DB half is FK-cascade from `course_modules`.
+- When built, the deletion mechanism reuses the 4.6 reconciliation job's loss-safe, prefix-scoped,
+  deletion-capped patterns for the object-store half. **DB half:** Stage 9–11 tables cascade from
+  `course_modules`; the core content spine (`module_sections` / `transcripts` / `section_assets` /
+  `course_memberships`) is currently **`NO ACTION`**, so the go-live deletion mechanism will require
+  **either** a cascade migration on the core-spine FKs (owner-assigned migration block at that time) **or**
+  an app-level ordered delete (the `dev_reseed` pattern) plus object-store cleanup. *(Amended in 12d,
+  2026-06-24 — the original "the DB half is FK-cascade from `course_modules`" overstated the schema; see
+  [[steps/findings-12]] F-12C-CASCADE.)*
 - The 12f backups section must record the concrete backup-retention window and confirm it aligns with this
   policy (bounded residual retention).
 - No schema change in Stage 12 for this decision.
