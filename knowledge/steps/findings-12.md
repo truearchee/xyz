@@ -351,10 +351,65 @@ honor adr-063 (D-12-C); scope per F-12C-CASCADE above. Seed-only today (no hosti
 this note keeps it tracked until 12f builds the go-live checklist (joins the §7 deferred list — master spec
 §7 item 7 + the 12f-deferred-items list above).
 
+## 12e session — load & performance check (2026-06-25)
+
+**Measure-and-verify; test-only.** The only code is `backend/tests/test_12e_load_perf.py` (a pytest harness).
+**No product code, no migration (head stays `0059`), no new ADR (`064` stays next-free).** Roadmap status NOT
+flipped (Stage 12 closes at 12f). Full report: [[steps/stage-12/12e-load-performance-check]].
+
+**Confirm-don't-assume re-verified live:** `alembic heads` = **`0059 (head)`** (single, in-container);
+limiter budgets pinned by a test to the rule-15 values (**20/10 RPM, 100k/105k TPM, conc 10, 20% headroom**);
+queues `ingestion`/`embedding`/`ai` (AgentRun on `ingestion`); next-free ADR **`064`**; no migration.
+
+**Step 0 — student wait-state: EXISTS, not built.** A clear "generating" state already ships
+(`QuizAttemptPanel.tsx:175-189` "Generating your quiz." + bounded polling; exam-prep 3-state CTA
+`StudentQuizModesPanel.tsx:435-455`). 12e asserts it holds under contention; **no UI added, no finding** (load
+did not break it).
+
+**(A) limiter queues an exam-week peak — GREEN.** Real `RedisRateLimiter` + deterministic provider
+**explicitly injected** (else `gateway.py:325-329` bypasses the limiter) + injected `to_thread` send latency.
+Measured at N=16 concurrent pool generations / background budget 4: **peak in-flight = 4** (never exceeded the
+budget), **35 total backoffs** (queued calls waited then proceeded — `AIRequestLog.rate_limit_backoff_count`),
+**16/16 `ready`, 0 `failed`** (no error / deadlock / lost request; run drains). Wait-state edge proven: a
+contended `start_pooled_attempt` stays `generating` then `try_assemble_attempt_async` resolves it.
+
+**(B1) D1 pre-warm invariant — GREEN.** Real `prewarm_scope_pools` → `ready` pool; warm-section start serves
+with **no new generation enqueued** (no ~264s cold wait); cold section's first start enqueues the job. The
+F-6e load-bearing invariant holds.
+
+**Owner-run split (rule 13, same as every prior AI stage):**
+- **(B2)** real-provider pre-warm confirmation — no real key in a fresh workspace; reuses the existing
+  `backend/scripts/gate3_quiz_pool_smoke.py` (rule-11 model-echo + F-6e bounded retry). Command + criteria:
+  [[steps/stage-12/12e-real-provider-smoke]].
+- **(C)** `/benchmark` CWV baseline — authenticated student pages need `.env.e2e` (owner-provided, absent);
+  owner-run on the seeded stack (runbook in the report).
+- **(D)** rule-14 full Playwright — owner merge-time gate (`.env.e2e`); 12e is test-only so the suite is
+  unaffected by construction.
+
+**Decisions/observations (no defect, no ADR):**
+- (A) driver = service-level `generate_section_pool_async` (owner-approved Q1 default).
+- Binding dimension = **concurrency** (rpm/tpm set ample) so the queue drains in ~1s as leases release. rpm/tpm
+  are **window-based** (free only as the 60s window slides); sustained saturation beyond
+  `LLM_RATE_LIMIT_MAX_ELAPSED_MS` (default 30s) terminates as `rate_limited` → pool `failed` (bounded failure +
+  retry affordance, not an infinite spinner). Recorded; not 60s-load-tested by choice.
+- **Limiter is bypassed for a non-injected deterministic provider** (`gateway.py:325-329`) — so normal
+  deterministic CI/E2E never exercises the Redis limiter; only an injected-provider harness does. Not a defect
+  (keeps CI off Redis); recorded as a testing-boundary note; owner declined to formalize as an ADR.
+- **No new bottleneck found** ⇒ no ADR-justified addition (scale discipline); no prior-stage code modified.
+
+**Pre-merge review (`/review` + `/codex`).** Claude adversarial = ship-as-is (limiter proof sound,
+assertions non-vacuous). Codex caught 2 real test-quality issues, both **fixed** test-only: (1) the
+`redis_client` fixture **skipped** when Redis was down → an acceptance proof could go green without running
+the limiter check → now **fails loudly** (Redis required, matches plan Q3); (2) `latency_s` timing-sensitive
+→ lease hold raised to `0.15s` so peak saturation + backoff are deterministic. Re-verified 4/4 baked; full
+backend suite **852 passed**. Detail in [[steps/stage-12/12e-load-performance-check]].
+
 ## Linked documents
 - Stage spec: [[specs/stage-12/12-release-hardening]]
 - 12a spec: [[specs/stage-12/12a-api-boundary-hardening]]
 - 12a plan: [[plans/stage-12/12a-api-boundary-hardening]]
 - 12c spec / report: [[specs/stage-12/12c-data-workers-capacity-review]] · [[steps/stage-12/12c-data-workers-capacity-review]]
 - 12d spec / report: [[specs/stage-12/12d-privacy-data-retention]] · [[steps/stage-12/12d-privacy-data-retention]]
+- 12e spec / plan / report: [[specs/stage-12/12e-load-performance-check]] · [[plans/stage-12/12e-load-performance-check]] · [[steps/stage-12/12e-load-performance-check]]
+- 12e real-provider smoke (B2, owner-run): [[steps/stage-12/12e-real-provider-smoke]]
 - D-12-C decision: [[decisions/adr-063-course-lifetime-retention]]
