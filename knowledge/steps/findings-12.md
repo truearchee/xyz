@@ -183,7 +183,9 @@ changes are sound, the new tests are non-vacuous. Findings + dispositions:
 From /cso (5) + /review-codex (2): non-root Docker `USER`, `.dockerignore`, drop `allow_credentials=True`,
 CSP/HSTS headers, Next.js dep bump, **wire `production_hygiene` into the prod build/deploy**, **CORS-aware 500
 handling** (so the error envelope reaches cross-origin SPAs), **e2e CORS allowlist omits `:3001`** (F-12C-CORS,
-below — joins the CORS-finalize cluster). + the D-12-C course-deletion mechanism (F-12C-CASCADE, below).
+below — joins the CORS-finalize cluster), **LLM model-id config reconciliation** (`LLM_DETAILED_MODEL_ID`
+versus prompt/deployment `K2-Think-v2`, owner = product owner). + the D-12-C course-deletion mechanism
+(F-12C-CASCADE, below).
 
 **12f-deferred, owner = product owner — both of this stage's `F-12C-*` findings:** **F-12C-CORS** (committed
 CORS/frontend-port config consistency + the cross-origin Playwright gate) and **F-12C-CASCADE** (the go-live
@@ -351,10 +353,93 @@ honor adr-063 (D-12-C); scope per F-12C-CASCADE above. Seed-only today (no hosti
 this note keeps it tracked until 12f builds the go-live checklist (joins the §7 deferred list — master spec
 §7 item 7 + the 12f-deferred-items list above).
 
+## 12e session — load & performance check (2026-06-25)
+
+**Measure-and-verify; test-only.** The only code is `backend/tests/test_12e_load_perf.py` (a pytest harness).
+**No product code, no migration (head stays `0059`), no new ADR (`064` stays next-free).** Roadmap status NOT
+flipped (Stage 12 closes at 12f). Full report: [[steps/stage-12/12e-load-performance-check]].
+
+**Confirm-don't-assume re-verified live:** `alembic heads` = **`0059 (head)`** (single, in-container);
+limiter budgets pinned by a test to the rule-15 values (**20/10 RPM, 100k/105k TPM, conc 10, 20% headroom**);
+queues `ingestion`/`embedding`/`ai` (AgentRun on `ingestion`); next-free ADR **`064`**; no migration.
+
+**Step 0 — student wait-state: EXISTS, not built.** A clear "generating" state already ships
+(`QuizAttemptPanel.tsx:175-189` "Generating your quiz." + bounded polling; exam-prep 3-state CTA
+`StudentQuizModesPanel.tsx:435-455`). 12e asserts it holds under contention; **no UI added, no finding** (load
+did not break it).
+
+**(A) limiter queues an exam-week peak — GREEN.** Real `RedisRateLimiter` + deterministic provider
+**explicitly injected** (else `gateway.py:325-329` bypasses the limiter) + injected `to_thread` send latency.
+Measured at N=16 concurrent pool generations / background budget 4: **peak in-flight = 4** (never exceeded the
+budget), **35 total backoffs** (queued calls waited then proceeded — `AIRequestLog.rate_limit_backoff_count`),
+**16/16 `ready`, 0 `failed`** (no error / deadlock / lost request; run drains). Wait-state edge proven: a
+contended `start_pooled_attempt` stays `generating` then `try_assemble_attempt_async` resolves it.
+
+**(B1) D1 pre-warm invariant — GREEN.** Real `prewarm_scope_pools` → `ready` pool; warm-section start serves
+with **no new generation enqueued** (no ~264s cold wait); cold section's first start enqueues the job. The
+F-6e load-bearing invariant holds.
+
+**(D) rule-14 full Playwright — RAN GREEN (2026-06-25, owner `.env.e2e` stack, head `0059`).** Fresh clean
+stack on `:8000`/`:3001` (stopped the sibling `montpellier` stack to free the ports), run id
+`e2e-stockholm-12e-1782380955`: **34 passed / 1 failed single-pass; the 1 confirmed a flake → effective
+35/35.** The failure was the documented `10-gamification` Scenario-A login-redirect flake (`signIn` timed out
+at `/login`; B/C/D passed same helper) — passed in 4.9s on `--last-failed`. **Not a 12e regression**
+(test-only). (Fresh-workspace note: `npm install` + chromium were needed; `node_modules` was absent so `npx`
+had grabbed a mismatched temp Playwright.)
+
+**(C) `/benchmark` CWV baseline — RECORDED (2026-06-25).** gstack browse daemon, authenticated student, three
+key pages. LCP 260–312 ms / CLS 0–0.021 / FCP 40–56 ms (all **good**); full load ≤ 265 ms. JS ~5–6 MB is the
+**dev build** (`npm run dev`) — re-baseline on the production frontend (12f). Table in the report.
+
+**(B2) provider-only real-call smoke — PASS (2026-06-25, real `api.k2think.ai`).** Owner supplied the real key
+in `.env`; ran `backend/scripts/gate3_quiz_pool_smoke.py`. **Owner-approved amendment after pre-landing
+review:** B2 is intentionally a provider-only rule-11 confirmation (model echo + clean parseable
+`GeneratedQuizPool`), not a duplicate DB-backed pre-warm proof. The DB-backed
+`prewarm_scope_pools -> ready -> warm start/no cold wait` proof lives in **B1** above; B1+B2 together
+discharge the invariant at single-course MVP scale. **Rule 11 OK:** echo `MBZUAI-IFM/K2-Think-v2` == expected
+(the prompt-declared model), attempt 1, **247.6s** (< 330s), `finish_reason=stop`, 16-question pool.
+Model-id reconciliation is tracked for **12f**: `.env` `LLM_DETAILED_MODEL_ID=K2-Think-v0` differs from the
+prompt/deployment id `K2-Think-v2` (feeds the pool-identity tuple, not the rule-11 echo). Owner disposition:
+not a 12e defect; product owner aligns `.env`/prompt/deployment model ids in 12f.
+[[steps/stage-12/12e-real-provider-smoke]].
+
+**Decisions/observations (no defect, no ADR):**
+- (A) driver = service-level `generate_section_pool_async` (owner-approved Q1 default).
+- Binding dimension = **concurrency** (rpm/tpm set ample) so the queue drains in ~1s as leases release. rpm/tpm
+  are **window-based** (free only as the 60s window slides); sustained saturation beyond
+  `LLM_RATE_LIMIT_MAX_ELAPSED_MS` (default 30s) terminates as `rate_limited` → pool `failed` (bounded failure +
+  retry affordance, not an infinite spinner). Recorded; not 60s-load-tested by choice.
+- **Limiter is bypassed for a non-injected deterministic provider** (`gateway.py:325-329`) — so normal
+  deterministic CI/E2E never exercises the Redis limiter; only an injected-provider harness does. Not a defect
+  (keeps CI off Redis); recorded as a testing-boundary note; owner declined to formalize as an ADR.
+- **No new bottleneck found** ⇒ no ADR-justified addition (scale discipline); no prior-stage code modified.
+
+**Owner flag dispositions (confirmed 2026-06-25, rule 13):**
+1. **Limiter bypassed for a non-injected deterministic provider** (`gateway.py:325-329`) → **testing-boundary
+   note, NO ADR.** By-design (it keeps normal CI/E2E runs off Redis); now documented here and in the 12e
+   report. **ADR `064` stays free.** Disposition: accepted / by-design / documented.
+2. **Window-based rpm/tpm saturation terminating as a bounded `rate_limited` past ~30s**
+   (`LLM_RATE_LIMIT_MAX_ELAPSED_MS`) → **accepted as-is.** The bounded failure + retry affordance is the
+   correct behavior; a **60s sustained-overload test is NOT required** at single-course MVP scale.
+   Disposition: accepted with written rationale (rule 13).
+3. **B2 provider-only smoke vs DB-backed pre-warm proof** → **accepted with owner approval.** B1 proves the
+   DB-backed `prewarm_scope_pools -> ready -> warm start/no cold wait` mechanics; B2 proves the real K2Think
+   provider returns a clean `GeneratedQuizPool` with the prompt-model echo. No new combined real-provider DB
+   run required at MVP scale. Disposition: accepted with written rationale.
+
+**Pre-merge review (`/review` + `/codex`).** Claude adversarial = ship-as-is (limiter proof sound,
+assertions non-vacuous). Codex caught 2 real test-quality issues, both **fixed** test-only: (1) the
+`redis_client` fixture **skipped** when Redis was down → an acceptance proof could go green without running
+the limiter check → now **fails loudly** (Redis required, matches plan Q3); (2) `latency_s` timing-sensitive
+→ lease hold raised to `0.15s` so peak saturation + backoff are deterministic. Re-verified 4/4 baked; full
+backend suite **852 passed**. Detail in [[steps/stage-12/12e-load-performance-check]].
+
 ## Linked documents
 - Stage spec: [[specs/stage-12/12-release-hardening]]
 - 12a spec: [[specs/stage-12/12a-api-boundary-hardening]]
 - 12a plan: [[plans/stage-12/12a-api-boundary-hardening]]
 - 12c spec / report: [[specs/stage-12/12c-data-workers-capacity-review]] · [[steps/stage-12/12c-data-workers-capacity-review]]
 - 12d spec / report: [[specs/stage-12/12d-privacy-data-retention]] · [[steps/stage-12/12d-privacy-data-retention]]
+- 12e spec / plan / report: [[specs/stage-12/12e-load-performance-check]] · [[plans/stage-12/12e-load-performance-check]] · [[steps/stage-12/12e-load-performance-check]]
+- 12e real-provider smoke (B2, owner-run): [[steps/stage-12/12e-real-provider-smoke]]
 - D-12-C decision: [[decisions/adr-063-course-lifetime-retention]]
