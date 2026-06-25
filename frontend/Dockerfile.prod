@@ -1,0 +1,44 @@
+# Production-candidate frontend image (12f). Multi-stage: install + build, then a minimal NON-ROOT
+# runner using Next.js standalone output. The dev image (frontend/Dockerfile, `next dev`) is left
+# unchanged and is still what the base/E2E stack builds, so the Playwright gate is unaffected.
+
+# ---- builder ----
+FROM node:20-alpine AS builder
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+RUN npm ci
+
+COPY . .
+
+# NEXT_PUBLIC_* are inlined into the client bundle at build time; the prod-candidate stack passes the
+# real API + Supabase origins as build args. Test hooks default OFF — a production build must never ship
+# the window.__xyzE2E bridge.
+ARG NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
+ARG NEXT_PUBLIC_SUPABASE_URL=
+ARG NEXT_PUBLIC_SUPABASE_ANON_KEY=
+ARG NEXT_PUBLIC_E2E_TEST_HOOKS=false
+ENV NEXT_PUBLIC_API_BASE_URL=$NEXT_PUBLIC_API_BASE_URL \
+    NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL \
+    NEXT_PUBLIC_SUPABASE_ANON_KEY=$NEXT_PUBLIC_SUPABASE_ANON_KEY \
+    NEXT_PUBLIC_E2E_TEST_HOOKS=$NEXT_PUBLIC_E2E_TEST_HOOKS \
+    NEXT_TELEMETRY_DISABLED=1
+RUN npm run build
+
+# ---- runner ----
+FROM node:20-alpine AS runner
+WORKDIR /app
+ENV NODE_ENV=production \
+    NEXT_TELEMETRY_DISABLED=1 \
+    PORT=3000 \
+    HOSTNAME=0.0.0.0
+
+# Next.js standalone output: a minimal traced server + only the node_modules it needs. (This project
+# has no public/ dir, so only the server bundle and static assets are copied.)
+COPY --from=builder --chown=node:node /app/.next/standalone ./
+COPY --from=builder --chown=node:node /app/.next/static ./.next/static
+
+# node:20-alpine ships a non-root `node` user (uid 1000) — run as it (12f production hardening).
+USER node
+EXPOSE 3000
+CMD ["node", "server.js"]
