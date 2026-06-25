@@ -59,7 +59,7 @@ DONE             — governance stages where no browser gate applies (Stage 0 on
 ✅ Stage 4.5   AI infrastructure + summary generation   FULLY VERIFIED  (gate: 4.5d browser gate + full E2E + real-provider smoke)
 ✅ Stage 4.6   Replacement / retry / supersession       FULLY VERIFIED — live browser gate GREEN (full active suite 9/9); two cross-stage-seam regressions found+fixed (F-4.6c-1, F-4.6b-2)
 ✅ Stage 4.7   Student-facing summaries                   FULLY VERIFIED — gate G1–G9 GREEN; full active suite 11/11 ON MAIN (backend 389); restored Stage 3 visibility E2E; review R1–R3 resolved
-Stage 4.8   First hosted deploy (staging)              NOT STARTED  (new in v3)
+Stage 4.8   First hosted deploy (staging)              DEFERRED-WITH-OWNER — blocked on an external university hosting decision (D-12-A); deploy-prep deliverables folded into Stage 12f
 Stage 4.9   Frontend foundation + platform hygiene     FRONTEND FOUNDATION MERGED — 4.9g imported the Stage 4.9f monochrome frontend design foundation onto current `main`; stale 4.9 backend/platform/deploy changes were intentionally not imported; Stage 5-9 backend/schema/generated-client behavior remains authoritative; verification green in [[steps/stage-04/4.9g-merge-monochrome-redesign]]
 ✅ Stage 5   Shared quiz engine + event spine           FULLY VERIFIED — merged to main; migrations 0014–0020; gate 1 browser GREEN; gate 3 real-provider smoke GREEN; backend 442 pytest; frontend tsc green; ADR-040..046; F-5d-1 resolved
 ✅ Stage 5.5   Module schedule & section metadata       FULLY VERIFIED — gate 5.5e GREEN; reference schedule 28 sections; full active suite 12/12 after reseed; migration chain rebased after Stage 5 main (`0020 -> 0021 -> 0022`)
@@ -70,7 +70,7 @@ Stage 8     Assistant                                  IN PROGRESS — ✅ 8.1 F
 ✅ Stage 9     My Progress                              FULLY VERIFIED — browser gate GREEN; full active Playwright 16/16; backend 542 plus focused progress 18 passed; migrations 0038-0039 now chained after Stage 8.2 head 0033; guarded demo seed reset verified; privacy/no-AI/accessibility assertions hardened, including caller-owned benchmark average plus aggregate-only class comparison
 ✅ Stage 10    Gamification                               FULLY VERIFIED — Stage 10 gate A/B/C GREEN; full active Playwright 24/24 on clean standard stack; required fault gates green
 ✅ Stage 11    Proactive analytics                        REBASED ONTO main (head 0082) + RECONCILED — PR open, AWAITING OWNER MERGE (11.1–11.6 all FULLY VERIFIED on the combined code) — Landing: migration chain re-parented to single head `0082 -> 0056 -> 0057 -> 0058 -> 0059` (clean upgrade→base→upgrade); product reconciliation `studied_section` COUNTS AS qualifying activity in `inactive_recently` via a config-backed event-type set, `risk-v1` amended in place (ADR-060); My-Progress `ForecastAdviceCard` coexists with Stage 10 `GamificationPanel`; Stage 9 AI-free gate composes PR #14 id-set-diff + 11.6 forecast-advice scoping; combined verification (unique image, clean DB, deterministic provider): backend **804 pytest**, frontend tsc + **42 vitest**, full active Playwright **33 success + 2 fault**; no rule-11 smoke (deterministic change, no LLM path); one rule-10 flag open (`topic_deadline_gap` publish-gate divergence). Sub-stages: ✅ 11.1 scheduler/risk (incl. the **AgentRun requeue recovery maintenance fix — folded into 11.1, NOT a new stage**); ✅ 11.2 student detail + recommendations; ✅ 11.3 assessment analysis + question insights; ✅ 11.4 workload planner (migration 0058); ✅ 11.5 calendar `.ics` export (cross-timezone/DST gate, no AI/no migration); ✅ **11.6 grade-forecast advice** (migration 0059; AI EXPLAINS the Stage 9 forecast — `calculate_forecast` reused via one `build_forecast_input` path, no new grade math; route `grade_forecast_advice/v1` = K2-Think-v2/cerebras, ADR-059; numeric/contradiction + student-copy-safety validators; tone-neutral advice card; rule-11 smoke passed on its own branch, model echo `MBZUAI-IFM/K2-Think-v2`). Alembic head `0059`.
-Stage 12    Release hardening                          NOT STARTED
+Stage 12    Release hardening                          IN PROGRESS — 12a–12e FULLY VERIFIED; 12f deploy-readiness (production-candidate, no live deploy — D-12-A; real go-live deferred-with-owner)
 ```
 
 ---
@@ -94,10 +94,11 @@ httpx ASGI-shortcut deprecation (83 warnings; future upgrade breaks suite)  → 
 CORS allow_credentials=True unnecessary with pure Bearer auth               → Stage 4.9 hygiene batch
 No client-regen alias in frontend/package.json (F008)                       → Stage 4.9 hygiene batch
 Hosted Postgres extension bootstrap not automated (F006)                    → Stage 4.8
-Signed URLs remain valid until TTL after unpublish                          → decision recorded in Stage 12
-can_publish derived from role rather than membership                        → reviewed in Stage 12 authz pass
-No custom exception handlers (raw default 500 bodies)                       → Stage 12
+Signed URLs remain valid until TTL after unpublish                          → RESOLVED in Stage 12 (ADR-062 — accept ≤5-min already-issued TTL; future minting blocked)
+can_publish derived from role rather than membership                        → RESOLVED in Stage 12a (display-only derivation, NOT an enforcement hole — F1)
+No custom exception handlers (raw default 500 bodies)                       → RESOLVED in Stage 12a (global error envelope, ADR-061); 12f adds CORS-aware 5xx
 No roadmap file in repo (F001)                                              → fixed by this document + repo rule above
+Next.js 15.3.3 npm-audit findings (1 critical + 1 moderate; latent, not exploitable)  → deferred-with-owner, post-stage dependency pass (12f D3=B)
 Quiz-pool ad-hoc first-recap ~264s first-wait (F-6e). OPEN, but the two quick
 levers are now CLOSED as tested-not-viable: (a) reasoning_effort=low alone →
 ~38s but first-try validity ~75%→~33%; (b) reasoning_effort=low + json_object
@@ -389,7 +390,7 @@ Student opens published lecture/lab → sees brief + detailed summary
 
 ## Stage 4.8 — First Hosted Deploy (Staging) — NEW in v3
 
-**Status:** NOT STARTED.
+**Status:** DEFERRED-WITH-OWNER (D-12-A — no hosted environment; blocked on an external university hosting decision). Its deploy-prep deliverables (release-phase migration, managed-PG `vector`/`pgcrypto` bootstrap, secrets, repeatable deploy script, hosted CORS origins, environment hygiene) are **folded into Stage 12f** and produced there as a documented procedure proven on a local production-candidate build. The first real hosted deploy + Stage 8.3 SSE remain deferred-with-owner (`docs/go-live-checklist.md`).
 
 **Why here:** after 4.7 the pipeline exercises every infrastructure component end-to-end (DB, storage, three worker types, AI provider, migrations) — the natural first hosted smoke. Stage 12 as the first deployment rehearsal is a classic trap, and there is one specific technical forcing function: **SSE breaks under buffering proxies, and discovering that during Stage 8.3 is expensive.** Platform constraints get discovered here, cheaply.
 
@@ -705,9 +706,9 @@ started. See [[steps/stage-11/11.1-roster-risk-scheduler]], [[steps/stage-11/11.
 
 ## Stage 12 — Release Hardening
 
-**Status:** NOT STARTED.
+**Status:** IN PROGRESS — 12a–12e FULLY VERIFIED; **12f closes the stage as deploy-ready / production-candidate** (D-12-A: no hosted environment yet; the real staging→production promotion is deferred-with-owner — see §7 of the master spec and `docs/go-live-checklist.md`).
 
-**Backend scope (v2 carried + v3 additions):** security pass; authorization review (**including the `can_publish` role-vs-membership derivation**); migration review; worker retry/failure review; rate-limit review; load checks; logging/observability; deployment rehearsal — now a **staging→production promotion** rather than a first deploy, because 4.8 exists.
+**Backend scope (v2 carried + v3 additions):** security pass; authorization review (**including the `can_publish` role-vs-membership derivation**); migration review; worker retry/failure review; rate-limit review; load checks; logging/observability; deployment rehearsal — **documented and proven on a local production-candidate build (D-12-A); 4.8 never executed (no hosting), so the real staging→production promotion is deferred-with-owner**, out of Stage 12's executable scope.
 v3 additions:
 ```
 Global exception handlers / consistent error envelope (no raw default 500 bodies)

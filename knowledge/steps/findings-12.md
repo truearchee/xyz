@@ -434,6 +434,19 @@ the limiter check → now **fails loudly** (Redis required, matches plan Q3); (2
 → lease hold raised to `0.15s` so peak saturation + backoff are deterministic. Re-verified 4/4 baked; full
 backend suite **852 passed**. Detail in [[steps/stage-12/12e-load-performance-check]].
 
+## 12f — Deploy-readiness resolutions (2026-06-25)
+Owner decisions locked **D1=A / D2=A / D3=B / D4=A** (see [[decisions/adr-064-deploy-readiness-production-candidate]]). D-12-A holds: no hosted environment; Stage 12 closes as deploy-ready / production-candidate.
+
+- **F-12C-CORS — RESOLVED (D1=A).** Committed frontend port collapsed to `:3000` (`docker-compose.yml`); `.env.example` `CORS_ORIGINS=http://localhost:3000,http://localhost:3001` so a fresh checkout works on either port; the e2e runbook now runs on `:3000`. New `tests/e2e/12f-cors-preflight.spec.ts` pins it.
+- **CORS-aware 5xx — RESOLVED.** The catch-all 500 handler (`errors.py`) re-attaches `Access-Control-Allow-Origin`/`Vary: Origin` for an allowed origin (it runs inside Starlette's outermost `ServerErrorMiddleware`, outside `CORSMiddleware`).
+- **`allow_credentials` dropped** (pure Bearer auth; /cso LOW) — `main.py`.
+- **LLM_DETAILED_MODEL_ID — RESOLVED (D2=A).** `.env.example` aligned to `MBZUAI-IFM/K2-Think-v2` (the live deployment the 12e B2 smoke echoed; matches `config.py` + the prompt).
+- **`production_hygiene` WIRED.** `scripts/build-production.sh` runs it and **aborts the build** on any E2E hook / fault-injection flag or non-`k2think` `LLM_PROVIDER` (verified HARD: hook-on → exit 1, build step never reached).
+- **5 LOW /cso items** addressed in the production-candidate build: non-root backend + frontend images; `.dockerignore` (both); CSP/HSTS + backend security headers (pragmatic CSP — nonce-based deferred-with-owner); `allow_credentials` dropped. **Next.js bump DEFERRED-WITH-OWNER (D3=B)** — latent `npm audit` findings, not exploitable; post-stage dependency pass.
+- **Health readiness** `/health/ready` (DB+Redis; 200/503), excluded from OpenAPI (infra probe).
+- **Migration head guard.** The single Alembic head is **`0059`** — confirm via the migration graph / `alembic heads`, **NOT** a filename sort (`0082` is the merge node, not the head). The kickoff table at the top of this file already records `0059`; the guard is now also in `e2e-run-procedure.md` and `docs/deploy-procedure.md`.
+- **Deferred-with-owner (go-live):** F-12C-CASCADE deletion mechanism (ADR-063; **not built in 12f**), Stage 8.3 SSE, real promotion / `/canary`, backups-verify + restore-drill, rollback-rehearsal, K2Think key rotation, professional pentest, nonce-based CSP — all in `docs/go-live-checklist.md`.
+
 ## Linked documents
 - Stage spec: [[specs/stage-12/12-release-hardening]]
 - 12a spec: [[specs/stage-12/12a-api-boundary-hardening]]
@@ -443,3 +456,5 @@ backend suite **852 passed**. Detail in [[steps/stage-12/12e-load-performance-ch
 - 12e spec / plan / report: [[specs/stage-12/12e-load-performance-check]] · [[plans/stage-12/12e-load-performance-check]] · [[steps/stage-12/12e-load-performance-check]]
 - 12e real-provider smoke (B2, owner-run): [[steps/stage-12/12e-real-provider-smoke]]
 - D-12-C decision: [[decisions/adr-063-course-lifetime-retention]]
+- 12f spec / plan / report: [[specs/stage-12/12f-deploy-readiness-mvp-smoke]] · [[plans/stage-12/12f-deploy-readiness-mvp-smoke]] · [[steps/stage-12/12f-deploy-readiness-mvp-smoke]]
+- 12f deploy-readiness decision: [[decisions/adr-064-deploy-readiness-production-candidate]]
