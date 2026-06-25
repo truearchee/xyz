@@ -151,3 +151,25 @@ async def test_request_id_header_present_on_real_health_route(envelope_client: A
 
     assert response.status_code == 200
     assert response.headers.get("X-Request-ID")
+
+
+@pytest.mark.anyio
+async def test_forced_500_carries_cors_headers_for_allowed_origin(monkeypatch) -> None:
+    # The catch-all 500 handler runs inside Starlette's outermost ServerErrorMiddleware, so it bypasses
+    # CORSMiddleware. 12f re-attaches CORS headers explicitly so a cross-origin SPA can still read the
+    # 5xx envelope / request_id. Allowed origin → echoed; foreign origin → not granted.
+    monkeypatch.setenv("CORS_ORIGINS", "http://localhost:3000,http://localhost:3001")
+    transport = ASGITransport(app=_build_app(), raise_app_exceptions=False)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        allowed = await client.get(
+            "/__test__/boom", headers={"Origin": "http://localhost:3001"}
+        )
+        assert allowed.status_code == 500
+        assert allowed.headers.get("access-control-allow-origin") == "http://localhost:3001"
+        assert "origin" in allowed.headers.get("vary", "").lower()
+
+        foreign = await client.get(
+            "/__test__/boom", headers={"Origin": "http://evil.example"}
+        )
+        assert foreign.status_code == 500
+        assert "access-control-allow-origin" not in foreign.headers

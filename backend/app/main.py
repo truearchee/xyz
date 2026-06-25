@@ -31,7 +31,9 @@ def create_app() -> FastAPI:
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.CORS_ORIGINS,
-        allow_credentials=True,
+        # Pure Bearer-token auth: the SPA sends Authorization headers, never cookies, so credentialed
+        # CORS is unnecessary. Dropped in 12f when finalizing production CORS (/cso LOW).
+        allow_credentials=False,
         allow_methods=["*"],
         allow_headers=["*"],
     )
