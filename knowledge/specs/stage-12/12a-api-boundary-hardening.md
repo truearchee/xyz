@@ -56,7 +56,7 @@ lightweight `request_id` correlation id so 12c logging can tie a user-visible er
 - Do **not** drop the legacy `detail` field now (additive only; clean removal is a tracked future FE pass — ADR-061).
 - Do **not** add `require_module_access` as a router dependency on mutation routes (redundant; would change
   error codes — finding F6).
-- No new features, no migration (membership data already exists; Alembic head stays 0082).
+- No new features, no migration (membership data already exists; Alembic head stays 0059 — the kickoff "0082" was a static-trace miss, corrected in 12c; `0082` is the intermediate merge node).
 - Do **not** normalize the deliberate `metadata`-allows-admin asymmetry without owner sign-off (finding F3).
 
 ## Linked documents

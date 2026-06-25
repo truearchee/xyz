@@ -2,7 +2,7 @@
 type: findings
 stage: 12
 created: 2026-06-23
-updated: 2026-06-23
+updated: 2026-06-24
 ---
 
 # Stage 12 — Findings & spec/reality reconciliations (rule 10)
@@ -16,7 +16,7 @@ updated: 2026-06-23
 
 | Fact | Confirmed value | Source |
 |---|---|---|
-| Alembic head — single? | **Yes, single head `0082`** (merge of `0044`+`0081`) | `backend/alembic/versions/0082_merge_stage10_stage86_heads.py` (`down_revision=("0044","0081")`); only `0001` has `down_revision=None`. Fresh-DB round-trip to be run in 12c. |
+| Alembic head — single? | **Yes, single head `0059`** — `0082` is the *intermediate* merge node (`0044`+`0081`), after which Stage 11 chains `0056→0057→0058→0059` | head = `0059_student_forecast_advice.py`; `0082_merge_stage10_stage86_heads.py` (`down_revision=("0044","0081")`) is the merge node, **not** the head; only `0001` has `down_revision=None`. **Corrected in 12c** — the kickoff "single head `0082`" was a static-trace miss (see "Migration head correction" and the 12c migration round-trip below). |
 | Next free migration | **0083** (block 0083–0095 reserved; gaps 0045–0055 & 0060–0079 are intentional parallel-branch numbering, not orphans) | `ls backend/alembic/versions/` |
 | Next free ADR number | **061** (highest existing is `adr-060`) | `knowledge/decisions/` |
 | Visibility gate helper | `apply_visible_section_gate` @ `backend/app/platform/query/section_visibility.py:24`; seen at `progress_read.py:173`, `gamification_read.py:211,291` — **full audit deferred to 12b** | grep |
@@ -70,7 +70,7 @@ not found" before the service's `CONTENT_FORBIDDEN`/`SECTION_NOT_FOUND` fire). I
 All seeded lecturers already hold `status="active"` lecturer memberships: `progress/seed.py:95-96`,
 `tests/e2e/fixtures/seed.mjs:248`, `admin/dev_reseed.py` (status carried from snapshot). No seeded lecturer
 publishes without an active membership; membership-derived `can_publish` reads `true` for them as before.
-No migration needed (head stays 0082).
+No migration needed (head stays 0059).
 
 ## Signed-URL unpublish gate — RESOLVED (12b)
 `architecture/storage.md` was accurate: the mint path **does** re-validate publish status on every request.
@@ -182,7 +182,65 @@ changes are sound, the new tests are non-vacuous. Findings + dispositions:
 ## 12f-deferred items collected (for the 12f spec / go-live)
 From /cso (5) + /review-codex (2): non-root Docker `USER`, `.dockerignore`, drop `allow_credentials=True`,
 CSP/HSTS headers, Next.js dep bump, **wire `production_hygiene` into the prod build/deploy**, **CORS-aware 500
-handling** (so the error envelope reaches cross-origin SPAs). + the D-12-C course-deletion mechanism.
+handling** (so the error envelope reaches cross-origin SPAs), **e2e CORS allowlist omits `:3001`** (F-12C-CORS,
+below — joins the CORS-finalize cluster). + the D-12-C course-deletion mechanism (F-12C-CASCADE, below).
+
+**12f-deferred, owner = product owner — both of this stage's `F-12C-*` findings:** **F-12C-CORS** (committed
+CORS/frontend-port config consistency + the cross-origin Playwright gate) and **F-12C-CASCADE** (the go-live
+course-deletion mechanism: core-spine FK cascade migration vs. app-level ordered delete). The product owner
+scopes both when 12f lands; neither is a today-defect or a 12c/12d code change.
+
+### F-12C-CORS — committed CORS allowlist omits the stack's own frontend origin `:3001` (found in the 12c/12d merge-time full-suite run, 2026-06-25)
+**Surfaced by the owner merge-time gate (rule 14), not a Stage-12 regression** (`git diff origin/main…HEAD` =
+no code changes; these gates pass on `main`). Recording it because it is a committed-config defect of the
+**"green locally, wrong in the tree"** class — a local `.env` fix turns the run green but leaves the wrong
+config shipped.
+
+- **Symptom.** On a fresh clean stack (`.env` = `cp .env.example .env`), every student-facing spec failed at
+  login: the browser CORS preflight `OPTIONS /me` from origin `http://localhost:3001` returned **400**, so the
+  real `GET /me` never fired and each login bounced back to `/login` (`expect(page).toHaveURL(/\/student$/)`
+  timed out ~11s). Direct proof: preflight `Origin: http://localhost:3001` → **400**, `:3000` → **200**.
+- **Root cause (committed inconsistency).** The committed stack's browser origin is **`:3001`** —
+  `docker-compose.yml:91` maps the frontend `"3001:3000"` in the **base** file (not the e2e overlay). But the
+  committed CORS default is **`:3000`-only**: `CORS_ORIGINS` is sourced *solely* from `.env.example:20`
+  (`CORS_ORIGINS=http://localhost:3000`) → copied to the gitignored `.env`; neither `docker-compose.e2e.yml`
+  nor `.env.e2e` overrides it, and `main.py:33` feeds it straight into `allow_origins`. So `cp .env.example .env`
+  + the committed compose port = guaranteed preflight failure for **any** local/e2e run on this compose.
+- **Local-only workaround used for this run (NOT committed; `.env` is gitignored).** `.env` `CORS_ORIGINS`
+  set to `http://localhost:3000,http://localhost:3001`, backend recreated → preflight 200, suite green. The
+  committed defect remains; the override is intentionally not in the tree.
+- **Proper fix = 12f (committed config, not a runtime-only patch).** Because the `:3001` host port lives in
+  the **base** compose, an e2e-overlay-only `CORS_ORIGINS` override is *insufficient* — a plain
+  `docker compose up` would still serve `:3001` and reject it. 12f must make the committed default and the
+  committed frontend port **agree**; owner picks which side moves:
+  - **Preferred — correct `.env.example`** so `CORS_ORIGINS` matches the committed frontend host port (add
+    `http://localhost:3001`; keep `:3000` only if a `:3000` surface still exists). One line, fixes base + e2e.
+  - **Or reconcile the port instead** — the `3001:3000` mapping carries "gate-standup local change" lineage
+    (sibling-port-collision avoidance); if `:3000` is the intended canonical frontend port, restore the
+    mapping to `3000:3000` and leave CORS at `:3000`.
+  - **Runtime origins list** (backend defaults to localhost dev/e2e ports when `CORS_ORIGINS` unset) is
+    acceptable as defense-in-depth but is **not** a substitute for the committed-config agreement above.
+  Verify against 12f's cross-origin Playwright gate (the same gate the existing CORS-finalize items defer to).
+- **Disposition.** 12f-deferred item; **owner = product owner** (scopes the committed-config fix + the
+  cross-origin gate when 12f lands). Listed in the 12f-deferred-items collection above.
+
+### Run-procedure lesson — source `.env.e2e` into the Playwright runner (not a code defect; recorded for the next runner, 2026-06-25)
+Captured here per the owner's bookkeeping note because it is **not** clearly recorded against the Stage-8.6b
+requirement (the 8.6a/8.6b handoff frames `.env.e2e` only as a *seed* prerequisite). Also folded into the
+canonical runbook `knowledge/steps/e2e-run-procedure.md` (where the next runner looks).
+- **The Playwright runner process must have `.env.e2e` sourced into its env** (`set -a; . ./.env.e2e; set +a`
+  before `npx playwright test`). Most specs read `.env.e2e` from file themselves, but a few — notably
+  `7-glossary` — read `SUPABASE_SERVICE_ROLE_KEY` from `process.env` and POST to Supabase admin from the host.
+  Unset → `401 no_authorization` on `/auth/v1/admin/users` → a ~17 ms `expect(authId,'… auth id').toBeTruthy()`
+  fail. This is the Stage-8.6b "load `.env.e2e` into Playwright for Supabase Admin calls" requirement made
+  explicit. `seed.mjs` reads the file directly, so seeding succeeds and hides the gap — it only bites the runner.
+- **Companion run-procedure facts** (same 2026-06-25 run; full detail in the runbook): run on host **`:3001`**
+  (`PLAYWRIGHT_BASE_URL=http://localhost:3001`); use a genuinely **fresh DB per full-suite run** (`down -v` →
+  up → `alembic upgrade head` → seed → run) because `seed.mjs` does not truncate Stage 10/11 derived tables
+  (streaks/badges/forecast), so a re-run on a used DB fails `10-gamification` A/D and `11.6`.
+- **Result.** With all three applied, the full active Playwright suite ran **35/35 green** (single pass, fresh
+  clean stack, head `0059`, run id `e2e-montpellier-stage12-fullrun`, 7.3m) — the owner merge-time rule-14 gate
+  for 12c/12d. No product-code defect surfaced (`git diff origin/main…HEAD` empty).
 
 ## Migration head correction (found running the E2E migration, 2026-06-23)
 The kickoff "single head `0082`" was a static-trace miss. The **true single Alembic head is `0059`** — `0082`
@@ -236,7 +294,67 @@ fresh VM** — to be confirmed on the owner's merge-time gate run (the env degra
 - **Code-asymmetry (403↔404)** — **RESOLVED — accepted as-is** (see the per-gate denial-code asymmetry
   finding above): UI-impossible scenario, immaterial at MVP scale. No code change.
 
+## 12c / 12d session — verification & reconciliation (2026-06-24)
+
+**Migration chain (12c) — VERIFIED.** Single Alembic head **`0059`** (43 revisions, no dup IDs; `0082` is the
+intermediate merge node). Fresh-DB `upgrade → base → upgrade` round-trip **GREEN** in Docker (default
+`xyz_lms`, fresh volume): `alembic heads` = `0059 (head)`; current after upgrade = `0059`, after downgrade =
+empty, after re-upgrade = `0059`. No orphaned/duplicate revisions; every migration downgrades cleanly. The
+kickoff "single head `0082`" doc-correction is folded into the kickoff table (`:19`) + `:73` and the 12a spec
+(`:59`) — narrow scope (owner D2=A); append-only `log.md` and prior-stage `STATUS.md`/`roadmap.md:72`/`8.6d`
+left as historical record.
+
+**Workers / scheduler / limiter / reconciliation / logging (12c) — VERIFIED** (code review + **79 targeted
+tests passed**: limiter, recovery, scheduler, worker, startup-recovery, error-envelope). Real queue topology
+is `ingestion`/`embedding`/`ai` (no `agent` queue; AgentRun runs on `ingestion`). The Stage 11 AgentRun
+"committed-but-never-enqueued, no retry" gap stays **closed** (both call sites — scheduler `service.py:56`,
+manual API `analytics.py:51` — use the idempotent `enqueue_run_agent_if_needed`; next-tick reconciliation
+re-enqueues a stranded `queued` run). The 4.6 reaper covers `uploaded`/`parsing`/`queued` (+ quiz/pool
+`generating`). Limiter budgets confirmed from live config: 20 Cerebras / 10 Nvidia RPM, 100k/105k TPM,
+concurrency 10, 20% interactive headroom. Reconciliation: report-only default, prefix-scoped, deletion-capped
+(50), superseded retained, missing-refs reported-not-fixed. Logging passes all 3 criteria (ERROR+`request_id`
+on the unhandled path; no PII — hashes only; stdout, no aggregation stack).
+
+**AIRequestLog cost review (12c) — DONE.** "Tokens by feature by day" query authored (index-backed
+`ix_ai_request_logs_feature_created_at`), runs, returns a result (0 rows on the current seed-only DB; correct
+per-feature/day aggregation confirmed on a rolled-back illustrative dataset). Sanity vs IFM budgets:
+`summary_detailed` heaviest (~15–16.5k tokens/call, matching rule 15's ~13–18k; ~6 calls/min before the 105k
+Nvidia TPM binds); one call per summary/quiz; **no feature unexpectedly expensive.**
+
+**D-12-C / ADR-063 reconciliation (12d).** D-12-C was already recorded as **`adr-063`** (`accepted`,
+`related-session: "12d"`, pre-written during 12b's owner-policy resolution). Owner decision **D1=A**: accept
+adr-063, **create no new ADR — `064` remains next-free**. Verified against reality (not the `accepted` label):
+**Check 1** (ADR text states all four required points: course-lifetime retention; course-deletion-deletes-all;
+bounded backup-retention alignment; mechanism-deferred-to-go-live) **PASS**; **Check 2** (the "deleting a
+course deletes all material" claim vs live code) **PASS — verdict (a): no course-deletion path exists yet**
+(no `DELETE /modules/{id}`; only `admin.py:192` removes a membership; course-row deletes only in
+`dev_reseed.py:278-308` teardown), consistent with the deferred mechanism.
+
+**F-12C-CASCADE (12c/12d, rule 13 — flagged for go-live, NOT a today-defect).** adr-063's *Consequences* "the
+DB half is FK-cascade from `course_modules`" overstates today's schema. The core content spine —
+`module_sections→course_modules`, `transcripts→module_sections`, `section_assets→module_sections`,
+`course_memberships→course_modules` — is `NO ACTION` (`0002_db_spine.py`, `0004_transcripts.py`); only the
+Stage 9–11 tables cascade from `course_modules`. Nothing orphans today (no delete path), so **no schema change
+in 12c/12d**. **Disposition (12f-deferred item; owner = product owner):** the deferred go-live deletion mechanism must use **either** a cascade migration
+on the core-spine FKs (owner-assigned migration block at go-live) **or** an app-level ordered delete (the
+`dev_reseed` pattern) + loss-safe, prefix-scoped object-store cleanup (reuse the 4.6 reconciliation patterns).
+**Amended (owner-approved, 2026-06-24):** adr-063's *Consequences* DB-half line now states the accurate FK
+state — Stage 9–11 tables cascade from `course_modules`; the core content spine
+(`module_sections`/`transcripts`/`section_assets`/`course_memberships`) is currently `NO ACTION`; the go-live
+deletion mechanism requires **either** a cascade migration on the core-spine FKs (owner-assigned block) **or**
+an app-level ordered delete (`dev_reseed` pattern) + object-store cleanup. The original "the DB half is
+FK-cascade from `course_modules`" overstated the schema. Everything else in adr-063 is unchanged.
+
+## §7 go-live closeout note (carried to 12f's `docs/go-live-checklist.md`)
+**Enable the course-deletion retention mechanism before any real-student data** — owner = product owner;
+honor adr-063 (D-12-C); scope per F-12C-CASCADE above. Seed-only today (no hosting), so deferred-with-owner;
+this note keeps it tracked until 12f builds the go-live checklist (joins the §7 deferred list — master spec
+§7 item 7 + the 12f-deferred-items list above).
+
 ## Linked documents
 - Stage spec: [[specs/stage-12/12-release-hardening]]
 - 12a spec: [[specs/stage-12/12a-api-boundary-hardening]]
 - 12a plan: [[plans/stage-12/12a-api-boundary-hardening]]
+- 12c spec / report: [[specs/stage-12/12c-data-workers-capacity-review]] · [[steps/stage-12/12c-data-workers-capacity-review]]
+- 12d spec / report: [[specs/stage-12/12d-privacy-data-retention]] · [[steps/stage-12/12d-privacy-data-retention]]
+- D-12-C decision: [[decisions/adr-063-course-lifetime-retention]]
