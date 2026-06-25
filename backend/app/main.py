@@ -24,6 +24,7 @@ from app.platform.http.errors import (
     validation_exception_handler,
 )
 from app.platform.http.request_id import RequestIdMiddleware
+from app.platform.http.security_headers import SecurityHeadersMiddleware
 
 
 def create_app() -> FastAPI:
@@ -40,6 +41,8 @@ def create_app() -> FastAPI:
     # Outermost user middleware: stamp every request with a correlation id and echo
     # X-Request-ID on every response (Stage 12a).
     app.add_middleware(RequestIdMiddleware)
+    # Baseline security response headers (12f production hardening); HSTS only outside dev.
+    app.add_middleware(SecurityHeadersMiddleware)
     # Consistent error envelope + no raw default 500 bodies (Stage 12a). Registering the
     # Starlette base catches FastAPI's HTTPException subclass too; the Exception handler is
     # the catch-all 500.
