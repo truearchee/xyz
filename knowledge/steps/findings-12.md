@@ -183,7 +183,9 @@ changes are sound, the new tests are non-vacuous. Findings + dispositions:
 From /cso (5) + /review-codex (2): non-root Docker `USER`, `.dockerignore`, drop `allow_credentials=True`,
 CSP/HSTS headers, Next.js dep bump, **wire `production_hygiene` into the prod build/deploy**, **CORS-aware 500
 handling** (so the error envelope reaches cross-origin SPAs), **e2e CORS allowlist omits `:3001`** (F-12C-CORS,
-below — joins the CORS-finalize cluster). + the D-12-C course-deletion mechanism (F-12C-CASCADE, below).
+below — joins the CORS-finalize cluster), **LLM model-id config reconciliation** (`LLM_DETAILED_MODEL_ID`
+versus prompt/deployment `K2-Think-v2`, owner = product owner). + the D-12-C course-deletion mechanism
+(F-12C-CASCADE, below).
 
 **12f-deferred, owner = product owner — both of this stage's `F-12C-*` findings:** **F-12C-CORS** (committed
 CORS/frontend-port config consistency + the cross-origin Playwright gate) and **F-12C-CASCADE** (the go-live
@@ -377,14 +379,29 @@ contended `start_pooled_attempt` stays `generating` then `try_assemble_attempt_a
 with **no new generation enqueued** (no ~264s cold wait); cold section's first start enqueues the job. The
 F-6e load-bearing invariant holds.
 
-**Owner-run split (rule 13, same as every prior AI stage):**
-- **(B2)** real-provider pre-warm confirmation — no real key in a fresh workspace; reuses the existing
-  `backend/scripts/gate3_quiz_pool_smoke.py` (rule-11 model-echo + F-6e bounded retry). Command + criteria:
-  [[steps/stage-12/12e-real-provider-smoke]].
-- **(C)** `/benchmark` CWV baseline — authenticated student pages need `.env.e2e` (owner-provided, absent);
-  owner-run on the seeded stack (runbook in the report).
-- **(D)** rule-14 full Playwright — owner merge-time gate (`.env.e2e`); 12e is test-only so the suite is
-  unaffected by construction.
+**(D) rule-14 full Playwright — RAN GREEN (2026-06-25, owner `.env.e2e` stack, head `0059`).** Fresh clean
+stack on `:8000`/`:3001` (stopped the sibling `montpellier` stack to free the ports), run id
+`e2e-stockholm-12e-1782380955`: **34 passed / 1 failed single-pass; the 1 confirmed a flake → effective
+35/35.** The failure was the documented `10-gamification` Scenario-A login-redirect flake (`signIn` timed out
+at `/login`; B/C/D passed same helper) — passed in 4.9s on `--last-failed`. **Not a 12e regression**
+(test-only). (Fresh-workspace note: `npm install` + chromium were needed; `node_modules` was absent so `npx`
+had grabbed a mismatched temp Playwright.)
+
+**(C) `/benchmark` CWV baseline — RECORDED (2026-06-25).** gstack browse daemon, authenticated student, three
+key pages. LCP 260–312 ms / CLS 0–0.021 / FCP 40–56 ms (all **good**); full load ≤ 265 ms. JS ~5–6 MB is the
+**dev build** (`npm run dev`) — re-baseline on the production frontend (12f). Table in the report.
+
+**(B2) provider-only real-call smoke — PASS (2026-06-25, real `api.k2think.ai`).** Owner supplied the real key
+in `.env`; ran `backend/scripts/gate3_quiz_pool_smoke.py`. **Owner-approved amendment after pre-landing
+review:** B2 is intentionally a provider-only rule-11 confirmation (model echo + clean parseable
+`GeneratedQuizPool`), not a duplicate DB-backed pre-warm proof. The DB-backed
+`prewarm_scope_pools -> ready -> warm start/no cold wait` proof lives in **B1** above; B1+B2 together
+discharge the invariant at single-course MVP scale. **Rule 11 OK:** echo `MBZUAI-IFM/K2-Think-v2` == expected
+(the prompt-declared model), attempt 1, **247.6s** (< 330s), `finish_reason=stop`, 16-question pool.
+Model-id reconciliation is tracked for **12f**: `.env` `LLM_DETAILED_MODEL_ID=K2-Think-v0` differs from the
+prompt/deployment id `K2-Think-v2` (feeds the pool-identity tuple, not the rule-11 echo). Owner disposition:
+not a 12e defect; product owner aligns `.env`/prompt/deployment model ids in 12f.
+[[steps/stage-12/12e-real-provider-smoke]].
 
 **Decisions/observations (no defect, no ADR):**
 - (A) driver = service-level `generate_section_pool_async` (owner-approved Q1 default).
@@ -396,6 +413,19 @@ F-6e load-bearing invariant holds.
   deterministic CI/E2E never exercises the Redis limiter; only an injected-provider harness does. Not a defect
   (keeps CI off Redis); recorded as a testing-boundary note; owner declined to formalize as an ADR.
 - **No new bottleneck found** ⇒ no ADR-justified addition (scale discipline); no prior-stage code modified.
+
+**Owner flag dispositions (confirmed 2026-06-25, rule 13):**
+1. **Limiter bypassed for a non-injected deterministic provider** (`gateway.py:325-329`) → **testing-boundary
+   note, NO ADR.** By-design (it keeps normal CI/E2E runs off Redis); now documented here and in the 12e
+   report. **ADR `064` stays free.** Disposition: accepted / by-design / documented.
+2. **Window-based rpm/tpm saturation terminating as a bounded `rate_limited` past ~30s**
+   (`LLM_RATE_LIMIT_MAX_ELAPSED_MS`) → **accepted as-is.** The bounded failure + retry affordance is the
+   correct behavior; a **60s sustained-overload test is NOT required** at single-course MVP scale.
+   Disposition: accepted with written rationale (rule 13).
+3. **B2 provider-only smoke vs DB-backed pre-warm proof** → **accepted with owner approval.** B1 proves the
+   DB-backed `prewarm_scope_pools -> ready -> warm start/no cold wait` mechanics; B2 proves the real K2Think
+   provider returns a clean `GeneratedQuizPool` with the prompt-model echo. No new combined real-provider DB
+   run required at MVP scale. Disposition: accepted with written rationale.
 
 **Pre-merge review (`/review` + `/codex`).** Claude adversarial = ship-as-is (limiter proof sound,
 assertions non-vacuous). Codex caught 2 real test-quality issues, both **fixed** test-only: (1) the

@@ -58,8 +58,11 @@ interactive headroom. Next-free ADR `064`. **No migration** in 12e.
   `section_question_pools.status='ready'` row for `(module_section_id, model, prompt_version)`
   (`db/models/section_question_pool.py:49-57`); assert a warm-scope `start_pooled_attempt` does **not** sit in
   `generating` on a cold pool (warm reuse, no new generation), per `tests/test_quiz_pool.py:208` reuse proof.
-- **B2 (owner-run):** with a real key, `LLM_PROVIDER=k2think` pre-warm **one** pool; assert `ready`, model-ID
-  echo matches the configured identifier, warm start serves with no ~264s cold wait. Record
+- **B2 (owner-approved amendment, 2026-06-25):** with a real key, run a **provider-only** rule-11 smoke for
+  `quiz_pool_generation/v1` (real K2Think call, model echo, clean parseable `GeneratedQuizPool`). This does
+  **not** repeat the DB-backed `prewarm_scope_pools -> ready -> warm start` proof; that structural proof lives
+  in B1 above. Together B1+B2 discharge the pre-warm invariant at MVP scale: B1 proves the DB-backed warm-pool
+  mechanics, B2 proves the real provider can generate the pool payload cleanly. Record B2 in
   `knowledge/steps/stage-12/12e-real-provider-smoke.md`. Exact commands documented in the report.
 
 ## C — `/benchmark` baseline

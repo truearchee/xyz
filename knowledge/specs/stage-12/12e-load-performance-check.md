@@ -20,8 +20,10 @@ report: knowledge/steps/stage-12/12e-load-performance-check.md
 ## Framing — two concerns, two methods (so we neither burn real budget nor skip the real check)
 - **(A) Limiter / queueing mechanics** → scripted concurrency driver on the **deterministic adapter with
   injected latency** (no real K2Think spend). Rule 11 does not require a real call to test queueing.
-- **(B) D1 pre-warm invariant** → mechanics proven on the deterministic adapter (B1) + **one small
-  real-provider confirmation** (B2, rule 11) that warm pools serve a student without the ~264s cold wait.
+- **(B) D1 pre-warm invariant** → DB-backed mechanics proven on the deterministic adapter (B1) + **one small
+  provider-only real-call confirmation** (B2, rule 11) that the real provider returns a clean
+  `GeneratedQuizPool` with the expected model echo. Owner-approved amendment: the warm-pool/no-cold-wait proof
+  is intentionally split across B1+B2 rather than repeated in one combined real-provider DB run.
 
 ## Step 0 (read-first) — student wait-state: REPORT, do not build
 **Result: a clear "generating" wait-state already exists** ⇒ 12e *verifies it holds under load*; it adds no UI.
@@ -41,7 +43,7 @@ report: knowledge/steps/stage-12/12e-load-performance-check.md
 |---|---|---|
 | **(A)** limiter queues an exam-week peak gracefully (no error/deadlock/lost request) | new test-only pytest harness, deterministic provider **explicitly injected** + **real `RedisRateLimiter`**, injected send-latency, low concurrency budget, ~20–30 concurrent generations | **this workspace** (db+redis up) |
 | **(B1)** pre-warm invariant mechanics (warm pool ⇒ prompt serve; cold ⇒ generating) | deterministic-adapter test | **this workspace** |
-| **(B2)** one small real-provider pre-warm confirmation (rule 11, model-ID echo) | `LLM_PROVIDER=k2think`, one pool | **owner-run** (no real `LLM_API_KEY` in a fresh workspace) |
+| **(B2)** provider-only real-call confirmation (rule 11, prompt-model echo + clean `GeneratedQuizPool`) | `LLM_PROVIDER=k2think`, `backend/scripts/gate3_quiz_pool_smoke.py`; **no DB/Redis pre-warm repeat** | **owner-run** (no real `LLM_API_KEY` in a fresh workspace) |
 | **(C)** `/benchmark` CWV + page-load baseline on key student pages | gstack browse daemon vs the running app | **owner-run if browser login needs real Supabase** (`.env.e2e` absent here) |
 | **(D)** rule-14 full active Playwright suite green | runbook (fresh DB, :3001, `--workers=1`) | **owner merge-time gate** (`.env.e2e` owner-provided) |
 
@@ -63,8 +65,10 @@ report: knowledge/steps/stage-12/12e-load-performance-check.md
 - **B1:** `prewarm_scope_pools` ⇒ each eligible section has a `section_question_pools.status='ready'` row for
   identity `(module_section_id, model, prompt_version)`; a start on the **warm** scope assembles promptly; the
   **cold** path (no/`generating` pool) is the one that pays the wait inside the `ai` job.
-- **B2 (owner-run):** one real pre-warm ⇒ pool reaches `ready`; echoed model ID matches the configured
-  identifier; a real warm start serves with no ~264s cold wait. Recorded in `12e-real-provider-smoke.md`.
+- **B2 (owner-approved amendment, 2026-06-25):** provider-only real call ⇒ `quiz_pool_generation/v1` returns a
+  clean parseable `GeneratedQuizPool` and echoes the prompt-declared model id. B2 does **not** repeat the
+  DB-backed `prewarm_scope_pools -> ready -> warm start` proof; that proof is B1. Recorded in
+  `12e-real-provider-smoke.md`.
 
 ## Done means
 - (A) harness green against real Redis with the pass envelope asserted; (B1) green; **(B2) recorded or
@@ -72,6 +76,13 @@ report: knowledge/steps/stage-12/12e-load-performance-check.md
   full suite green**. Backend pytest stays green; **no product code changed** (no client regen, no migration).
 - `/review` + `/codex` on the test-only diff; report written from evidence; findings-12 appended; the roadmap
   status line **not** flipped (12f closes the stage). Owner merges (agent never merges).
+
+## Amendments
+- 2026-06-25 15:04 +04 — Owner accepted the pre-landing review finding that B2 was provider-only rather than a
+  full DB-backed pre-warm proof. Scope amended: B1 carries the DB-backed `prewarm_scope_pools -> ready -> warm
+  start/no cold wait` proof; B2 carries only the real-provider rule-11 proof (prompt-model echo + clean
+  `GeneratedQuizPool`). Also tracked the prompt/deployment model vs `LLM_DETAILED_MODEL_ID` split as a 12f
+  config-reconciliation item owned by the product owner.
 
 ## Linked documents
 - Stage spec: [[specs/stage-12/12-release-hardening]]
