@@ -1,0 +1,55 @@
+# Stage 12f — production-candidate overlay. Run with:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+# Gate the build first with scripts/build-production.sh (runs the production_hygiene assertion, which
+# aborts on any E2E hook / fault-injection flag, before any image is built).
+#
+# Production-shaped: the frontend is the NON-ROOT standalone build with E2E hooks OFF; the backend runs
+# with ENVIRONMENT=production (HSTS on; deterministic providers refused at boot) and a real
+# /health/ready healthcheck. The LLM provider boundary defaults to `deterministic` for the stable /qa
+# smoke (locked Option 2); set LLM_PROVIDER=k2think for a real-provider run.
+
+x-prod-backend-env: &prod-backend-env
+  ENVIRONMENT: production
+  LLM_PROVIDER: ${LLM_PROVIDER:-deterministic}
+
+services:
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.prod
+      args:
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000}
+        NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:-}
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY:-}
+        NEXT_PUBLIC_E2E_TEST_HOOKS: "false"
+    image: kyiv-frontend-prod
+    environment:
+      NODE_ENV: production
+      # The production candidate must never enable the browser E2E bridge.
+      NEXT_PUBLIC_E2E_TEST_HOOKS: "false"
+
+  backend:
+    environment:
+      <<: *prod-backend-env
+    # Real readiness gate (DB + Redis) as the prod-candidate healthcheck, replacing the static /health.
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health/ready"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  worker:
+    environment:
+      <<: *prod-backend-env
+
+  embedding_worker:
+    environment:
+      <<: *prod-backend-env
+
+  ai_worker:
+    environment:
+      <<: *prod-backend-env
+
+  scheduler:
+    environment:
+      <<: *prod-backend-env
