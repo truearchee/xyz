@@ -288,7 +288,7 @@ Lecturer uploads transcript → parsed/chunked/embedded → both summary jobs ru
 
 ## Stage 4.6 — Replacement / Retry / Supersession
 
-**Status:** IN PROGRESS. **4.6a foundation BACKEND VERIFIED** (2026-06-11): lifecycleState migration +
+**Status:** ✅ FULLY VERIFIED — merged to main. **4.6a foundation BACKEND VERIFIED** (2026-06-11): lifecycleState migration +
 lineage (`is_active` removed), one-active + one-pending indexes, section-locked pending creation +
 `tryActivatePendingTranscript` atomic swap, `transcripts/domain/summary_eligibility` + read-only
 `ActiveTranscriptSummaryResolver`, per-row provenance stamps, env-gated pipeline fault harness; backend
@@ -415,7 +415,7 @@ Against staging: admin creates module → lecturer uploads transcript
 
 ## Stage 4.9 — Frontend Foundation + Platform Hygiene — NEW in v3
 
-**Status:** NOT STARTED.
+**Status:** FRONTEND FOUNDATION MERGED (4.9g monochrome foundation on main); remaining platform hygiene deferred.
 
 **Why here:** Stages 5–8 are the heavy student-facing UI (quiz attempt flow, glossary, assistant workspace). Building three stages of UI in inline styles with zero unit tests means repainting and retro-testing all of it at Stage 12. The thin 4.5d/4.7 panels were cheap to build either way; the quiz UI is not.
 
@@ -442,7 +442,7 @@ Hygiene batch (one tidy-up commit):
 
 ## Stage 5 — Shared Quiz Engine + Event Spine
 
-**Status:** ✅ **FULLY VERIFIED** on branch `spec-5` (not yet merged). 5a schema/event spine, 5b
+**Status:** ✅ FULLY VERIFIED — merged to main. 5a schema/event spine, 5b
 generation/recovery, 5c HTTP surface, 5d student UI + browser and real-provider gates, and 5e review
 fixes are complete. Latest verification recorded in [[steps/stage-05/5e-review-finding-fixes]]:
 backend `442 passed`; frontend `tsc --noEmit` exit 0; Gate 1 browser and Gate 3 real-provider smoke both
