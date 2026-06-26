@@ -2,7 +2,7 @@
 type: findings
 stage: 12
 created: 2026-06-23
-updated: 2026-06-24
+updated: 2026-06-25
 ---
 
 # Stage 12 — Findings & spec/reality reconciliations (rule 10)
@@ -438,10 +438,12 @@ backend suite **852 passed**. Detail in [[steps/stage-12/12e-load-performance-ch
 Owner decisions locked **D1=A / D2=A / D3=B / D4=A** (see [[decisions/adr-064-deploy-readiness-production-candidate]]). D-12-A holds: no hosted environment; Stage 12 closes as deploy-ready / production-candidate.
 
 - **F-12C-CORS — RESOLVED (D1=A).** Committed frontend port collapsed to `:3000` (`docker-compose.yml`); `.env.example` `CORS_ORIGINS=http://localhost:3000,http://localhost:3001` so a fresh checkout works on either port; the e2e runbook now runs on `:3000`. New `tests/e2e/12f-cors-preflight.spec.ts` pins it.
-- **CORS-aware 5xx — RESOLVED.** The catch-all 500 handler (`errors.py`) re-attaches `Access-Control-Allow-Origin`/`Vary: Origin` for an allowed origin (it runs inside Starlette's outermost `ServerErrorMiddleware`, outside `CORSMiddleware`).
+- **CORS-aware 5xx — RESOLVED.** The catch-all 500 handler (`errors.py`) re-attaches `Access-Control-Allow-Origin`/`Vary: Origin` for an allowed origin (it runs inside Starlette's outermost `ServerErrorMiddleware`, outside `CORSMiddleware`) and reuses the security-header helper so 500 responses carry the baseline hardening headers too.
 - **`allow_credentials` dropped** (pure Bearer auth; /cso LOW) — `main.py`.
 - **LLM_DETAILED_MODEL_ID — RESOLVED (D2=A).** `.env.example` aligned to `MBZUAI-IFM/K2-Think-v2` (the live deployment the 12e B2 smoke echoed; matches `config.py` + the prompt).
-- **`production_hygiene` WIRED.** `scripts/build-production.sh` runs it and **aborts the build** on any E2E hook / fault-injection flag or non-`k2think` `LLM_PROVIDER` (verified HARD: hook-on → exit 1, build step never reached).
+- **`production_hygiene` WIRED + deploy path fail-closed.** `scripts/build-production.sh` runs it and **aborts build/migrate/up** on any E2E hook / fault-injection flag or non-`k2think` `LLM_PROVIDER`; the hygiene gate reads the reviewed env file as data (`--env-file`) and does **not** shell-source production secrets. A regression proves `$`/backtick values are preserved and not executed. `docker-compose.prod.yml` requires `XYZ_PROD_ENV_FILE`, replaces backend app-service `.env` with the reviewed env, resets frontend `env_file` to empty, and exits before app boot unless `LLM_PROVIDER=k2think`. The deterministic `/qa` smoke is split into the separate non-prod `docker-compose.qa.yml` overlay, so the production-candidate overlay never carries the test LLM adapter. Rendered frontend env is limited to `NODE_ENV` + `NEXT_PUBLIC_*`.
+- **Stage 12 E2E provider leak — RESOLVED.** `docker-compose.e2e.yml` and `docker-compose.fault.yml` pin literal `LLM_PROVIDER=deterministic`, so shell/project `.env` cannot route the rule-14/fault path to the real provider.
+- **Stage 12 `seed.mjs` 1000-user pagination backlog — DEFERRED-WITH-OWNER.** Not built in 12f; owner/test-infra must paginate `listAuthUsers` (or use an email-filter/clean-auth strategy) before the next shared-stack full reseed that can exceed 1000 auth users. Tracked in [[open-questions]].
 - **5 LOW /cso items** addressed in the production-candidate build: non-root backend + frontend images; `.dockerignore` (both); CSP/HSTS + backend security headers (pragmatic CSP — nonce-based deferred-with-owner); `allow_credentials` dropped. **Next.js bump DEFERRED-WITH-OWNER (D3=B)** — latent `npm audit` findings, not exploitable; post-stage dependency pass.
 - **Health readiness** `/health/ready` (DB+Redis; 200/503), excluded from OpenAPI (infra probe).
 - **Migration head guard.** The single Alembic head is **`0059`** — confirm via the migration graph / `alembic heads`, **NOT** a filename sort (`0082` is the merge node, not the head). The kickoff table at the top of this file already records `0059`; the guard is now also in `e2e-run-procedure.md` and `docs/deploy-procedure.md`.

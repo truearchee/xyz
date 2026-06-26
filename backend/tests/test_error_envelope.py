@@ -173,3 +173,27 @@ async def test_forced_500_carries_cors_headers_for_allowed_origin(monkeypatch) -
         )
         assert foreign.status_code == 500
         assert "access-control-allow-origin" not in foreign.headers
+
+
+@pytest.mark.anyio
+async def test_forced_500_carries_security_headers(monkeypatch) -> None:
+    # The 500 handler is outside the normal middleware path, so it must apply the same baseline security
+    # headers explicitly after constructing the JSON error envelope.
+    monkeypatch.delenv("ENVIRONMENT", raising=False)
+    transport = ASGITransport(app=_build_app(), raise_app_exceptions=False)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        dev_response = await client.get("/__test__/boom")
+
+    assert dev_response.status_code == 500
+    assert dev_response.headers["x-content-type-options"] == "nosniff"
+    assert dev_response.headers["x-frame-options"] == "DENY"
+    assert dev_response.headers["referrer-policy"] == "no-referrer"
+    assert "strict-transport-security" not in dev_response.headers
+
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    transport = ASGITransport(app=_build_app(), raise_app_exceptions=False)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        prod_response = await client.get("/__test__/boom")
+
+    assert prod_response.status_code == 500
+    assert prod_response.headers["strict-transport-security"] == "max-age=63072000; includeSubDomains"

@@ -20,6 +20,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.platform.config import settings
 from app.platform.http.request_id import REQUEST_ID_HEADER, get_request_id
+from app.platform.http.security_headers import apply_security_headers
 
 logger = logging.getLogger(__name__)
 
@@ -112,4 +113,5 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
     # This handler runs outside CORSMiddleware (12f); re-attach CORS headers so cross-origin
     # SPAs can read the 5xx envelope.
     _apply_cors_headers(request, response)
+    apply_security_headers(response.headers)
     return response

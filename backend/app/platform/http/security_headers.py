@@ -26,6 +26,14 @@ _HSTS_NAME = "Strict-Transport-Security"
 _HSTS_VALUE = "max-age=63072000; includeSubDomains"
 
 
+def apply_security_headers(headers: MutableHeaders) -> None:
+    """Apply the baseline security headers to a mutable response header mapping."""
+    for name, value in _STATIC_SECURITY_HEADERS.items():
+        headers.setdefault(name, value)
+    if not settings.IS_NON_PROD:
+        headers.setdefault(_HSTS_NAME, _HSTS_VALUE)
+
+
 class SecurityHeadersMiddleware:
     """Add baseline security headers to every HTTP response."""
 
@@ -39,11 +47,7 @@ class SecurityHeadersMiddleware:
 
         async def send_with_security_headers(message: Message) -> None:
             if message["type"] == "http.response.start":
-                headers = MutableHeaders(scope=message)
-                for name, value in _STATIC_SECURITY_HEADERS.items():
-                    headers.setdefault(name, value)
-                if not settings.IS_NON_PROD:
-                    headers.setdefault(_HSTS_NAME, _HSTS_VALUE)
+                apply_security_headers(MutableHeaders(scope=message))
             await send(message)
 
         await self.app(scope, receive, send_with_security_headers)

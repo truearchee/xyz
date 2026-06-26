@@ -9,13 +9,20 @@
 - [ ] Managed Postgres (with `vector` + `pgcrypto`), Redis, object storage, and secrets store.
 - [ ] Production env file: `LLM_PROVIDER=k2think` + `LLM_API_KEY`; `ENVIRONMENT=production`; real
       `CORS_ORIGINS` (hosted frontend origin(s)); real Supabase + storage creds; `COURSE_TIMEZONE`.
+- [ ] Frontend public env values identified separately: `NEXT_PUBLIC_API_BASE_URL`,
+      `NEXT_PUBLIC_SUPABASE_URL`, and `NEXT_PUBLIC_SUPABASE_ANON_KEY`. No DB, Redis, Supabase secret,
+      storage secret, or LLM key is allowed in the rendered frontend container environment.
 - [ ] **Extension bootstrap verified on real managed PG** (`CREATE EXTENSION vector; pgcrypto`). *(deferred — unverifiable until hosting)*
 - [ ] **Rotate the K2Think `LLM_API_KEY` before go-live** — it was present in dev workspace `.env` files during development; issue a fresh key with the university / IFM and retire the old one.
 
 ## B. Build & release
-- [ ] `./scripts/build-production.sh <prod-env>` passes the hygiene gate (no E2E hooks / fault flags; `LLM_PROVIDER=k2think`).
-- [ ] Release-phase migration run explicitly (`alembic upgrade head`); `alembic current` == head `0059` (graph, not filename sort).
+- [ ] `./scripts/build-production.sh <prod-env> build` passes the hygiene gate (no E2E hooks / fault flags; `LLM_PROVIDER=k2think`).
+- [ ] Release-phase migration run through the same env-preserving script (`./scripts/build-production.sh <prod-env> migrate`); `current` == head `0059` (graph, not filename sort). Do not run bare base-compose migration commands that can read `.env`.
 - [ ] Stack up; `/health/ready` 200 (DB+Redis); scheduler running; queues draining; security headers present; `window.__xyzE2E` absent.
+- [ ] Negative deploy-boundary check: prod overlay requires `XYZ_PROD_ENV_FILE`, replaces the base app-service `.env`, and refuses to boot when `LLM_PROVIDER` is absent or not `k2think`. Deterministic smoke uses `docker-compose.qa.yml`, not `docker-compose.prod.yml`.
+- [ ] Frontend secret-boundary check: rendered prod frontend env has no `DATABASE_URL`, `REDIS_URL`,
+      `SUPABASE_SECRET_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_STORAGE_*`, `LLM_API_KEY`, or
+      non-public provider credentials; only `NODE_ENV` and `NEXT_PUBLIC_*` are present.
 
 ## C. Promotion & watch  *(deferred-with-owner)*
 - [ ] Staging → production promotion via `/land-and-deploy` executing this procedure on real infra.
