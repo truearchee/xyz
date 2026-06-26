@@ -1,0 +1,113 @@
+# Stage 12f — production-candidate overlay. Run ONLY through scripts/build-production.sh so the reviewed
+# production env file is used for build interpolation, migrations, and runtime service env.
+#
+# Production-shaped: the frontend is the NON-ROOT standalone build with E2E hooks OFF; the backend runs
+# with ENVIRONMENT=production, a real /health/ready healthcheck, and the real K2Think provider only.
+# Deterministic-boundary /qa smoke uses docker-compose.qa.yml instead; this overlay must never carry the
+# test LLM adapter.
+
+x-prod-backend-env: &prod-backend-env
+  ENVIRONMENT: production
+
+services:
+  frontend:
+    # Do not inherit the base `.env` or the reviewed backend production env file. The Next.js
+    # runtime boundary may only receive NODE_ENV plus NEXT_PUBLIC_* values.
+    env_file: !override []
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.prod
+      args:
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000}
+        NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:-}
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY:-}
+        NEXT_PUBLIC_E2E_TEST_HOOKS: "false"
+    image: kyiv-frontend-prod
+    environment:
+      NODE_ENV: production
+      NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000}
+      NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:-}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY:-}
+      # The production candidate must never enable the browser E2E bridge.
+      NEXT_PUBLIC_E2E_TEST_HOOKS: "false"
+
+  backend:
+    env_file: !override
+      - ${XYZ_PROD_ENV_FILE:?Set XYZ_PROD_ENV_FILE to the reviewed production env file}
+    environment:
+      <<: *prod-backend-env
+    command:
+      - sh
+      - -c
+      - |
+        if [ "$${LLM_PROVIDER:-}" != "k2think" ]; then
+          echo "production-candidate stack requires LLM_PROVIDER=k2think; use docker-compose.qa.yml for deterministic smoke" >&2
+          exit 64
+        fi
+        exec uvicorn app.main:app --host 0.0.0.0 --port 8000
+    # Real readiness gate (DB + Redis) as the prod-candidate healthcheck, replacing the static /health.
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health/ready"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  worker:
+    env_file: !override
+      - ${XYZ_PROD_ENV_FILE:?Set XYZ_PROD_ENV_FILE to the reviewed production env file}
+    environment:
+      <<: *prod-backend-env
+    command:
+      - sh
+      - -c
+      - |
+        if [ "$${LLM_PROVIDER:-}" != "k2think" ]; then
+          echo "production-candidate stack requires LLM_PROVIDER=k2think; use docker-compose.qa.yml for deterministic smoke" >&2
+          exit 64
+        fi
+        exec python -m app.workers.worker
+
+  embedding_worker:
+    env_file: !override
+      - ${XYZ_PROD_ENV_FILE:?Set XYZ_PROD_ENV_FILE to the reviewed production env file}
+    environment:
+      <<: *prod-backend-env
+    command:
+      - sh
+      - -c
+      - |
+        if [ "$${LLM_PROVIDER:-}" != "k2think" ]; then
+          echo "production-candidate stack requires LLM_PROVIDER=k2think; use docker-compose.qa.yml for deterministic smoke" >&2
+          exit 64
+        fi
+        exec python -m app.workers.worker embedding
+
+  ai_worker:
+    env_file: !override
+      - ${XYZ_PROD_ENV_FILE:?Set XYZ_PROD_ENV_FILE to the reviewed production env file}
+    environment:
+      <<: *prod-backend-env
+    command:
+      - sh
+      - -c
+      - |
+        if [ "$${LLM_PROVIDER:-}" != "k2think" ]; then
+          echo "production-candidate stack requires LLM_PROVIDER=k2think; use docker-compose.qa.yml for deterministic smoke" >&2
+          exit 64
+        fi
+        exec python -m app.workers.worker ai
+
+  scheduler:
+    env_file: !override
+      - ${XYZ_PROD_ENV_FILE:?Set XYZ_PROD_ENV_FILE to the reviewed production env file}
+    environment:
+      <<: *prod-backend-env
+    command:
+      - sh
+      - -c
+      - |
+        if [ "$${LLM_PROVIDER:-}" != "k2think" ]; then
+          echo "production-candidate stack requires LLM_PROVIDER=k2think; use docker-compose.qa.yml for deterministic smoke" >&2
+          exit 64
+        fi
+        exec python -m app.platform.scheduler.runner

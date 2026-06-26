@@ -88,7 +88,9 @@ services:
     build: ./frontend
     env_file: .env
     ports:
-      - "3001:3000"
+      # Canonical frontend host port (matches the CORS default, README, and the Playwright default).
+      # 12f collapsed this back from the "3001:3000" sibling-collision workaround (F-12C-CORS).
+      - "3000:3000"
     depends_on:
       backend:
         condition: service_healthy

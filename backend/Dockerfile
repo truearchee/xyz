@@ -46,4 +46,11 @@ snapshot_download(
 (model_path / "MODEL_REVISION").write_text(revision + "\n", encoding="utf-8")
 PY
 
+# Run as a non-root user (12f production hardening). Created last and given ownership of the app
+# source and the baked embedding model so both stay readable at runtime. Applies to every service
+# sharing this image (backend + workers + scheduler).
+RUN useradd --create-home --uid 1001 appuser \
+    && chown -R appuser:appuser /app /opt/models
+USER appuser
+
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

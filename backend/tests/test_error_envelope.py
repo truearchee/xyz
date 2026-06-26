@@ -151,3 +151,49 @@ async def test_request_id_header_present_on_real_health_route(envelope_client: A
 
     assert response.status_code == 200
     assert response.headers.get("X-Request-ID")
+
+
+@pytest.mark.anyio
+async def test_forced_500_carries_cors_headers_for_allowed_origin(monkeypatch) -> None:
+    # The catch-all 500 handler runs inside Starlette's outermost ServerErrorMiddleware, so it bypasses
+    # CORSMiddleware. 12f re-attaches CORS headers explicitly so a cross-origin SPA can still read the
+    # 5xx envelope / request_id. Allowed origin → echoed; foreign origin → not granted.
+    monkeypatch.setenv("CORS_ORIGINS", "http://localhost:3000,http://localhost:3001")
+    transport = ASGITransport(app=_build_app(), raise_app_exceptions=False)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        allowed = await client.get(
+            "/__test__/boom", headers={"Origin": "http://localhost:3001"}
+        )
+        assert allowed.status_code == 500
+        assert allowed.headers.get("access-control-allow-origin") == "http://localhost:3001"
+        assert "origin" in allowed.headers.get("vary", "").lower()
+
+        foreign = await client.get(
+            "/__test__/boom", headers={"Origin": "http://evil.example"}
+        )
+        assert foreign.status_code == 500
+        assert "access-control-allow-origin" not in foreign.headers
+
+
+@pytest.mark.anyio
+async def test_forced_500_carries_security_headers(monkeypatch) -> None:
+    # The 500 handler is outside the normal middleware path, so it must apply the same baseline security
+    # headers explicitly after constructing the JSON error envelope.
+    monkeypatch.delenv("ENVIRONMENT", raising=False)
+    transport = ASGITransport(app=_build_app(), raise_app_exceptions=False)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        dev_response = await client.get("/__test__/boom")
+
+    assert dev_response.status_code == 500
+    assert dev_response.headers["x-content-type-options"] == "nosniff"
+    assert dev_response.headers["x-frame-options"] == "DENY"
+    assert dev_response.headers["referrer-policy"] == "no-referrer"
+    assert "strict-transport-security" not in dev_response.headers
+
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    transport = ASGITransport(app=_build_app(), raise_app_exceptions=False)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        prod_response = await client.get("/__test__/boom")
+
+    assert prod_response.status_code == 500
+    assert prod_response.headers["strict-transport-security"] == "max-age=63072000; includeSubDomains"

@@ -2,7 +2,7 @@
 
 import pytest
 
-from app.platform.production_hygiene import find_violations, main
+from app.platform.production_hygiene import find_violations, load_env_file, main
 
 
 def test_clean_env_has_no_violations() -> None:
@@ -82,3 +82,28 @@ def test_main_exits_zero_when_clean(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("LLM_PROVIDER", "k2think")
     monkeypatch.setenv("EMBEDDING_PROVIDER", "sentence_transformers")
     assert main() == 0
+
+
+def test_env_file_parser_preserves_shell_metacharacters_without_execution(tmp_path) -> None:
+    sentinel = tmp_path / "executed"
+    env_file = tmp_path / "prod.env"
+    secret_value = f"abc$FOO`touch {sentinel}`"
+    env_file.write_text(
+        "\n".join(
+            [
+                "LLM_PROVIDER=k2think",
+                "EMBEDDING_PROVIDER=sentence_transformers",
+                "NEXT_PUBLIC_E2E_TEST_HOOKS=false",
+                f"LLM_API_KEY={secret_value}",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    parsed = load_env_file(env_file)
+
+    assert parsed["LLM_API_KEY"] == secret_value
+    assert not sentinel.exists()
+    assert main(["--env-file", str(env_file)]) == 0
+    assert not sentinel.exists()

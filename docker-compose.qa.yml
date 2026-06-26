@@ -1,0 +1,52 @@
+# Stage 12f — non-prod deterministic /qa smoke overlay.
+#
+# This is NOT a deploy overlay. It exists only for the owner-observed full-MVP /qa smoke that uses the
+# deterministic LLM adapter at the provider boundary while preserving the production frontend shape:
+# standalone Next.js image, non-root runtime, and E2E browser hooks baked OFF.
+#
+# Run with the normal e2e env when browser seeding/login is needed, for example:
+#   docker compose --env-file .env.e2e -f docker-compose.yml -f docker-compose.e2e.yml -f docker-compose.qa.yml up -d --build
+
+x-qa-backend-env: &qa-backend-env
+  ENVIRONMENT: development
+  LLM_PROVIDER: deterministic
+
+services:
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.prod
+      args:
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000}
+        NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:-}
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY:-}
+        NEXT_PUBLIC_E2E_TEST_HOOKS: "false"
+    image: kyiv-frontend-qa
+    environment:
+      NODE_ENV: production
+      NEXT_PUBLIC_E2E_TEST_HOOKS: "false"
+
+  backend:
+    environment:
+      <<: *qa-backend-env
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health/ready"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  worker:
+    environment:
+      <<: *qa-backend-env
+
+  embedding_worker:
+    environment:
+      <<: *qa-backend-env
+
+  ai_worker:
+    environment:
+      <<: *qa-backend-env
+
+  scheduler:
+    environment:
+      <<: *qa-backend-env

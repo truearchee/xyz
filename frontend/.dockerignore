@@ -1,0 +1,12 @@
+# Build-context hygiene (12f). node_modules + .next are rebuilt inside the image; never ship local
+# env files or VCS/test artefacts into the build context.
+node_modules
+.next
+.git
+.gitignore
+.env
+.env.*
+npm-debug.log*
+*.log
+coverage
+.DS_Store

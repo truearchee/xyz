@@ -6,17 +6,20 @@ hygiene applied to the production-candidate build.
 
 Run it in the deploy/build environment (before the frontend build and before the backend boots):
 
-    python -m app.platform.production_hygiene
+    python -m app.platform.production_hygiene --env-file .env.production
 
-It checks ``os.environ`` and is pure (no app imports, no DB), so it slots into a CI step unchanged and is
-unit-testable via ``find_violations(env)``. The backend already refuses deterministic providers in
-prod/staging at boot (``config.py`` / ``provider.py``); this is the explicit, CI-slottable front line that
-also covers the frontend ``NEXT_PUBLIC_*`` hooks the backend can't self-guard.
+It checks ``os.environ`` overlaid with an optional env file parsed as data (never shell-sourced) and is
+pure (no app imports, no DB), so it slots into a CI step unchanged and is unit-testable via
+``find_violations(env)``. The backend already refuses deterministic providers in prod/staging at boot
+(``config.py`` / ``provider.py``); this is the explicit, CI-slottable front line that also covers the
+frontend ``NEXT_PUBLIC_*`` hooks the backend can't self-guard.
 """
 
 from __future__ import annotations
 
 import os
+from pathlib import Path
+import re
 import sys
 from collections.abc import Callable, Mapping
 
@@ -47,6 +50,37 @@ _REQUIRED_IN_PROD: tuple[tuple[str, str, str], ...] = (
      "the real K2Think provider (its default is the deterministic test adapter, unguarded at boot)"),
 )
 
+_ENV_KEY_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def load_env_file(path: str | Path) -> dict[str, str]:
+    """Parse a dotenv-style env file as data, never as shell code.
+
+    This intentionally implements only the subset this deploy path needs: comments, blank lines,
+    optional ``export ``, and ``KEY=value`` entries. Values are not interpolated, command substitutions are
+    not executed, and shell metacharacters such as ``$`` and backticks are preserved verbatim.
+    """
+    parsed: dict[str, str] = {}
+    for line_number, raw_line in enumerate(
+        Path(path).read_text(encoding="utf-8").splitlines(), start=1
+    ):
+        line = raw_line.lstrip("\ufeff") if line_number == 1 else raw_line
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line[len("export ") :]
+        if "=" not in line:
+            raise ValueError(f"{path}:{line_number}: expected KEY=value")
+        key, value = line.split("=", 1)
+        key = key.strip()
+        if not _ENV_KEY_RE.fullmatch(key):
+            raise ValueError(f"{path}:{line_number}: invalid environment variable name {key!r}")
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+            value = value[1:-1]
+        parsed[key] = value
+    return parsed
+
 
 def find_violations(env: Mapping[str, str]) -> list[str]:
     """Return a human-readable violation per test/fault switch enabled in ``env`` (empty list = clean)."""
@@ -63,7 +97,27 @@ def find_violations(env: Mapping[str, str]) -> list[str]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    violations = find_violations(os.environ)
+    args = list(argv or [])
+    env_file: str | None = None
+    if args:
+        if len(args) == 2 and args[0] == "--env-file":
+            env_file = args[1]
+        else:
+            print("usage: production_hygiene.py [--env-file PATH]", file=sys.stderr)
+            return 2
+
+    env = dict(os.environ)
+    if env_file is not None:
+        try:
+            env.update(load_env_file(env_file))
+        except OSError as exc:
+            print(f"PRODUCTION HYGIENE CHECK FAILED — cannot read env file: {exc}", file=sys.stderr)
+            return 2
+        except ValueError as exc:
+            print(f"PRODUCTION HYGIENE CHECK FAILED — invalid env file: {exc}", file=sys.stderr)
+            return 2
+
+    violations = find_violations(env)
     if violations:
         print(
             "PRODUCTION HYGIENE CHECK FAILED — test/fault switches are enabled in a production build:",
@@ -81,4 +135,4 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(main(sys.argv[1:]))

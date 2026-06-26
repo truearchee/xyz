@@ -1,0 +1,18 @@
+# Build-context hygiene (12f). The image deliberately keeps app source AND tests (pytest runs
+# in-container per the gate workflow); this only excludes VCS, caches, local env files, and build
+# artefacts so they never enter the image or leak into the build context.
+.git
+.gitignore
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+.env
+.env.*
+*.log
